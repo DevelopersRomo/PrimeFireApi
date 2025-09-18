@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
 from bd.connection import Base, engine, SessionLocal
 
 from models.licenses import Licences
@@ -8,10 +7,23 @@ from models.employees import Employees
 from schemas.employees import Employee, EmployeeCreate
 from typing import List
 
+from sqlalchemy.orm import Session
+
+'''middleware CORS'''
+from fastapi.middleware.cors import CORSMiddleware
+
 # Crear tablas
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:4200"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Dependencia para obtener DB session
 def get_db():

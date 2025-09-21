@@ -90,6 +90,7 @@ uvicorn main:app --reload
 ```
 
 The API will be available at: `http://localhost:8000`
+The API URL swagger http://localhost:8000/docs
 
 ### Production
 

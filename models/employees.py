@@ -1,14 +1,14 @@
-from bd.connection import Base
-from sqlalchemy import Column, Integer, String, SmallInteger
+from sqlmodel import SQLModel, Field
+from typing import Optional
 
-class Employees(Base):
+class Employees(SQLModel, table=True):
     __tablename__ = "Employees"
 
-    EmployeeId = Column(Integer, primary_key=True, index=True)
-    Name = Column(String(50), nullable=True)
-    Role = Column(String(50), nullable=True)   # actualizado
-    Email = Column(String(50), nullable=True)
-    Phone = Column(String(20), nullable=True)
-    Connection = Column(String(50), nullable=True)  # actualizado
-    Password = Column(String(20), nullable=True)
-    CountryId = Column(SmallInteger, nullable=True)
+    EmployeeId: Optional[int] = Field(default=None, primary_key=True, index=True)
+    Name: Optional[str] = Field(default=None, max_length=50)
+    Role: Optional[str] = Field(default=None, max_length=50)
+    Email: Optional[str] = Field(default=None, max_length=50)
+    Phone: Optional[str] = Field(default=None, max_length=20)
+    Connection: Optional[str] = Field(default=None, max_length=50)
+    Password: Optional[str] = Field(default=None, max_length=20)
+    CountryId: Optional[int] = None

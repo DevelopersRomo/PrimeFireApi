@@ -1,22 +1,18 @@
+from sqlmodel import SQLModel
+from models.licenses import Licences
 from typing import Optional
-from pydantic import BaseModel
-from datetime import datetime
+from datetime import date
 
-class LicenceBase(BaseModel):
+# Schema para crear licencias (sin campos autogenerados)
+class LicenceCreate(SQLModel):
     Software: str
     Version: str
-    ExpiryDate: Optional[datetime] 
+    ExpiryDate: Optional[date] = None
     Key: str
     Account: str
     Password: str
-    EmployeeID: int
+    EmployeeId: int
 
-class LicenceCreate(LicenceBase):
+# Schema para respuesta (todos los campos)
+class Licence(Licences):
     pass
-
-class Licence(LicenceBase):
-    LicenceID: int
-    CreatedAt: datetime
-
-    class Config:
-        orm_mode = True

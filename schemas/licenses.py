@@ -3,7 +3,7 @@ from models.licenses import Licences
 from typing import Optional
 from datetime import date
 
-# Schema para crear licencias (sin campos autogenerados)
+# Schema for creating licenses (without auto-generated fields)
 class LicenceCreate(SQLModel):
     Software: str
     Version: str
@@ -13,6 +13,6 @@ class LicenceCreate(SQLModel):
     Password: str
     EmployeeId: int
 
-# Schema para respuesta (todos los campos)
+# Schema for response (all fields)
 class Licence(Licences):
     pass

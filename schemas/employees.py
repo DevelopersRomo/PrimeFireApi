@@ -2,7 +2,7 @@ from sqlmodel import SQLModel
 from models.employees import Employees
 from typing import Optional
 
-# Schema para crear empleados
+# Schema for creating employees
 class EmployeeCreate(SQLModel):
     Name: Optional[str] = None
     Role: Optional[str] = None
@@ -12,6 +12,6 @@ class EmployeeCreate(SQLModel):
     Password: Optional[str] = None
     CountryId: Optional[int] = None
 
-# Schema para respuesta (todos los campos)
+# Schema for response (all fields)
 class Employee(Employees):
     pass

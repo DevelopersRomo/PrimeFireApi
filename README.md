@@ -9,6 +9,8 @@ REST API built with FastAPI for managing employees, licenses and software assets
 - **SQLModel**: ORM that combines SQLAlchemy and Pydantic for data models
 - **Pydantic**: Automatic data validation integrated
 - **CORS**: Support for requests from frontend (localhost:4200)
+- **Azure AD Authentication**: OAuth2 with PKCE for secure endpoint access
+- **Microsoft 365 Sync**: Bidirectional synchronization with Microsoft Graph API for employee data
 
 ## 🛠️ Installation
 
@@ -57,6 +59,8 @@ pip install -r requirements.txt
 - `fastapi`: Modern web framework
 - `sqlmodel`: ORM that combines SQLAlchemy and Pydantic
 - `uvicorn`: ASGI server for FastAPI
+- `fastapi-azure-auth`: Azure AD OAuth2 authentication
+- `requests`: HTTP library for token validation
 
 ### 4. Configure database
 

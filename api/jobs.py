@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import List
 
+from api.dependencies import require_authentication
 from bd.dependencies import get_db
 from models.jobs import Jobs
 from schemas.jobs import Job, JobCreate, JobUpdate
@@ -12,7 +13,7 @@ router = APIRouter()
 # 📌 CREATE
 # ----------------------------
 @router.post("/", response_model=Job)
-def create_job(job: JobCreate, db: Session = Depends(get_db)):
+def create_job(job: JobCreate, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_job = Jobs(**job.model_dump())
     db.add(db_job)
     db.commit()
@@ -23,14 +24,19 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
 # 📌 READ ALL
 # ----------------------------
 @router.get("/", response_model=List[Job])
-def get_jobs(db: Session = Depends(get_db)):
+def get_jobs(
+    db: Session = Depends(get_db),
+):
     return db.exec(select(Jobs)).all()
 
 # ----------------------------
 # 📌 READ ONE
 # ----------------------------
 @router.get("/{job_id}", response_model=Job)
-def get_job(job_id: int, db: Session = Depends(get_db)):
+def get_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+):
     db_job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -40,14 +46,17 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 # 📌 READ BY STATUS
 # ----------------------------
 @router.get("/status/{status}", response_model=List[Job])
-def get_jobs_by_status(status: str, db: Session = Depends(get_db)):
+def get_jobs_by_status(
+    status: str,
+    db: Session = Depends(get_db),
+):
     return db.exec(select(Jobs).filter(Jobs.Status == status)).all()
 
 # ----------------------------
 # 📌 UPDATE
 # ----------------------------
 @router.put("/{job_id}", response_model=Job)
-def update_job(job_id: int, job: JobUpdate, db: Session = Depends(get_db)):
+def update_job(job_id: int, job: JobUpdate, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -61,7 +70,7 @@ def update_job(job_id: int, job: JobUpdate, db: Session = Depends(get_db)):
 # 📌 DELETE
 # ----------------------------
 @router.delete("/{job_id}")
-def delete_job(job_id: int, db: Session = Depends(get_db)):
+def delete_job(job_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")

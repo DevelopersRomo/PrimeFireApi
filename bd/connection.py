@@ -2,6 +2,7 @@ import os
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 # Load environment variables
 load_dotenv()
@@ -35,13 +36,30 @@ engine = create_engine(database_url, echo=echo)
 SessionLocal = sessionmaker(bind=engine, class_=Session)
 
 # Import all models to ensure they are registered with SQLModel
+'''
 from models.employees import Employees, Roles
 from models.jobs import Jobs
 from models.licenses import Licences
 from models.countries import Countries
 from models.curriculums import Curriculums
 from models.modules import Modules, RoleModules
+'''
 
 # Function to create tables
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
+
+
+
+
+def test_connection():
+    try:
+        with SessionLocal() as session:
+            result = session.exec(text("SELECT GETDATE()"))
+            print("✅ Success Conection! Date/Hour: server", result.one())
+    except Exception as e:
+        print("❌ Error de conexión:", e)
+
+
+if __name__ == "__main__":
+    test_connection()

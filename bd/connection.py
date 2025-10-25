@@ -7,21 +7,28 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Connection parameters from environment variables
+LOCAL_DATABASE = os.getenv("LOCAL_DATABASE", "False").lower() == "true"
+echo = os.getenv("DB_ECHO", "False").lower() == "true"
+
+
+# SQL Server configuration
 server = os.getenv("DB_SERVER", "localhost\\SQLEXPRESS")
 database = os.getenv("DB_DATABASE", "PrimeFireCorp")
 username = os.getenv("DB_USERNAME", "sa")
 password = os.getenv("DB_PASSWORD", "")
 driver = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
-echo = os.getenv("DB_ECHO", "False").lower() == "true"
 
-# Connection URL for SQL Server with Windows authentication
+# Connection URL for SQL Server
 if password:
-    database_url = f"mssql+pyodbc://{username}:{password}@{server}/{database}?driver={driver}"
+    quoted_password = password.replace("@", "%40")
+    database_url = (
+        f"mssql+pyodbc://{username}:{quoted_password}@{server}/{database}?"
+        f"driver={driver}&TrustServerCertificate=yes&Encrypt=yes"
+    )
 else:
-    # Use Windows authentication (Trusted Connection)
     database_url = f"mssql+pyodbc://@{server}/{database}?driver={driver}&trusted_connection=yes"
 
-# Create the engine
+
 engine = create_engine(database_url, echo=echo)
 
 # Create the session

@@ -20,6 +20,7 @@ password = os.getenv("DB_PASSWORD", "")
 driver = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
 
 # Connection URL for SQL Server
+
 if password:
     quoted_password = password.replace("@", "%40")
     database_url = (
@@ -27,7 +28,7 @@ if password:
         f"driver={driver}&TrustServerCertificate=yes&Encrypt=yes"
     )
 else:
-    database_url = f"mssql+pyodbc://@{server}/{database}?driver={driver}&trusted_connection=yes"
+   database_url = f"mssql+pyodbc://@{server}/{database}?driver={driver}&trusted_connection=yes"
 
 
 engine = create_engine(database_url, echo=echo)
@@ -49,9 +50,6 @@ from models.modules import Modules, RoleModules
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
-
-
-
 def test_connection():
     try:
         with SessionLocal() as session:
@@ -59,7 +57,6 @@ def test_connection():
             print("✅ Success Conection! Date/Hour: server", result.one())
     except Exception as e:
         print("❌ Error de conexión:", e)
-
 
 if __name__ == "__main__":
     test_connection()

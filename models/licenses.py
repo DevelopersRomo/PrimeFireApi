@@ -1,11 +1,11 @@
 from sqlmodel import SQLModel, Field
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
-class Licences(SQLModel, table=True):
-    __tablename__ = "Licences"
+class Licenses(SQLModel, table=True):
+    __tablename__ = "Licenses"
 
-    LicenceId: Optional[int] = Field(default=None, primary_key=True, index=True)
+    LicenseId: Optional[int] = Field(default=None, primary_key=True, index=True)
     Software: Optional[str] = Field(default=None, max_length=50)
     Version: Optional[str] = Field(default=None, max_length=20)
     CreatedAt: Optional[date] = None

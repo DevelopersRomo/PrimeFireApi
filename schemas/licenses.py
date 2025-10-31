@@ -1,10 +1,11 @@
 from sqlmodel import SQLModel
-from models.licenses import Licences
+from models.licenses import Licenses
 from typing import Optional
 from datetime import date
 
 # Schema for creating licenses (without auto-generated fields)
-class LicenceCreate(SQLModel):
+class LicenseCreate(SQLModel):
+    LicenseId: Optional[int] = None
     Software: str
     Version: str
     ExpiryDate: Optional[date] = None
@@ -14,5 +15,7 @@ class LicenceCreate(SQLModel):
     EmployeeId: int
 
 # Schema for response (all fields)
-class Licence(Licences):
+class License(Licenses):
     pass
+
+

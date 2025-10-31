@@ -40,7 +40,7 @@ SessionLocal = sessionmaker(bind=engine, class_=Session)
 
 from models.employees import Employees, Roles
 from models.jobs import Jobs
-from models.licenses import Licences
+from models.licenses import Licenses
 from models.countries import Countries
 from models.curriculums import Curriculums
 from models.modules import Modules, RoleModules

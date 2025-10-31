@@ -4,21 +4,21 @@ from typing import List
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
-from models.licenses import Licences
-from schemas.licenses import Licence, LicenceCreate
+from models.licenses import Licenses
+from schemas.licenses import License, LicenseCreate
 
 router = APIRouter()
 
 # ----------------------------
 # 📌 CREATE
 # ----------------------------
-@router.post("/", response_model=Licence)
+@router.post("/", response_model=License)
 def create_license(
-    license: LicenceCreate,
+    license: LicenseCreate,
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)
 ):
-    db_license = Licences(**license.model_dump())
+    db_license = Licenses(**license.model_dump())
     db.add(db_license)
     db.commit()
     db.refresh(db_license)
@@ -27,23 +27,23 @@ def create_license(
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("/", response_model=List[Licence])
+@router.get("/", response_model=List[License])
 def get_licenses(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)
 ):
-    return db.exec(select(Licences)).all()
+    return db.exec(select(Licenses)).all()
 
 # ----------------------------
 # 📌 READ ONE
 # ----------------------------
-@router.get("/{license_id}", response_model=Licence)
+@router.get("/{license_id}", response_model=License)
 def get_license(
     license_id: int,
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)
 ):
-    db_license = db.exec(select(Licences).filter(Licences.LicenceId == license_id)).first()
+    db_license = db.exec(select(Licenses).filter(Licenses.LicenseId == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")
     return db_license
@@ -51,14 +51,14 @@ def get_license(
 # ----------------------------
 # 📌 UPDATE
 # ----------------------------
-@router.put("/{license_id}", response_model=Licence)
+@router.put("/{license_id}", response_model=License)
 def update_license(
     license_id: int,
-    license: LicenceCreate,
+    license: LicenseCreate,
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)
 ):
-    db_license = db.exec(select(Licences).filter(Licences.LicenceId == license_id)).first()
+    db_license = db.exec(select(Licenses).filter(Licenses.LicenseId == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")
 
@@ -78,7 +78,7 @@ def delete_license(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)
 ):
-    db_license = db.exec(select(Licences).filter(Licences.LicenceId == license_id)).first()
+    db_license = db.exec(select(Licenses).filter(Licenses.LicenseId == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")
 

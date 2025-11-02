@@ -64,6 +64,13 @@ except Exception as e:
     print(f"Warning: Permissions router not available: {e}")
     permissions_available = False
 
+try:
+    from api.tickets import router as tickets_router
+    tickets_available = True
+except Exception as e:
+    print(f"Warning: Tickets router not available: {e}")
+    tickets_available = False
+
 # Import database connection
 try:
     from bd.connection import create_db_and_tables
@@ -192,6 +199,9 @@ if modules_available:
 
 if permissions_available:
     app.include_router(permissions_router, prefix="/permissions", tags=["permissions"])
+
+if tickets_available:
+    app.include_router(tickets_router, prefix="/tickets", tags=["tickets"])
 
 @app.get("/")
 async def root():

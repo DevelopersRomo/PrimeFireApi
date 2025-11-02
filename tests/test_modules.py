@@ -30,7 +30,9 @@ def sample_permission_data():
         "CanCreate": True,
         "CanEdit": True,
         "CanDelete": False,
-        "CanExport": True
+        "CanExport": True,
+        "AdminActions": False,
+        "OtherActions": False
     }
 
 class TestModules:
@@ -238,7 +240,9 @@ class TestPermissions:
                     "CanCreate": False,
                     "CanEdit": False,
                     "CanDelete": False,
-                    "CanExport": False
+                    "CanExport": False,
+                    "AdminActions": False,
+                    "OtherActions": False
                 },
                 {
                     "RoleId": 3,
@@ -247,7 +251,9 @@ class TestPermissions:
                     "CanCreate": False,
                     "CanEdit": False,
                     "CanDelete": False,
-                    "CanExport": False
+                    "CanExport": False,
+                    "AdminActions": False,
+                    "OtherActions": False
                 }
             ]
         }

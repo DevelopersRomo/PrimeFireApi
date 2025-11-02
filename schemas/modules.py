@@ -46,6 +46,8 @@ class PermissionBase(BaseModel):
     CanEdit: bool = Field(False, description="Can edit records")
     CanDelete: bool = Field(False, description="Can delete records")
     CanExport: bool = Field(False, description="Can export data")
+    AdminActions: bool = Field(False, description="Can perform administrative actions")
+    OtherActions: bool = Field(False, description="Can perform other actions")
 
 class PermissionCreate(PermissionBase):
     pass
@@ -56,6 +58,8 @@ class PermissionUpdate(BaseModel):
     CanEdit: Optional[bool] = None
     CanDelete: Optional[bool] = None
     CanExport: Optional[bool] = None
+    AdminActions: Optional[bool] = None
+    OtherActions: Optional[bool] = None
 
 class Permission(PermissionBase):
     AssignedAt: datetime

@@ -84,6 +84,8 @@ async def get_all_permissions(
                 CanEdit=role_module.CanEdit,
                 CanDelete=role_module.CanDelete,
                 CanExport=role_module.CanExport,
+                AdminActions=role_module.AdminActions,
+                OtherActions=role_module.OtherActions,
                 AssignedAt=role_module.AssignedAt,
                 role_name=role.RoleName,
                 module_name=module.ModuleName,
@@ -127,6 +129,8 @@ async def get_role_permissions(
                 CanEdit=role_module.CanEdit,
                 CanDelete=role_module.CanDelete,
                 CanExport=role_module.CanExport,
+                AdminActions=role_module.AdminActions,
+                OtherActions=role_module.OtherActions,
                 AssignedAt=role_module.AssignedAt,
                 role_name=role.RoleName,
                 module_name=module.ModuleName,
@@ -174,6 +178,8 @@ async def get_module_permissions(
                 CanEdit=role_module.CanEdit,
                 CanDelete=role_module.CanDelete,
                 CanExport=role_module.CanExport,
+                AdminActions=role_module.AdminActions,
+                OtherActions=role_module.OtherActions,
                 AssignedAt=role_module.AssignedAt,
                 role_name=role.RoleName,
                 module_name=module.ModuleName,
@@ -322,7 +328,7 @@ async def check_user_permission(
 ):
     """
     Check if the current user has permission to perform an action on a module.
-    Actions: view, create, edit, delete, export
+    Actions: view, create, edit, delete, export, admin_actions, other_actions
     """
     # Get module by key
     module = db.exec(select(Modules).where(Modules.ModuleKey == module_key)).first()
@@ -365,7 +371,7 @@ async def get_current_user_permissions(
                 {
                     "module_key": "dashboard",
                     "module_info": {ModuleId, ModuleName, RouteUrl, etc.},
-                    "permissions": {CanView, CanCreate, CanEdit, CanDelete, CanExport}
+                    "permissions": {CanView, CanCreate, CanEdit, CanDelete, CanExport, AdminActions, OtherActions}
                 }
             ],
             "accessible_modules": [list of modules user can access]

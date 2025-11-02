@@ -2,6 +2,7 @@ from sqlmodel import SQLModel
 from typing import Optional
 from datetime import datetime
 from models.tickets import TicketStatus, TicketPriority, TicketSLA
+from pydantic import field_validator
 
 # Schema for creating tickets
 class TicketCreate(SQLModel):
@@ -20,6 +21,12 @@ class TicketUpdate(SQLModel):
     Priority: Optional[TicketPriority] = None
     SLA: Optional[TicketSLA] = None  # Service Level Agreement (can be None to clear)
     AssignedTo: Optional[int] = None  # Can be None to unassign
+
+    @field_validator('SLA', mode='before')
+    def validate_sla(cls, v):
+        if v == "":
+            return None
+        return v
 
 # Schema for simplified employee info in ticket responses
 class TicketEmployee(SQLModel):

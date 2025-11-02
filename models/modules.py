@@ -12,6 +12,8 @@ class RoleModules(SQLModel, table=True):
     CanEdit: bool = Field(default=False)
     CanDelete: bool = Field(default=False)
     CanExport: bool = Field(default=False)
+    AdminActions: bool = Field(default=False)
+    OtherActions: bool = Field(default=False)
     AssignedAt: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
 class Modules(SQLModel, table=True):

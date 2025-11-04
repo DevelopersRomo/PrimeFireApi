@@ -92,3 +92,33 @@ GO
 
 
 
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ticketMessages]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [dbo].[ticketMessages](
+        TicketMessageId INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        TicketId INT NOT NULL,
+        UserId INT NOT NULL,
+        MessageTxt NVARCHAR(MAX) NULL,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        UpdatedAt DATETIME2 NULL,
+        EditedAt DATETIME2 NULL,
+        CONSTRAINT FK_ticketMessages_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets(TicketId),
+        CONSTRAINT FK_ticketMessages_Employees FOREIGN KEY (UserId) REFERENCES Employees(EmployeeId)
+    );
+END
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ticketAttachments]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [dbo].[ticketAttachments](
+        TicketAttachmentId INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        TicketId INT NOT NULL,
+        TicketMessageId INT NULL,
+        FileName NVARCHAR(255) NOT NULL,
+        FileType NVARCHAR(100) NULL,
+        FilePath NVARCHAR(500) NULL,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT FK_ticketAttachments_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets(TicketId),
+        CONSTRAINT FK_ticketAttachments_TicketMessages FOREIGN KEY (TicketMessageId) REFERENCES ticketMessages(TicketMessageId)
+    );
+END

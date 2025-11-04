@@ -71,6 +71,20 @@ except Exception as e:
     print(f"Warning: Tickets router not available: {e}")
     tickets_available = False
 
+try:
+    from api.ticket_messages import router as ticket_messages_router
+    ticket_messages_available = True
+except Exception as e:
+    print(f"Warning: Ticket messages router not available: {e}")
+    ticket_messages_available = False
+
+try:
+    from api.ticket_attachments import router as ticket_attachments_router
+    ticket_attachments_available = True
+except Exception as e:
+    print(f"Warning: Ticket attachments router not available: {e}")
+    ticket_attachments_available = False
+
 # Import database connection
 try:
     from bd.connection import create_db_and_tables
@@ -202,6 +216,13 @@ if permissions_available:
 
 if tickets_available:
     app.include_router(tickets_router, prefix="/tickets", tags=["tickets"])
+
+if ticket_messages_available:
+    # messages endpoints live under both /tickets/{ticket_id}/messages and /messages
+    app.include_router(ticket_messages_router, tags=["ticket_messages"])
+
+if ticket_attachments_available:
+    app.include_router(ticket_attachments_router, tags=["ticket_attachments"])
 
 @app.get("/")
 async def root():

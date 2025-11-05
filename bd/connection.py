@@ -37,14 +37,14 @@ engine = create_engine(database_url, echo=echo)
 SessionLocal = sessionmaker(bind=engine, class_=Session)
 
 # Import all models to ensure they are registered with SQLModel
-
+'''
 from models.employees import Employees, Roles
 from models.jobs import Jobs
 from models.licenses import Licenses
 from models.countries import Countries
 from models.curriculums import Curriculums
 from models.modules import Modules, RoleModules
-
+'''
 
 # Function to create tables
 def create_db_and_tables():

@@ -284,7 +284,9 @@ async def get_current_employee_with_permissions(
                     "CanCreate": False,
                     "CanEdit": False,
                     "CanDelete": False,
-                    "CanExport": False
+                    "CanExport": False,
+                    "AdminActions": False,
+                    "OtherActions": False
                 }
                 modules_dict[module_key] = {
                     "ModuleId": module.ModuleId,
@@ -301,6 +303,8 @@ async def get_current_employee_with_permissions(
             permissions_dict[module_key]["CanEdit"] = permissions_dict[module_key]["CanEdit"] or role_module.CanEdit
             permissions_dict[module_key]["CanDelete"] = permissions_dict[module_key]["CanDelete"] or role_module.CanDelete
             permissions_dict[module_key]["CanExport"] = permissions_dict[module_key]["CanExport"] or role_module.CanExport
+            permissions_dict[module_key]["AdminActions"] = permissions_dict[module_key]["AdminActions"] or role_module.AdminActions
+            permissions_dict[module_key]["OtherActions"] = permissions_dict[module_key]["OtherActions"] or role_module.OtherActions
 
     # Convert to list format for frontend
     permissions_list = []

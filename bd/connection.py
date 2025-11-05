@@ -44,6 +44,7 @@ from models.licenses import Licences
 from models.countries import Countries
 from models.curriculums import Curriculums
 from models.modules import Modules, RoleModules
+from models.ticket_messages import TicketMessages, TicketAttachments
 
 
 # Function to create tables

@@ -2,8 +2,8 @@ import pytest
 from datetime import date
 from sqlmodel import Session
 
-from models.licenses import Licences
-from schemas.licenses import LicenceCreate
+from models.licenses import Licenses
+from schemas.licenses import LicenseCreate
 
 
 class TestLicensesAPI:
@@ -49,7 +49,7 @@ class TestLicensesAPI:
         assert data["Key"] == "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
         assert data["Account"] == "license@company.com"
         assert data["EmployeeId"] == 1
-        assert "LicenceId" in data
+        assert "LicenseId" in data
         assert "CreatedAt" in data
 
     def test_get_license_by_id(self, client, db_session: Session):
@@ -58,11 +58,11 @@ class TestLicensesAPI:
         employee = self._create_test_employee(db_session)
         license_obj = self._create_test_license(db_session, employee.EmployeeId)
 
-        response = client.get(f"/licenses/{license_obj.LicenceId}")
+        response = client.get(f"/licenses/{license_obj.LicenseId}")
         assert response.status_code == 200
 
         data = response.json()
-        assert data["LicenceId"] == license_obj.LicenceId
+        assert data["LicenseId"] == license_obj.LicenseId
         assert data["Software"] == license_obj.Software
 
     def test_get_license_not_found(self, client):
@@ -106,7 +106,7 @@ class TestLicensesAPI:
             "EmployeeId": 1
         }
 
-        response = client.put(f"/licenses/{license_obj.LicenceId}", json=update_data)
+        response = client.put(f"/licenses/{license_obj.LicenseId}", json=update_data)
         assert response.status_code == 200
 
         data = response.json()
@@ -137,17 +137,17 @@ class TestLicensesAPI:
         license_obj = self._create_test_license(db_session, employee.EmployeeId)
 
         # Verify license exists
-        response = client.get(f"/licenses/{license_obj.LicenceId}")
+        response = client.get(f"/licenses/{license_obj.LicenseId}")
         assert response.status_code == 200
 
         # Delete license
-        response = client.delete(f"/licenses/{license_obj.LicenceId}")
+        response = client.delete(f"/licenses/{license_obj.LicenseId}")
         assert response.status_code == 200
         data = response.json()
         assert "License deleted successfully" in data["message"]
 
         # Verify license is deleted
-        response = client.get(f"/licenses/{license_obj.LicenceId}")
+        response = client.get(f"/licenses/{license_obj.LicenseId}")
         assert response.status_code == 404
 
     def test_delete_license_not_found(self, client):
@@ -187,9 +187,9 @@ class TestLicensesAPI:
         db_session.refresh(employee)
         return employee
 
-    def _create_test_license(self, db_session: Session, employee_id: int, software: str = "Visual Studio Code") -> Licences:
+    def _create_test_license(self, db_session: Session, employee_id: int, software: str = "Visual Studio Code") -> Licenses:
         """Helper method to create a test license"""
-        license_obj = Licences(
+        license_obj = Licenses(
             Software=software,
             Version="1.85.0",
             ExpiryDate=date(2024, 12, 31),

@@ -9,7 +9,7 @@ from bd.dependencies import get_db
 
 # Import models to register them with SQLModel metadata
 from models.employees import Employees
-from models.licenses import Licences
+from models.licenses import Licenses
 
 
 # Test database URL (using SQLite for tests)

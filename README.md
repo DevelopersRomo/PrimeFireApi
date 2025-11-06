@@ -23,7 +23,7 @@ REST API built with FastAPI for managing employees, licenses and software assets
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone <https://github.com/DevelopersRomo/PrimeFireApi>
 cd PrimeFireApi
 ```
 
@@ -31,19 +31,22 @@ cd PrimeFireApi
 
 **Windows:**
 
-*CMD/PowerShell:*
+_CMD/PowerShell:_
+
 ```cmd
 python -m venv venv
 venv\Scripts\activate
 ```
 
-*PowerShell (alternativa):*
+_PowerShell (alternativa):_
+
 ```powershell
 python -m venv venv
 venv\Scripts\Activate.ps1
 ```
 
 **Linux/Mac:**
+
 ```bash
 python -m venv venv
 source venv/bin/activate
@@ -56,6 +59,7 @@ pip install -r requirements.txt
 ```
 
 **Main dependencies:**
+
 - `fastapi`: Modern web framework
 - `sqlmodel`: ORM that combines SQLAlchemy and Pydantic
 - `uvicorn`: ASGI server for FastAPI

@@ -40,12 +40,11 @@ SessionLocal = sessionmaker(bind=engine, class_=Session)
 
 from models.employees import Employees, Roles
 from models.jobs import Jobs
-from models.licenses import Licences
+from models.licenses import Licenses
 from models.countries import Countries
 from models.curriculums import Curriculums
 from models.modules import Modules, RoleModules
 from models.ticket_messages import TicketMessages, TicketAttachments
-
 
 # Function to create tables
 def create_db_and_tables():

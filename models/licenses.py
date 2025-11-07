@@ -2,8 +2,8 @@ from sqlmodel import SQLModel, Field
 from datetime import date
 from typing import Optional
 
-class Licences(SQLModel, table=True):
-    __tablename__ = "Licences"
+class Licenses(SQLModel, table=True):
+    __tablename__ = "Licenses"
     __table_args__ = {'schema': 'dbo'}
 
     LicenseId: Optional[int] = Field(default=None, primary_key=True, index=True)

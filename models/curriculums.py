@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 class Curriculums(SQLModel, table=True):
     __tablename__ = "Curriculums"
+    __table_args__ = {'schema': 'dbo'}
 
     CurriculumId: Optional[int] = Field(default=None, primary_key=True, index=True)
     JobId: int

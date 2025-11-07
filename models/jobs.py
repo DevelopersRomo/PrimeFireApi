@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 class Jobs(SQLModel, table=True):
     __tablename__ = "Jobs"
+    __table_args__ = {'schema': 'dbo'}
 
     JobId: Optional[int] = Field(default=None, primary_key=True, index=True)
     Title: str = Field(max_length=100)

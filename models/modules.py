@@ -4,9 +4,10 @@ from datetime import datetime
 
 class RoleModules(SQLModel, table=True):
     __tablename__ = "RoleModules"
+    __table_args__ = {'schema': 'dbo'}
 
-    RoleId: int = Field(foreign_key="Roles.RoleId", primary_key=True)
-    ModuleId: int = Field(foreign_key="Modules.ModuleId", primary_key=True)
+    RoleId: int = Field(foreign_key="dbo.Roles.RoleId", primary_key=True)
+    ModuleId: int = Field(foreign_key="dbo.Modules.ModuleId", primary_key=True)
     CanView: bool = Field(default=True)
     CanCreate: bool = Field(default=False)
     CanEdit: bool = Field(default=False)
@@ -18,6 +19,7 @@ class RoleModules(SQLModel, table=True):
 
 class Modules(SQLModel, table=True):
     __tablename__ = "Modules"
+    __table_args__ = {'schema': 'dbo'}
 
     ModuleId: Optional[int] = Field(default=None, primary_key=True, index=True)
     ModuleName: str = Field(max_length=50)
@@ -27,7 +29,7 @@ class Modules(SQLModel, table=True):
     RouteUrl: Optional[str] = Field(default=None, max_length=100)
     DisplayOrder: Optional[int] = Field(default=0)
     IsActive: bool = Field(default=True)
-    ParentModuleId: Optional[int] = Field(default=None, foreign_key="Modules.ModuleId")
+    ParentModuleId: Optional[int] = Field(default=None, foreign_key="dbo.Modules.ModuleId")
     CreatedAt: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
     # Self-referential relationship for parent-child modules

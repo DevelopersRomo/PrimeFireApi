@@ -33,6 +33,7 @@ class TicketSLA(str, enum.Enum):
 
 class Tickets(SQLModel, table=True):
     __tablename__ = "Tickets"
+    __table_args__ = {'schema': 'dbo'}
 
     TicketId: Optional[int] = Field(default=None, primary_key=True, index=True)
     Title: str = Field(max_length=200)
@@ -57,8 +58,8 @@ class Tickets(SQLModel, table=True):
     )
 
     # Foreign keys
-    CreatedBy: int = Field(foreign_key="Employees.EmployeeId")  # Required
-    AssignedTo: Optional[int] = Field(default=None, foreign_key="Employees.EmployeeId")  # Optional
+    CreatedBy: int = Field(foreign_key="dbo.Employees.EmployeeId")  # Required
+    AssignedTo: Optional[int] = Field(default=None, foreign_key="dbo.Employees.EmployeeId")  # Optional
 
     # Timestamps
     CreatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

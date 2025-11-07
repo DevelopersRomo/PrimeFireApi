@@ -66,6 +66,17 @@ pip install -r requirements.txt
 - `fastapi-azure-auth`: Azure AD OAuth2 authentication
 - `requests`: HTTP library for token validation
 
+### Update dependencies
+
+To update all dependencies to their latest versions and regenerate `requirements.txt`:
+
+```bash
+pip install --upgrade fastapi uvicorn pydantic pydantic-core pydantic-settings python-dotenv sqlalchemy sqlmodel httpx pytest pytest-asyncio pyodbc cryptography pyjwt starlette typing-extensions fastapi-azure-auth requests python-multipart
+pip freeze | Select-String -Pattern "^(fastapi|uvicorn|pydantic|pydantic-core|pydantic-settings|python-dotenv|sqlalchemy|sqlmodel|httpx|pytest|pytest-asyncio|pyodbc|cryptography|pyjwt|starlette|typing-extensions|fastapi-azure-auth|requests|python-multipart)==" | Out-File -FilePath requirements.txt -Encoding utf8
+```
+
+This will upgrade the packages and update the `requirements.txt` file with the new versions.
+
 ### 4. Configure database
 
 Copy the `.env` file and configure it with your SQL Server credentials:

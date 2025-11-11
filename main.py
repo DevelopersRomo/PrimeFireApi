@@ -85,6 +85,13 @@ except Exception as e:
     print(f"Warning: Ticket attachments router not available: {e}")
     ticket_attachments_available = False
 
+try:
+    from api.hardware_inventory import router as licenses_router
+    hardware_inventory_available = True
+except Exception as e:
+    print(f"Warning: Hardware inventory router not available: {e}")
+    hardware_inventory_available = False
+
 # Import database connection
 try:
     from bd.connection import create_db_and_tables

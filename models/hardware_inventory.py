@@ -9,10 +9,10 @@ if __name__ == "models.hardware_inventory":
 class HardwareInventory(SQLModel, table=True):
     __tablename__ = "HardwareInventory"
     __table_args__ = (
-        {'schema': 'dbo'},
         CheckConstraint("DeviceType IN ('Laptop', 'Desktop', 'Workstation', 'Server')"),
         CheckConstraint("StorageType IN ('HDD', 'SSD', 'NVMe', 'Hybrid')"),
         CheckConstraint("Status IN ('Active', 'In Repair', 'Retired', 'Spare')"),
+        {'schema': 'dbo'},  # ✅ El diccionario siempre al final
     )
 
     HardwareID: Optional[int] = Field(default=None, primary_key=True, index=True)

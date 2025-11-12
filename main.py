@@ -86,7 +86,7 @@ except Exception as e:
     ticket_attachments_available = False
 
 try:
-    from api.hardware_inventory import router as licenses_router
+    from api.hardware_inventory import router as hardware_inventory_router
     hardware_inventory_available = True
 except Exception as e:
     print(f"Warning: Hardware inventory router not available: {e}")
@@ -223,6 +223,9 @@ if permissions_available:
 
 if tickets_available:
     app.include_router(tickets_router, prefix="/tickets", tags=["tickets"])
+    
+if hardware_inventory_available:
+    app.include_router(hardware_inventory_router, prefix="/hardware", tags=["hardware_inventory"])
 
 if ticket_messages_available:
     # messages endpoints live under both /tickets/{ticket_id}/messages and /messages

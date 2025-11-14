@@ -1,20 +1,19 @@
-name: Deploy FastAPI to Azure
+name: FastAPI Deploy to Azure
 
 on:
   push:
-    branches:
-      - main  # o la rama que uses para deploy
+    branches: [ "main" ]
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    - name: Checkout repo
       uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.12"
 
@@ -23,20 +22,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Copy startup script
-      run: |
-        echo '#!/bin/bash' > startup.sh
-        echo 'python -m venv antenv' >> startup.sh
-        echo 'source antenv/bin/activate' >> startup.sh
-        echo 'pip install --upgrade pip' >> startup.sh
-        echo 'pip install -r requirements.txt' >> startup.sh
-        echo 'python -m uvicorn main:app --host 0.0.0.0 --port 8000' >> startup.sh
-        chmod +x startup.sh
-
     - name: Deploy to Azure Web App
-      uses: azure/webapps-deploy@v2
+      uses: azure/webapps-deploy@v3
       with:
-        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}      # Nombre de tu App Service
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}  # Publish profile
+        app-name: "TU_APP_NAME_AZURE"
+        slot-name: "production"
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
         package: .
-        startup-command: '/home/site/wwwroot/startup.sh'

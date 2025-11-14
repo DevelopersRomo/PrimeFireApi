@@ -8,12 +8,14 @@ if TYPE_CHECKING:
 
 class EmployeeRoles(SQLModel, table=True):
     __tablename__ = "EmployeeRoles"
+    __table_args__ = {'schema': 'dbo'}
 
-    EmployeeId: int = Field(foreign_key="Employees.EmployeeId", primary_key=True)
-    RoleId: int = Field(foreign_key="Roles.RoleId", primary_key=True)
+    EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", primary_key=True)
+    RoleId: int = Field(foreign_key="dbo.Roles.RoleId", primary_key=True)
 
 class Roles(SQLModel, table=True):
     __tablename__ = "Roles"
+    __table_args__ = {'schema': 'dbo'}
 
     RoleId: Optional[int] = Field(default=None, primary_key=True, index=True)
     RoleName: str = Field(max_length=50)
@@ -27,6 +29,7 @@ class Roles(SQLModel, table=True):
 
 class Employees(SQLModel, table=True):
     __tablename__ = "Employees"
+    __table_args__ = {'schema': 'dbo'}
 
     EmployeeId: Optional[int] = Field(default=None, primary_key=True, index=True)
 
@@ -49,7 +52,7 @@ class Employees(SQLModel, table=True):
     PostalCode: Optional[str] = Field(default=None, max_length=20)
     
     # Internal fields
-    CountryId: Optional[int] = Field(default=None, foreign_key="Countries.CountryId")
+    CountryId: Optional[int] = Field(default=None, foreign_key="dbo.Countries.CountryId")
 
     # Relationship to Countries
     country: Optional["Countries"] = Relationship()

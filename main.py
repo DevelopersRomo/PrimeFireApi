@@ -180,10 +180,15 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+origins = [
+    "https://primefireapi-dfe5fac8h6ajcxee.canadacentral-01.azurewebsites.net", 
+    "http://localhost:4200",
+]
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4200"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

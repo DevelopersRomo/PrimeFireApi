@@ -30,6 +30,7 @@ class EmployeeUpdate(SQLModel):
     Phone: Optional[str] = None
     MobilePhone: Optional[str] = None
     OfficePhone: Optional[str] = None
+    Anydesk: Optional[str] = None
     StreetAddress: Optional[str] = None
     City: Optional[str] = None
     State: Optional[str] = None
@@ -60,6 +61,7 @@ class Employee(SQLModel):
     Phone: Optional[str] = None
     MobilePhone: Optional[str] = None
     OfficePhone: Optional[str] = None
+    Anydesk: Optional[str] = None
     StreetAddress: Optional[str] = None
     City: Optional[str] = None
     State: Optional[str] = None

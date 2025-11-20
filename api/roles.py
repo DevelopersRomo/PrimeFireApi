@@ -12,7 +12,7 @@ router = APIRouter()
 # ----------------------------
 # 📌 CREATE ROLE
 # ----------------------------
-@router.post("/", response_model=Role)
+@router.post("", response_model=Role)
 async def create_role(
     role: RoleCreate,
     db: Session = Depends(get_db),
@@ -28,7 +28,7 @@ async def create_role(
 # ----------------------------
 # 📌 READ ALL ROLES
 # ----------------------------
-@router.get("/", response_model=List[Role])
+@router.get("", response_model=List[Role])
 async def get_roles(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_authentication)

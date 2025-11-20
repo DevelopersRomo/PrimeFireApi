@@ -49,7 +49,7 @@ def ticket_to_schema(db_ticket: Tickets) -> Ticket:
 # ----------------------------
 # 📌 GET /tickets (LIST WITH FILTERS AND PAGINATION)
 # ----------------------------
-@router.get("/", response_model=List[Ticket])
+@router.get("", response_model=List[Ticket])
 def get_tickets(
     # Filters
     status: Optional[TicketStatus] = Query(None, description="Filter by ticket status"),
@@ -130,7 +130,7 @@ def get_ticket(
 # ----------------------------
 # 📌 POST /tickets (CREATE TICKET)
 # ----------------------------
-@router.post("/", response_model=Ticket)
+@router.post("", response_model=Ticket)
 def create_ticket(
     ticket: TicketCreate,
     current_employee: Employees = Depends(get_current_employee),

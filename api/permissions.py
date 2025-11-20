@@ -20,7 +20,7 @@ router = APIRouter()
 # ----------------------------
 # 📌 CREATE PERMISSION
 # ----------------------------
-@router.post("/", response_model=Permission)
+@router.post("", response_model=Permission)
 async def create_permission(
     permission: PermissionCreate,
     db: Session = Depends(get_db),
@@ -59,7 +59,7 @@ async def create_permission(
 # ----------------------------
 # 📌 READ ALL PERMISSIONS
 # ----------------------------
-@router.get("/", response_model=List[PermissionWithDetails])
+@router.get("", response_model=List[PermissionWithDetails])
 async def get_all_permissions(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_authentication)

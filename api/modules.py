@@ -12,7 +12,7 @@ router = APIRouter()
 # ----------------------------
 # 📌 CREATE MODULE
 # ----------------------------
-@router.post("/", response_model=Module)
+@router.post("", response_model=Module)
 async def create_module(
     module: ModuleCreate,
     db: Session = Depends(get_db),
@@ -39,7 +39,7 @@ async def create_module(
 # ----------------------------
 # 📌 READ ALL MODULES
 # ----------------------------
-@router.get("/", response_model=List[Module])
+@router.get("", response_model=List[Module])
 async def get_modules(
     include_inactive: bool = False,
     db: Session = Depends(get_db),

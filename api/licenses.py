@@ -12,7 +12,7 @@ router = APIRouter()
 # ----------------------------
 # 📌 CREATE
 # ----------------------------
-@router.post("/", response_model=License)
+@router.post("", response_model=License)
 def create_license(
     license: LicenseCreate,
     db: Session = Depends(get_db),
@@ -27,7 +27,7 @@ def create_license(
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("/", response_model=List[License])
+@router.get("", response_model=List[License])
 def get_licenses(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)

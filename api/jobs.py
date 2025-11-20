@@ -12,7 +12,7 @@ router = APIRouter()
 # ----------------------------
 # 📌 CREATE
 # ----------------------------
-@router.post("/", response_model=Job)
+@router.post("", response_model=Job)
 def create_job(job: JobCreate, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_job = Jobs(**job.model_dump())
     db.add(db_job)
@@ -23,7 +23,7 @@ def create_job(job: JobCreate, db: Session = Depends(get_db), _auth=Depends(requ
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("/", response_model=List[Job])
+@router.get("", response_model=List[Job])
 def get_jobs(
     db: Session = Depends(get_db),
 ):

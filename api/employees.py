@@ -126,7 +126,7 @@ def employee_to_schema(db_employee: Employees) -> Employee:
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("/", response_model=List[Employee])
+@router.get("", response_model=List[Employee])
 def get_employees(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)

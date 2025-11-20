@@ -8,7 +8,7 @@ from models.countries import Countries
 
 router = APIRouter()
 
-@router.get("/", response_model=List[dict])
+@router.get("", response_model=List[dict])
 async def get_countries(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)

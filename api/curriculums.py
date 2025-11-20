@@ -88,7 +88,7 @@ def create_curriculum_with_file(
 # ----------------------------
 # 📌 CREATE (without file)
 # ----------------------------
-@router.post("/", response_model=Curriculum)
+@router.post("", response_model=Curriculum)
 def create_curriculum(
     curriculum: CurriculumCreate,
     db: Session = Depends(get_db),
@@ -108,7 +108,7 @@ def create_curriculum(
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("/", response_model=List[Curriculum])
+@router.get("", response_model=List[Curriculum])
 def get_curriculums(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)

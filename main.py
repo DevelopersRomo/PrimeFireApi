@@ -181,7 +181,7 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 origins = [
-    "https://primefireapi-dfe5fac8h6ajcxee.canadacentral-01.azurewebsites.net", 
+    "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net", 
     "http://localhost:4200",
 ]
 

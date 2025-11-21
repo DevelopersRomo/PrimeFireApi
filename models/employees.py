@@ -4,6 +4,8 @@ from datetime import datetime
 
 if TYPE_CHECKING:
     from models.countries import Countries
+    from models.tickets import Tickets
+    from models.hardware_inventory import HardwareInventory
     from models.modules import Modules
 
 class EmployeeRoles(SQLModel, table=True):
@@ -80,3 +82,6 @@ class Employees(SQLModel, table=True):
         back_populates="assignee",
         sa_relationship_kwargs={"foreign_keys": "Tickets.AssignedTo"}
     )
+    
+    #Relationships with Hardware Inventory
+    hardware_devices: List["HardwareInventory"] = Relationship(back_populates="employee")

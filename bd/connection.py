@@ -45,6 +45,7 @@ from models.countries import Countries
 from models.curriculums import Curriculums
 from models.modules import Modules, RoleModules
 from models.ticket_messages import TicketMessages, TicketAttachments
+from models.hardware_inventory import HardwareInventory
 
 # Function to create tables
 def create_db_and_tables():

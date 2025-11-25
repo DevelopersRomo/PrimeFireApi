@@ -16,4 +16,5 @@ class Jobs(SQLModel, table=True):
     Status: str = Field(default="active", max_length=20)
     PostedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     EmployeeId: Optional[int] = None
+    CountryId: Optional[int] = Field(default=None, foreign_key="dbo.Countries.CountryId")
 

@@ -104,6 +104,8 @@ except Exception as e:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load OpenID Connect configuration and start background tasks on startup."""
+    import asyncio
+    
     # Load Azure AD configuration
     try:
         await AZURE_AUTH_SCHEME.openid_config.load_config()
@@ -111,20 +113,36 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Could not load Azure AD configuration: {e}")
     
-    # Import and run sync scheduler
+    # Store background task reference for cleanup
+    sync_task = None
+    
+    # Import and run sync scheduler in background
     if settings.ENABLE_AUTO_SYNC:
         try:
             from core.background_tasks import sync_scheduler
             
-            # OPTION 1: Sync only on startup (recommended)
-            print("🔄 Running initial employee sync from Microsoft 365...")
-            await sync_scheduler.sync_on_startup()
+            # Run sync in background without blocking startup
+            print("🔄 Starting initial employee sync from Microsoft 365 in background...")
+            
+            async def run_startup_sync():
+                """Run sync in background task"""
+                try:
+                    await sync_scheduler.sync_on_startup()
+                except asyncio.CancelledError:
+                    # Task was cancelled during shutdown - this is normal
+                    print("🛑 Startup sync task cancelled")
+                    raise  # Re-raise to properly handle cancellation
+                except Exception as e:
+                    print(f"⚠️ Warning: Background sync failed: {e}")
+            
+            # Create background task - doesn't block startup
+            sync_task = asyncio.create_task(run_startup_sync())
             
             # OPTION 2: Start periodic sync (uncomment to enable continuous syncing)
             # await sync_scheduler.start_periodic_sync(interval_hours=settings.SYNC_INTERVAL_HOURS)
             
         except Exception as e:
-            print(f"⚠️ Warning: Could not run employee sync: {e}")
+            print(f"⚠️ Warning: Could not start employee sync: {e}")
             print("   (API will continue running without automatic sync)")
     else:
         print("ℹ️ Auto-sync disabled (ENABLE_AUTO_SYNC=False)")
@@ -132,11 +150,24 @@ async def lifespan(app: FastAPI):
     yield
     
     # Cleanup on shutdown
+    if sync_task:
+        if not sync_task.done():
+            sync_task.cancel()
+            try:
+                await asyncio.wait_for(sync_task, timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                # Task was cancelled or timed out - this is expected during shutdown
+                pass
+            except Exception as e:
+                # Log but don't fail shutdown
+                print(f"⚠️ Warning during sync task cleanup: {e}")
+    
     try:
         from core.background_tasks import sync_scheduler
         await sync_scheduler.stop_periodic_sync()
-    except:
-        pass
+    except Exception as e:
+        # Don't fail shutdown if cleanup fails
+        print(f"⚠️ Warning during sync scheduler cleanup: {e}")
 
 app = FastAPI(
     title="PrimeFire API",

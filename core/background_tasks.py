@@ -56,7 +56,7 @@ def normalize_country_to_code(country_name: str) -> Optional[str]:
 
     return country_map.get(country_name)
 
-async def get_or_create_country_id(db: Session, country_input: str) -> tuple[Optional[int], bool]:
+def get_or_create_country_id(db: Session, country_input: str) -> tuple[Optional[int], bool]:
     """
     Get CountryId for a country name/code, creating it if it doesn't exist.
     Always stores standardized ISO codes.
@@ -165,7 +165,7 @@ class EmployeeSyncScheduler:
 
                         # Get country from Graph user data
                         graph_country = ms_user.get("country")
-                        country_id, country_created = await get_or_create_country_id(db, graph_country) if graph_country else (None, False)
+                        country_id, country_created = get_or_create_country_id(db, graph_country) if graph_country else (None, False)
 
                         if country_created:
                             stats["countries_created"] += 1
@@ -282,6 +282,9 @@ class EmployeeSyncScheduler:
             stats = await self.sync_employees_from_microsoft()
             logger.info(f"✅ Startup sync completed: {stats}")
             return stats
+        except asyncio.CancelledError:
+            logger.info("🛑 Startup sync cancelled")
+            raise  # Re-raise to properly handle cancellation
         except Exception as e:
             logger.error(f"❌ Startup sync failed: {e}")
             # Don't fail the application if sync fails

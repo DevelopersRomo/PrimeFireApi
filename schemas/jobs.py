@@ -13,6 +13,7 @@ class JobCreate(SQLModel):
     SalaryMax: Optional[float] = None
     Status: str = "active"
     EmployeeId: Optional[int] = None
+    Country: Optional[str] = None  # ISO2 code like "US", "PR", "DO"
 
 # Schema for updating jobs
 class JobUpdate(SQLModel):
@@ -23,8 +24,22 @@ class JobUpdate(SQLModel):
     SalaryMin: Optional[float] = None
     SalaryMax: Optional[float] = None
     Status: Optional[str] = None
+    Country: Optional[str] = None  # ISO2 code like "US", "PR", "DO"
 
-# Schema for response (all fields)
-class Job(Jobs):
-    pass
+# Schema for response (all fields with Country ISO2 instead of CountryId)
+class Job(SQLModel):
+    JobId: Optional[int] = None
+    Title: str
+    Description: Optional[str] = None
+    Requirements: Optional[str] = None
+    Location: Optional[str] = None
+    SalaryMin: Optional[float] = None
+    SalaryMax: Optional[float] = None
+    Status: str
+    PostedAt: datetime
+    EmployeeId: Optional[int] = None
+    Country: Optional[str] = None  # ISO2 code instead of CountryId
+    
+    class Config:
+        from_attributes = True
 

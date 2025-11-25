@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import List
+from datetime import datetime
 
 from api.dependencies import require_authentication, get_current_employee_with_permissions
 from bd.dependencies import get_db
@@ -86,7 +87,7 @@ async def get_all_permissions(
                 CanExport=role_module.CanExport,
                 AdminActions=role_module.AdminActions,
                 OtherActions=role_module.OtherActions,
-                AssignedAt=role_module.AssignedAt,
+                AssignedAt=role_module.AssignedAt or datetime.utcnow(),
                 role_name=role.RoleName,
                 module_name=module.ModuleName,
                 module_key=module.ModuleKey
@@ -131,7 +132,7 @@ async def get_role_permissions(
                 CanExport=role_module.CanExport,
                 AdminActions=role_module.AdminActions,
                 OtherActions=role_module.OtherActions,
-                AssignedAt=role_module.AssignedAt,
+                AssignedAt=role_module.AssignedAt or datetime.utcnow(),
                 role_name=role.RoleName,
                 module_name=module.ModuleName,
                 module_key=module.ModuleKey
@@ -180,7 +181,7 @@ async def get_module_permissions(
                 CanExport=role_module.CanExport,
                 AdminActions=role_module.AdminActions,
                 OtherActions=role_module.OtherActions,
-                AssignedAt=role_module.AssignedAt,
+                AssignedAt=role_module.AssignedAt or datetime.utcnow(),
                 role_name=role.RoleName,
                 module_name=module.ModuleName,
                 module_key=module.ModuleKey

@@ -62,7 +62,7 @@ class PermissionUpdate(BaseModel):
     OtherActions: Optional[bool] = None
 
 class Permission(PermissionBase):
-    AssignedAt: datetime
+    AssignedAt: Optional[datetime] = None
 
     class Config:
         from_attributes = True

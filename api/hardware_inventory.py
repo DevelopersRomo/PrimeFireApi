@@ -12,7 +12,7 @@ router = APIRouter()
 # ----------------------------
 # 📌 CREATE
 # ----------------------------
-@router.post("/", response_model=HardwareInventoryRead)
+@router.post("", response_model=HardwareInventoryRead)
 def create_hardware(
     hardware: HardwareInventoryCreate,
     db: Session = Depends(get_db),
@@ -28,7 +28,7 @@ def create_hardware(
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("/", response_model=List[HardwareInventoryRead])
+@router.get("", response_model=List[HardwareInventoryRead])
 def get_hardware_list(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)

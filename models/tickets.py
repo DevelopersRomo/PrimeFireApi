@@ -21,12 +21,16 @@ class TicketPriority(str, enum.Enum):
     URGENT = "urgent"
 
 class TicketSLA(str, enum.Enum):
+    HOURS_1 = "1h"
+    HOURS_4 = "4h"
+    HOURS_8 = "8h"
     HOURS_12 = "12h"
     HOURS_24 = "24h"
     HOURS_48 = "48h"
     WEEKS_1 = "1w"
     WEEKS_2 = "2w"
     WEEKS_4 = "4w"
+    MONTH_1 = "1m"
     
     def __str__(self):
         return self.value

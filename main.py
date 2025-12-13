@@ -92,6 +92,13 @@ except Exception as e:
     print(f"Warning: Hardware inventory router not available: {e}")
     hardware_inventory_available = False
 
+try:
+    from api.time_off import router as time_off_router
+    time_off_available = True
+except Exception as e:
+    print(f"Warning: Time off router not available: {e}")
+    time_off_available = False
+
 # Import database connection
 try:
     from bd.connection import create_db_and_tables
@@ -269,6 +276,9 @@ if ticket_messages_available:
 
 if ticket_attachments_available:
     app.include_router(ticket_attachments_router, tags=["ticket_attachments"])
+
+if time_off_available:
+    app.include_router(time_off_router, tags=["time_off"])
 
 @app.get("/")
 async def root():

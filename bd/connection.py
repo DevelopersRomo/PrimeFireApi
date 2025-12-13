@@ -16,6 +16,7 @@ from models.jobs import Jobs
 from models.licenses import Licenses
 from models.modules import Modules, RoleModules
 from models.ticket_messages import TicketMessages, TicketAttachments
+from models.time_off import Department, Holiday, TimeOffBalance, TimeOffRequest
 
 # Load environment variables
 load_dotenv()
@@ -95,7 +96,14 @@ else:
             f"driver={quoted_driver}&trusted_connection=yes&Connection Timeout=30"
         )
 
-engine = create_engine(database_url, echo=echo)
+# Configure engine options based on driver
+engine_kwargs = {"echo": echo}
+
+# Old SQL Server driver doesn't support OUTPUT clause for returning identity values
+if is_old_driver:
+    engine_kwargs["implicit_returning"] = False
+
+engine = create_engine(database_url, **engine_kwargs)
 
 # Create the session
 SessionLocal = sessionmaker(bind=engine, class_=Session)

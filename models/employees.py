@@ -6,7 +6,8 @@ if TYPE_CHECKING:
     from models.countries import Countries
     from models.tickets import Tickets
     from models.hardware_inventory import HardwareInventory
-    from models.modules import Modules
+    from models.licenses import Licenses
+   
 
 class EmployeeRoles(SQLModel, table=True):
     __tablename__ = "EmployeeRoles"
@@ -83,5 +84,10 @@ class Employees(SQLModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "Tickets.AssignedTo"}
     )
     
+    # Relationships with Licenses
+    Licenses: List["Licenses"] = Relationship(back_populates="Employee")
+    
     #Relationships with Hardware Inventory
     hardware_devices: List["HardwareInventory"] = Relationship(back_populates="employee")
+    
+    

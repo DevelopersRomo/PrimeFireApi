@@ -5,7 +5,7 @@ from typing import List
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
 from models.licenses import Licenses
-from schemas.licenses import License, LicenseCreate
+from schemas.licenses import License, LicenseCreate, LicenseRead
 
 router = APIRouter()
 
@@ -27,12 +27,13 @@ def create_license(
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("", response_model=List[License])
+@router.get("", response_model=List[LicenseRead])
 def get_licenses(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)
 ):
-    return db.exec(select(Licenses)).all()
+    statement = select(Licenses)
+    return db.exec(statement).all()
 
 # ----------------------------
 # 📌 READ ONE

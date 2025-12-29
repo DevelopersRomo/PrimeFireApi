@@ -2,6 +2,8 @@ from datetime import datetime, date
 from typing import Optional
 from pydantic import BaseModel
 
+from schemas.employees import EmployeeRead
+
 
 class HardwareInventoryBase(BaseModel):
     SerialNumber: str
@@ -33,6 +35,7 @@ class HardwareInventoryUpdate(HardwareInventoryBase):
 
 class HardwareInventoryRead(HardwareInventoryBase):
     HardwareID: int
+    Employee: Optional[EmployeeRead] 
     CreatedAt: datetime
     UpdatedAt: Optional[datetime]
 

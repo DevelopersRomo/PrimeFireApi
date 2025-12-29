@@ -29,7 +29,6 @@ class HardwareInventory(SQLModel, table=True):
     WarrantyStartDate: Optional[date] = Field(default=None)
     WarrantyEndDate: Optional[date] = Field(default=None)
     PurchaseDate: Optional[date] = Field(default=None)
-    EmployeeId: Optional[int] = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
     Location: Optional[str] = Field(default=None, max_length=100)
     Status: Optional[str] = Field(default="Active", max_length=20)
     Notes: Optional[str] = Field(default=None, max_length=255)
@@ -37,4 +36,9 @@ class HardwareInventory(SQLModel, table=True):
     UpdatedAt: Optional[datetime] = Field(default=None)
 
     # Relationships
-    employee: Optional["Employees"] = Relationship(back_populates="hardware_devices")
+    EmployeeId: Optional[int] = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
+    
+    Employee: Optional["Employees"] = Relationship(
+    back_populates="hardware_inventories"
+    )
+

@@ -74,3 +74,13 @@ class Employee(SQLModel):
     # Computed fields
     country_name: Optional[str] = None
     roles: List[EmployeeRole] = []
+
+
+   #EmployeeRead
+class EmployeeRead(SQLModel):
+    EmployeeId: int
+    FirstName: Optional[str]
+    LastName: Optional[str]
+    DisplayName: Optional[str]
+    Department: Optional[str]
+    Email: Optional[str]

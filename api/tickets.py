@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlmodel import Session, select, or_, and_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
@@ -9,6 +9,12 @@ from bd.dependencies import get_db
 from models.tickets import Tickets, TicketStatus, TicketPriority, TicketSLA
 from models.employees import Employees
 from schemas.tickets import TicketCreate, TicketUpdate, Ticket, TicketFilters, TicketEmployee
+from services.notifications.notifications import (
+    notify_ticket_created,
+    send_ticket_assigned_notification,
+)
+from services.notifications.schemas import TicketNotificationData
+from core.config import settings
 
 router = APIRouter()
 
@@ -133,6 +139,7 @@ def get_ticket(
 @router.post("", response_model=Ticket)
 def create_ticket(
     ticket: TicketCreate,
+    background_tasks: BackgroundTasks,
     current_employee: Employees = Depends(get_current_employee),
     db: Session = Depends(get_db)
 ):
@@ -172,6 +179,23 @@ def create_ticket(
         .filter(Tickets.TicketId == db_ticket.TicketId)
     ).first()
 
+    # Send notification if ticket has assignee and assignee is different from creator
+    if db_ticket.AssignedTo and db_ticket.assignee and db_ticket.AssignedTo != current_employee.EmployeeId:
+        background_tasks.add_task(
+            notify_ticket_created,
+            ticket_id=db_ticket.TicketId,
+            title=db_ticket.Title,
+            description=db_ticket.Description,
+            status=db_ticket.Status.value,
+            priority=db_ticket.Priority.value,
+            created_by_name=db_ticket.creator.DisplayName or f"{db_ticket.creator.FirstName} {db_ticket.creator.LastName}",
+            created_by_email=db_ticket.creator.Email or "",
+            assigned_to_name=db_ticket.assignee.DisplayName or f"{db_ticket.assignee.FirstName} {db_ticket.assignee.LastName}",
+            assigned_to_email=db_ticket.assignee.Email or "",
+            action_url=f"{settings.APP_URL}/tickets/{db_ticket.TicketId}",
+            notify_assignee=True,
+        )
+
     return ticket_to_schema(db_ticket)
 
 # ----------------------------
@@ -181,6 +205,7 @@ def create_ticket(
 async def update_ticket(
     ticket_id: int,
     ticket_update: TicketUpdate,
+    background_tasks: BackgroundTasks,
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db)
 ):
@@ -211,6 +236,10 @@ async def update_ticket(
             detail="You can only update tickets you created, are assigned to, or have admin permissions"
         )
 
+    # Track if AssignedTo changed
+    old_assigned_to = db_ticket.AssignedTo
+    old_assigned_to_email = db_ticket.assignee.Email if db_ticket.assignee else None
+
     # Validate assigned employee exists if being updated
     if ticket_update.AssignedTo is not None:
         if ticket_update.AssignedTo:  # If assigning to someone
@@ -230,6 +259,37 @@ async def update_ticket(
 
     db.commit()
     db.refresh(db_ticket)
+
+    # Reload relationships after update
+    db_ticket = db.exec(
+        select(Tickets)
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee)
+        )
+        .filter(Tickets.TicketId == ticket_id)
+    ).first()
+
+    # Send notification if AssignedTo changed and new assignee exists and is different from current user
+    if ticket_update.AssignedTo is not None and old_assigned_to != db_ticket.AssignedTo:
+        if db_ticket.AssignedTo and db_ticket.assignee and db_ticket.AssignedTo != current_employee_id:
+            notification_data = TicketNotificationData(
+                ticket_id=db_ticket.TicketId,
+                title=db_ticket.Title,
+                description=db_ticket.Description,
+                status=db_ticket.Status.value,
+                priority=db_ticket.Priority.value,
+                created_by_name=db_ticket.creator.DisplayName or f"{db_ticket.creator.FirstName} {db_ticket.creator.LastName}",
+                created_by_email=db_ticket.creator.Email or "",
+                assigned_to_name=db_ticket.assignee.DisplayName or f"{db_ticket.assignee.FirstName} {db_ticket.assignee.LastName}",
+                assigned_to_email=db_ticket.assignee.Email or "",
+                action_url=f"{settings.APP_URL}/tickets/{db_ticket.TicketId}",
+            )
+            background_tasks.add_task(
+                send_ticket_assigned_notification,
+                notification_data=notification_data,
+                to_email=db_ticket.assignee.Email or "",
+            )
 
     return ticket_to_schema(db_ticket)
 

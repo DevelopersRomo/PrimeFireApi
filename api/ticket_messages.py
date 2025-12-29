@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from typing import List
 from datetime import datetime, timezone
@@ -6,9 +6,13 @@ from datetime import datetime, timezone
 from bd.dependencies import get_db
 from api.dependencies import get_current_employee, require_authentication, get_current_employee_with_permissions
 from models.ticket_messages import TicketMessages
+from models.tickets import Tickets
 from models.employees import Employees
 from schemas.ticket_messages import TicketMessageCreate, TicketMessageUpdate, TicketMessage
 from schemas.employees import Employee as EmployeeSchema
+from services.notifications.notifications import notify_ticket_message
+from core.config import settings
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -55,7 +59,26 @@ def get_message(message_id: int, db: Session = Depends(get_db), _auth=Depends(re
 
 
 @router.post("/tickets/{ticket_id}/messages", response_model=TicketMessage)
-def create_message(ticket_id: int, payload: TicketMessageCreate, current_employee: Employees = Depends(get_current_employee), db: Session = Depends(get_db)):
+def create_message(
+    ticket_id: int,
+    payload: TicketMessageCreate,
+    background_tasks: BackgroundTasks,
+    current_employee: Employees = Depends(get_current_employee),
+    db: Session = Depends(get_db)
+):
+    # Get ticket with relationships
+    ticket = db.exec(
+        select(Tickets)
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee)
+        )
+        .filter(Tickets.TicketId == ticket_id)
+    ).first()
+    
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
     db_msg = TicketMessages(
         TicketId=ticket_id,
         UserId=current_employee.EmployeeId,
@@ -65,6 +88,25 @@ def create_message(ticket_id: int, payload: TicketMessageCreate, current_employe
     db.add(db_msg)
     db.commit()
     db.refresh(db_msg)
+    
+    # Send notification
+    if ticket.creator and ticket.creator.Email:
+        background_tasks.add_task(
+            notify_ticket_message,
+            ticket_id=ticket.TicketId,
+            ticket_title=ticket.Title,
+            message_id=db_msg.TicketMessageId,
+            message_text=payload.MessageTxt or "",
+            commenter_id=current_employee.EmployeeId,
+            commenter_name=current_employee.DisplayName or f"{current_employee.FirstName} {current_employee.LastName}",
+            commenter_email=current_employee.Email or "",
+            ticket_creator_id=ticket.CreatedBy,
+            ticket_creator_email=ticket.creator.Email,
+            ticket_assigned_to_id=ticket.AssignedTo,
+            ticket_assigned_to_email=ticket.assignee.Email if ticket.assignee else None,
+            action_url=f"{settings.APP_URL}/tickets/{ticket.TicketId}",
+        )
+    
     return message_to_schema(db_msg, db)
 
 

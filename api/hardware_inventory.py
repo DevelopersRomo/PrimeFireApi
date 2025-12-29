@@ -6,6 +6,7 @@ from api.dependencies import require_authentication
 from bd.dependencies import get_db
 from models.hardware_inventory import HardwareInventory
 from schemas.hardware_inventory import HardwareInventoryRead, HardwareInventoryCreate, HardwareInventoryUpdate
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -33,7 +34,11 @@ def get_hardware_list(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication)
 ):
-    return db.exec(select(HardwareInventory)).all()
+    statement = (
+        select(HardwareInventory)
+        .options(selectinload(HardwareInventory.Employee))
+    )
+    return db.exec(statement).all()
 
 
 # ----------------------------

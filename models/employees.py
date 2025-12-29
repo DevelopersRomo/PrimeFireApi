@@ -86,8 +86,10 @@ class Employees(SQLModel, table=True):
     
     # Relationships with Licenses
     Licenses: List["Licenses"] = Relationship(back_populates="Employee")
-    
-    #Relationships with Hardware Inventory
-    hardware_devices: List["HardwareInventory"] = Relationship(back_populates="employee")
+
+    # Relationships with Hardware Inventory
+    hardware_inventories: List["HardwareInventory"] = Relationship(
+        back_populates="Employee"
+    )
     
     

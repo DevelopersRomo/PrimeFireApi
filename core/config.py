@@ -94,6 +94,23 @@ class Settings(BaseSettings):
         description="Hours between automatic syncs (if periodic sync enabled)"
     )
 
+    # Notification settings
+    BOT_EMAIL: str = Field(
+        default="",
+        validation_alias="BOT_EMAIL",
+        description="Email address for bot to send notifications"
+    )
+    SUPPORT_EMAIL: str = Field(
+        default="info@primefire.us",
+        validation_alias="SUPPORT_EMAIL",
+        description="Support email address for notifications"
+    )
+    APP_URL: str = Field(
+        default="https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net",
+        validation_alias="APP_URL",
+        description="Application URL for notification links"
+    )
+
     @property
     def scope_name(self) -> str:
         """Returns the scope name."""

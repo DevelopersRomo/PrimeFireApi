@@ -99,6 +99,13 @@ except Exception as e:
     print(f"Warning: Time off router not available: {e}")
     time_off_available = False
 
+try:
+    from api.notifications import router as notifications_router
+    notifications_available = True
+except Exception as e:
+    print(f"Warning: Notifications router not available: {e}")
+    notifications_available = False
+
 # Import database connection
 try:
     from bd.connection import create_db_and_tables
@@ -279,6 +286,9 @@ if ticket_attachments_available:
 
 if time_off_available:
     app.include_router(time_off_router, tags=["time_off"])
+
+if notifications_available:
+    app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 
 @app.get("/")
 async def root():

@@ -227,13 +227,16 @@ async def send_time_off_notification(
         absence_type_display = format_absence_type(notification_data.absence_type)
         
         if action_type == "approved":
-            title = f"Time Off Request Approved - {absence_type_display}"
+            title = f"Time Off Request Approved - {absence_type_display.title()}"
             message_body = f"Your {absence_type_display.lower()} request has been approved."
         elif action_type == "rejected":
-            title = f"Time Off Request Rejected - {absence_type_display}"
+            title = f"Time Off Request Rejected - {absence_type_display.title()}"
             message_body = f"Your {absence_type_display.lower()} request has been rejected."
+        elif action_type == "submitted":
+            title = f"New Time Off Request - {absence_type_display.title()}"
+            message_body = f"A new {absence_type_display.lower()} request has been submitted for your review."
         else:
-            title = f"Time Off Request - {absence_type_display}"
+            title = f"Time Off Request - {absence_type_display.title()}"
             message_body = "Your time off request status has been updated."
 
         fields = [
@@ -629,6 +632,43 @@ async def notify_time_off_rejected(
         notification_data=notification_data,
         action_type="rejected",
         to_email=employee_email,
+    )
+
+
+async def notify_time_off_submitted(
+    request_id: int,
+    employee_id: int,
+    employee_name: str,
+    employee_email: str,
+    absence_type: str,
+    start_date: str,
+    end_date: str,
+    total_days: str,
+    to_email: str,
+    total_hours: Optional[str] = None,
+    reason: Optional[str] = None,
+    action_url: Optional[str] = None,
+) -> NotificationResponse:
+    """Helper function to send time off submitted notification (to manager)."""
+    notification_data = TimeOffNotificationData(
+        request_id=request_id,
+        employee_id=employee_id,
+        employee_name=employee_name,
+        employee_email=employee_email,
+        absence_type=absence_type,
+        start_date=start_date,
+        end_date=end_date,
+        total_days=total_days,
+        total_hours=total_hours,
+        reason=reason,
+        reviewed_by_name=employee_name,  # The requester "performed" the submission
+        reviewed_by_email=employee_email,
+        action_url=action_url,
+    )
+    return await send_time_off_notification(
+        notification_data=notification_data,
+        action_type="submitted",
+        to_email=to_email,
     )
 
 

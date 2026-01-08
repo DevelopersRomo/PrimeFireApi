@@ -4,12 +4,17 @@ from io import StringIO
 import csv
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status, BackgroundTasks
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
 from models.employees import Employees
+from services.notifications.notifications import (
+    notify_time_off_submitted,
+    notify_time_off_approved,
+    notify_time_off_rejected,
+)
 from models.time_off import (
     AbsenceTypeEnum,
     Department,
@@ -143,6 +148,7 @@ def get_request(
 @router.post("/requests", response_model=TimeOffRequestRead, status_code=status.HTTP_201_CREATED)
 def create_request(
     payload: TimeOffRequestCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
@@ -188,6 +194,26 @@ def create_request(
     db.add(time_off_request)
     db.commit()
     db.refresh(time_off_request)
+
+    # Determine recipient email (Manager or default)
+    manager_email = employee_exists.ManagerEmail
+    recipient_email = manager_email if manager_email else "info@primefire.us"
+
+    background_tasks.add_task(
+        notify_time_off_submitted,
+        request_id=time_off_request.RequestId,
+        employee_id=employee_exists.EmployeeId,
+        employee_name=employee_exists.DisplayName,
+        employee_email=employee_exists.Email,
+        absence_type=payload.AbsenceType.value,
+        start_date=payload.StartDate.strftime('%Y-%m-%d'),
+        end_date=payload.EndDate.strftime('%Y-%m-%d'),
+        total_days=_quantize(total_days),
+        to_email=recipient_email,
+        reason=payload.Reason,
+        # action_url=f"https://primefireapp.azurewebsites.net/time-off/requests/{time_off_request.RequestId}"
+    )
+
     return time_off_request
 
 
@@ -195,6 +221,7 @@ def create_request(
 def approve_request(
     request_id: int,
     review: RequestReview,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
@@ -225,6 +252,26 @@ def approve_request(
     db.add(request)
     db.commit()
     db.refresh(request)
+
+    # Notify requester
+    requester = db.exec(select(Employees).where(Employees.EmployeeId == request.EmployeeId)).first()
+    if requester and requester.Email:
+        background_tasks.add_task(
+            notify_time_off_approved,
+            request_id=request.RequestId,
+            employee_id=requester.EmployeeId,
+            employee_name=requester.DisplayName,
+            employee_email=requester.Email,
+            absence_type=request.AbsenceType,
+            start_date=request.StartDate,
+            end_date=request.EndDate,
+            total_days=request.TotalDays,
+            reason=request.Reason,
+            reviewed_by_name=current_employee.DisplayName,
+            reviewed_by_email=current_employee.Email,
+            review_notes=review.ReviewNotes,
+        )
+
     return request
 
 
@@ -232,6 +279,7 @@ def approve_request(
 def reject_request(
     request_id: int,
     review: RequestReview,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
@@ -261,6 +309,26 @@ def reject_request(
     db.add(request)
     db.commit()
     db.refresh(request)
+
+    # Notify requester
+    requester = db.exec(select(Employees).where(Employees.EmployeeId == request.EmployeeId)).first()
+    if requester and requester.Email:
+        background_tasks.add_task(
+            notify_time_off_rejected,
+            request_id=request.RequestId,
+            employee_id=requester.EmployeeId,
+            employee_name=requester.DisplayName,
+            employee_email=requester.Email,
+            absence_type=request.AbsenceType,
+            start_date=request.StartDate,
+            end_date=request.EndDate,
+            total_days=request.TotalDays,
+            reason=request.Reason,
+            reviewed_by_name=current_employee.DisplayName,
+            reviewed_by_email=current_employee.Email,
+            review_notes=review.ReviewNotes,
+        )
+
     return request
 
 

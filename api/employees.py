@@ -112,6 +112,8 @@ def employee_to_schema(db_employee: Employees) -> Employee:
         MobilePhone=db_employee.MobilePhone,
         OfficePhone=db_employee.OfficePhone,
         Anydesk=db_employee.Anydesk,
+        Manager=db_employee.Manager,
+        ManagerEmail=db_employee.ManagerEmail,
         StreetAddress=db_employee.StreetAddress,
         City=db_employee.City,
         State=db_employee.State,

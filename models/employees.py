@@ -48,6 +48,8 @@ class Employees(SQLModel, table=True):
     MobilePhone: Optional[str] = Field(default=None, max_length=20)
     OfficePhone: Optional[str] = Field(default=None, max_length=20)
     Anydesk: Optional[str] = Field(default=None, max_length=50)
+    Manager: Optional[str] = Field(default=None, max_length=100)
+    ManagerEmail: Optional[str] = Field(default=None, max_length=100)
     
     # Address fields
     StreetAddress: Optional[str] = Field(default=None, max_length=100)

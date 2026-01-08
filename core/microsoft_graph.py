@@ -79,7 +79,7 @@ class MicrosoftGraphClient:
     async def get_all_users(self) -> List[Dict[str, Any]]:
         """Get all users from Microsoft 365"""
         users = []
-        endpoint = "/users?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode"
+        endpoint = "/users?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode&$expand=manager($select=displayName,mail,userPrincipalName)"
         
         while endpoint:
             data = await self._make_request("GET", endpoint)
@@ -90,7 +90,7 @@ class MicrosoftGraphClient:
     
     async def get_user(self, user_id: str) -> Dict[str, Any]:
         """Get a single user by ID or userPrincipalName"""
-        endpoint = f"/users/{user_id}?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode"
+        endpoint = f"/users/{user_id}?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode&$expand=manager($select=displayName,mail,userPrincipalName)"
         return await self._make_request("GET", endpoint)
     
     async def update_user(self, user_id: str, user_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -137,6 +137,8 @@ class MicrosoftGraphClient:
             "Department": graph_user.get("department"),
             "Office": graph_user.get("officeLocation"),
             "Email": graph_user.get("mail") or graph_user.get("userPrincipalName"),
+            "Manager": graph_user.get("manager", {}).get("displayName") if graph_user.get("manager") else None,
+            "ManagerEmail": graph_user.get("manager", {}).get("mail") or graph_user.get("manager", {}).get("userPrincipalName") if graph_user.get("manager") else None,
             "MobilePhone": graph_user.get("mobilePhone"),
             "OfficePhone": office_phone,
             "StreetAddress": graph_user.get("streetAddress"),

@@ -41,8 +41,19 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
 
     # If file exists on disk (FilePath set), return the file directly
     if db_att.FilePath:
-        # FilePath is stored as relative path like 'tickets/{ticket_id}/...'
-        storage_path = Path("uploads") / Path(db_att.FilePath)
+        # Check if path in DB is absolute or relative
+        saved_path = Path(db_att.FilePath)
+        
+        # If path starts with uploads/ but UPLOAD_DIR is different, we might fail to find it if we just join.
+        # But if we assume db_att.FilePath is the full relative path from app root as stored previously:
+        storage_path = saved_path
+        
+        # If not absolute, try joining with current working directory or check if it exists as is
+        if not storage_path.is_absolute() and not storage_path.exists():
+             # Fallback: maybe it's relative to UPLOAD_DIR but stored as relative string?
+             # For now, rely on FilePath being what was returned by create_attachment
+             pass
+             
         if storage_path.exists():
             # Use original filename for Content-Disposition
             return FileResponse(path=str(storage_path), filename=db_att.FileName or storage_path.name, media_type=db_att.FileType or "application/octet-stream")
@@ -61,23 +72,24 @@ def create_attachment(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db)
 ):
-    # If an UploadFile is provided, save it to uploads/tickets/{ticket_id}/ and set FilePath
+    # If an UploadFile is provided, save it to UPLOAD_DIR/tickets/{ticket_id}/ and set FilePath
     rel_path = None
     final_file_name = file_name
     final_file_type = file_type
     if file is not None:
         # ensure directory exists
-        base_dir = Path("uploads") / "tickets" / str(ticket_id)
+        base_dir = Path(settings.UPLOAD_DIR) / "tickets" / str(ticket_id)
         base_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(file.filename).suffix
         unique = f"{uuid4().hex}{ext}"
-        storage_rel = Path("tickets") / str(ticket_id) / unique
-        storage_path = Path("uploads") / storage_rel
+        storage_path = base_dir / unique
+        
         # write file to disk
         with open(storage_path, "wb") as out:
             content = file.file.read()
             out.write(content)
-        rel_path = str(storage_rel).replace("\\", "/")
+        # Store the path that can be used to retrieve it later (relative to CWD or absolute)
+        rel_path = str(storage_path).replace("\\", "/")
         final_file_name = file.filename
         final_file_type = file.content_type
 

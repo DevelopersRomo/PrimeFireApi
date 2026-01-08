@@ -11,11 +11,12 @@ from bd.dependencies import get_db
 from models.curriculums import Curriculums
 from models.jobs import Jobs
 from schemas.curriculums import Curriculum, CurriculumCreate, CurriculumUpdate
+from core.config import settings
 
 router = APIRouter()
 
 # Directory to store Curriculums
-UPLOAD_DIR = Path("uploads/curriculums")
+UPLOAD_DIR = Path(settings.UPLOAD_DIR) / "curriculums"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 def save_upload_file(upload_file: UploadFile) -> str:
@@ -32,8 +33,8 @@ def save_upload_file(upload_file: UploadFile) -> str:
         content = upload_file.file.read()
         buffer.write(content)
 
-    # Return relative path (to store in DB)
-    return f"uploads/curriculums/{unique_filename}"
+    # Return path to store in DB
+    return str(file_path).replace("\\", "/")
 
 # ----------------------------
 # 📌 CREATE (with file)

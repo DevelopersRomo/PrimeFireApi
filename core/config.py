@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: list[str | AnyHttpUrl] = [
         "http://localhost:4200",
         "http://localhost:3000",
+        "http://localhost:4201",
     ]
 
     # Azure AD Authentication
@@ -109,6 +110,13 @@ class Settings(BaseSettings):
         default="https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net",
         validation_alias="APP_URL",
         description="Application URL for notification links"
+    )
+    
+    # File upload settings
+    UPLOAD_DIR: str = Field(
+        default="uploads",
+        validation_alias="UPLOAD_DIR",
+        description="Directory for uploaded files (use /home/uploads in Azure Linux)"
     )
 
     @property

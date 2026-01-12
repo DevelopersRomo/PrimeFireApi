@@ -17,6 +17,8 @@ from models.licenses import Licenses
 from models.modules import Modules, RoleModules
 from models.ticket_messages import TicketMessages, TicketAttachments
 from models.time_off import Department, Holiday, TimeOffBalance, TimeOffRequest
+from models.tenants import Tenants, TenantEmployees, TenantLogos
+from models.external_users import ExternalUsers
 
 # Load environment variables
 load_dotenv()

@@ -73,17 +73,20 @@ class Employees(SQLModel, table=True):
     AzureOid: Optional[str] = Field(default=None, max_length=100, unique=True)
     AzureUpn: Optional[str] = Field(default=None, max_length=100)
     
+    # Auth Fields
+    PasswordHash: Optional[str] = Field(default=None, max_length=255)
+
     # Sync tracking
     LastSyncedAt: Optional[datetime] = Field(default=None)
 
     # Relationships with Tickets
     created_tickets: List["Tickets"] = Relationship(
         back_populates="creator",
-        sa_relationship_kwargs={"foreign_keys": "Tickets.CreatedBy"}
+        sa_relationship_kwargs={"foreign_keys": "[Tickets.CreatedBy]"}
     )
     assigned_tickets: List["Tickets"] = Relationship(
         back_populates="assignee",
-        sa_relationship_kwargs={"foreign_keys": "Tickets.AssignedTo"}
+        sa_relationship_kwargs={"foreign_keys": "[Tickets.AssignedTo]"}
     )
     
     # Relationships with Licenses
@@ -93,5 +96,5 @@ class Employees(SQLModel, table=True):
     hardware_inventories: List["HardwareInventory"] = Relationship(
         back_populates="Employee"
     )
-    
+    tenant_employees: List["TenantEmployees"] = Relationship(back_populates="employee", link_model=None)
     

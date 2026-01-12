@@ -1,2 +1,4 @@
-#!/bin/bash
-gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 main:app
+#!/bin/sh
+
+# Azure Oryx ya configura el entorno virtual, no activar manualmente
+python -m uvicorn main:app --host 0.0.0.0 --port 8000

@@ -106,6 +106,20 @@ except Exception as e:
     print(f"Warning: Notifications router not available: {e}")
     notifications_available = False
 
+try:
+    from api.tenants import router as tenants_router
+    tenants_available = True
+except Exception as e:
+    print(f"Warning: Tenants router not available: {e}")
+    tenants_available = False
+
+try:
+    from api.auth import router as auth_router
+    auth_available = True
+except Exception as e:
+    print(f"Warning: Auth router not available: {e}")
+    auth_available = False
+
 # Import database connection
 try:
     from bd.connection import create_db_and_tables
@@ -193,6 +207,11 @@ app = FastAPI(
         "clientId": settings.BACKEND_CLIENT_ID,
         "scopes": settings.scope_name,  # Solo solicita el scope de la API
     },
+    swagger_ui_parameters={
+        "docExpansion": "none",
+        "defaultModelsExpandDepth": -1,
+        "defaultModelExpandDepth": 0,
+    },
 )
 
 # Configure OAuth2 security scheme for Swagger UI
@@ -221,11 +240,20 @@ def custom_openapi():
                     "scopes": settings.scopes
                 }
             }
+        },
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your token directly (from /auth/token or Azure AD)"
         }
     }
 
     # Apply security globally - Swagger UI will automatically include tokens for these endpoints
-    openapi_schema["security"] = [{"AzureAD_PKCE_single_tenant": list(settings.scopes.keys())}]
+    openapi_schema["security"] = [
+        {"AzureAD_PKCE_single_tenant": list(settings.scopes.keys())},
+        {"BearerAuth": []}
+    ]
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
@@ -235,6 +263,7 @@ app.openapi = custom_openapi
 origins = [
     "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net", 
     "http://localhost:4200",
+    "http://localhost:4201",
 ]
 
 # CORS middleware
@@ -289,6 +318,11 @@ if time_off_available:
 
 if notifications_available:
     app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
+if tenants_available:
+    app.include_router(tenants_router, prefix="/tenants", tags=["tenants"])
+
+if auth_available:
+    app.include_router(auth_router, prefix="/auth", tags=["authentication"])
 
 @app.get("/")
 async def root():

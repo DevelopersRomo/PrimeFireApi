@@ -17,6 +17,7 @@ class Licenses(SQLModel, table=True):
     Key: Optional[str] = None
     Account: Optional[str] = None
     Password: Optional[str] = None
+    Notes: Optional[str] = None
 
     EmployeeId: Optional[int] = Field(
         foreign_key="dbo.Employees.EmployeeId"

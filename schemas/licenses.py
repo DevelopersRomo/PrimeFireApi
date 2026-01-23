@@ -13,6 +13,7 @@ class LicenseCreate(SQLModel):
     Key: str
     Account: str
     Password: str
+    Notes: Optional[str] = None
     EmployeeId: int
 
 class LicenseUpdate(SQLModel):
@@ -23,6 +24,7 @@ class LicenseUpdate(SQLModel):
     Key: Optional[str] = None
     Account: Optional[str] = None
     Password: Optional[str] = None
+    Notes: Optional[str] = None
     EmployeeId: Optional[int] = None
     
 class LicenseRead(SQLModel):
@@ -34,6 +36,7 @@ class LicenseRead(SQLModel):
     Key: Optional[str]
     Account: Optional[str]
     Password: Optional[str]
+    Notes: Optional[str]
     EmployeeId: Optional[int]
     Employee: Optional[EmployeeRead] 
 class License(LicenseRead):

@@ -84,10 +84,15 @@ class Settings(BaseSettings):
     )
     
     # Employee sync settings
+    SYNC_EMPLOYEES_PRIMEFIRE: bool = Field(
+        default=True,
+        validation_alias="SYNC_EMPLOYEES_PRIMEFIRE",
+        description="Enable initial employee sync from Microsoft 365 in background"
+    )
     ENABLE_AUTO_SYNC: bool = Field(
         default=True,
         validation_alias="ENABLE_AUTO_SYNC",
-        description="Enable automatic employee sync on startup"
+        description="Enable automatic employee sync on startup (Legacy)"
     )
     SYNC_INTERVAL_HOURS: int = Field(
         default=24,

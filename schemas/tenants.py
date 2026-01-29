@@ -7,9 +7,16 @@ class TenantCreate(SQLModel):
     DbConnectionKey: str
     Description: Optional[str] = None
 
+class TenantUpdate(SQLModel):
+    Name: Optional[str] = None
+    DbConnectionKey: Optional[str] = None
+    Description: Optional[str] = None
+    IsActive: Optional[bool] = None
+
 class TenantRead(SQLModel):
     TenantId: int
     Name: str
+    DbConnectionKey: str
     Description: Optional[str]
     IsActive: bool
     CreatedAt: datetime
@@ -24,23 +31,21 @@ class TenantEmployeeRegister(SQLModel):
 
 class TenantEmployeeRead(SQLModel):
     Id: int
-    TenantId: int
-    EmployeeId: int
-    Status: str
-    IsDefault: bool
-    TenantName: str
+    Email: str
+    TenantId: Optional[int] = None
+    TenantName: Optional[str] = None
+    CreatedAt: datetime
 
 class ApprovalRequest(SQLModel):
-    ExternalUserId: int  # ID del ExternalUser en BD Principal
+    TenantEmployeeId: int  # ID del TenantEmployee en BD Principal
     TenantId: int  # ID del Tenant a asignar
-    Status: str = "Active"  # Active o Rejected
 
 class TenantApprovalRequest(SQLModel):
     TenantId: int
     Status: str = "Active"
 
-class ExternalUserRead(SQLModel):
-    ExternalUserId: int
+class TenantEmployeePendingRead(SQLModel):
+    Id: int
     Email: str
     TenantId: Optional[int] = None
     TenantName: Optional[str] = None
@@ -56,6 +61,7 @@ class TenantLogoCreate(SQLModel):
     PrimaryColor: Optional[str] = None
     SecondaryColor: Optional[str] = None
     TertiaryColor: Optional[str] = None
+    FavIcon: Optional[str] = None
 
 class TenantLogoUpdate(SQLModel):
     Title: Optional[str] = None
@@ -66,6 +72,7 @@ class TenantLogoUpdate(SQLModel):
     PrimaryColor: Optional[str] = None
     SecondaryColor: Optional[str] = None
     TertiaryColor: Optional[str] = None
+    FavIcon: Optional[str] = None
 
 class TenantLogoRead(SQLModel):
     LogoId: int
@@ -78,5 +85,6 @@ class TenantLogoRead(SQLModel):
     PrimaryColor: Optional[str] = None
     SecondaryColor: Optional[str] = None
     TertiaryColor: Optional[str] = None
+    FavIcon: Optional[str] = None
     CreatedAt: datetime
     UpdatedAt: Optional[datetime] = None

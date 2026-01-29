@@ -1,3 +1,4 @@
+import argparse
 import sys
 import os
 from datetime import datetime
@@ -121,7 +122,7 @@ def topological_sort_tables(tables, dependencies):
     
     return sorted_tables
 
-def generate_complete_backup():
+def generate_complete_backup(target_table=None):
     """Generate complete backup of entire database with ALL data"""
     
     output_file = f"bd/sql/complete_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql"
@@ -134,8 +135,14 @@ def generate_complete_backup():
         f.write("/****** This script contains ALL table structures and ALL data ******/\n\n")
         
         with SessionLocal() as session:
-            # Get all tables
-            tables = get_all_tables(session)
+            # Get all tables or a single table
+            all_tables = get_all_tables(session)
+            if target_table:
+                if target_table not in all_tables:
+                    raise ValueError(f"Table '{target_table}' not found in database")
+                tables = [target_table]
+            else:
+                tables = all_tables
             print(f"Found {len(tables)} tables")
             
             # Get dependencies for proper insert order
@@ -273,10 +280,13 @@ def generate_complete_backup():
             f.write("-- FOREIGN KEYS\n")
             f.write("-- =============================================\n\n")
             
+            tables_set = set(tables)
             for table in tables:
                 fks = get_foreign_keys(session, table)
                 for fk in fks:
                     fk_name, parent_table, parent_col, ref_table, ref_col, delete_action, update_action = fk
+                    if parent_table not in tables_set or ref_table not in tables_set:
+                        continue
                     
                     f.write(f"ALTER TABLE [dbo].[{parent_table}] WITH CHECK ADD CONSTRAINT [{fk_name}]\n")
                     f.write(f"FOREIGN KEY([{parent_col}])\n")
@@ -314,4 +324,7 @@ def generate_complete_backup():
     print(f"   - {len(tables_with_data)} tables with data")
 
 if __name__ == "__main__":
-    generate_complete_backup()
+    parser = argparse.ArgumentParser(description="Generate complete database backup")
+    parser.add_argument("--table", help="Backup a single table only")
+    args = parser.parse_args()
+    generate_complete_backup(target_table=args.table)

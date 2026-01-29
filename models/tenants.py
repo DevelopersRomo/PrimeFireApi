@@ -3,7 +3,6 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship
 
 # Forward reference
-from models.employees import Employees
 
 class Tenants(SQLModel, table=True):
     __tablename__ = "Tenants"
@@ -18,7 +17,6 @@ class Tenants(SQLModel, table=True):
 
     # Relationships
     tenant_employees: List["TenantEmployees"] = Relationship(back_populates="tenant")
-    external_users: List["ExternalUsers"] = Relationship(back_populates="tenant")
     logos: List["TenantLogos"] = Relationship(back_populates="tenant")
 
 
@@ -27,14 +25,12 @@ class TenantEmployees(SQLModel, table=True):
     __table_args__ = {'schema': 'dbo'}
 
     Id: Optional[int] = Field(default=None, primary_key=True)
-    TenantId: int = Field(foreign_key="dbo.Tenants.TenantId")
-    EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId")
-    Status: str = Field(default="Pending", max_length=20) # Pending, Active, Rejected
-    IsDefault: bool = Field(default=False)
+    Email: Optional[str] = Field(default=None, max_length=100, unique=True)
+    PasswordHash: Optional[str] = Field(default=None, max_length=255)
+    TenantId: Optional[int] = Field(default=None, foreign_key="dbo.Tenants.TenantId")
     CreatedAt: datetime = Field(default_factory=datetime.now)
 
     tenant: Tenants = Relationship(back_populates="tenant_employees")
-    employee: Employees = Relationship(back_populates="tenant_employees")
 
 
 class TenantLogos(SQLModel, table=True):
@@ -51,6 +47,7 @@ class TenantLogos(SQLModel, table=True):
     PrimaryColor: Optional[str] = Field(default=None, max_length=50)
     SecondaryColor: Optional[str] = Field(default=None, max_length=50)
     TertiaryColor: Optional[str] = Field(default=None, max_length=50)
+    FavIcon: Optional[str] = Field(default=None, max_length=500)
     CreatedAt: datetime = Field(default_factory=datetime.now)
     UpdatedAt: Optional[datetime] = Field(default=None)
 

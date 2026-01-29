@@ -10,8 +10,7 @@ from fastapi import Request as FastAPIRequest
 from core.config import AZURE_AUTH_SCHEME, settings
 from bd.dependencies import get_db
 from models.employees import Employees
-from models.external_users import ExternalUsers
-from models.tenants import Tenants
+from models.tenants import Tenants, TenantEmployees
 from bd.multitenancy import ConnectionManager
 
 # Re-use secret from auth module or config
@@ -142,8 +141,8 @@ async def get_current_employee(
     # Usuario interno - buscar en BD principal
     if token_data.get("type") == "internal":
         email = token_data.get("sub")
-        # Verificar si es usuario externo pendiente (sin tenant_key pero con email en ExternalUsers)
-        external_user = db.exec(select(ExternalUsers).where(ExternalUsers.Email == email)).first()
+        # Check pending external user (no tenant_key, present in TenantEmployees)
+        external_user = db.exec(select(TenantEmployees).where(TenantEmployees.Email == email)).first()
         if external_user:
             # Usuario externo sin tenant asignado o pendiente
             if not external_user.TenantId:
@@ -160,9 +159,16 @@ async def get_current_employee(
         
         employee = db.exec(select(Employees).where(Employees.Email == email)).first()
     else:
-        # Azure AD
+        # Azure AD - Buscar en BD de Sincronización (PrimeFire)
+        from bd.connection import SessionSync
         azure_oid = token_data.get("oid")
-        employee = db.exec(select(Employees).where(Employees.AzureOid == azure_oid)).first()
+        
+        # Usar una sesión separada para la BD de sincronización
+        with SessionSync() as sync_db:
+            employee = sync_db.exec(select(Employees).where(Employees.AzureOid == azure_oid)).first()
+            if employee:
+                # Desvincular el objeto de la sesión para poder usarlo fuera del bloque with
+                sync_db.expunge(employee)
 
     if not employee:
         raise HTTPException(
@@ -185,6 +191,7 @@ async def require_authentication(
 
 async def get_current_employee_with_permissions(
     current_employee: Employees = Depends(get_current_employee),
+    token_data: dict = Depends(simple_token_validator),
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -193,87 +200,103 @@ async def get_current_employee_with_permissions(
     """
     from models.modules import RoleModules, Modules
     from models.employees import EmployeeRoles, Roles
+    from bd.connection import SessionSync
+
+    # Determinar qué base de datos usar
+    # Si es usuario Azure AD (tiene 'oid'), usar SessionSync (PrimeFire)
+    # Si es interno, usar db (DevRomo/Tenant)
+    is_azure_user = token_data and "oid" in token_data
     
-    # Get employee's roles
-    employee_roles_query = select(EmployeeRoles, Roles).join(
-        Roles, EmployeeRoles.RoleId == Roles.RoleId
-    ).where(EmployeeRoles.EmployeeId == current_employee.EmployeeId)
-    
-    employee_roles_data = db.exec(employee_roles_query).all()
-    
-    roles_list = []
-    role_ids = []
-    
-    for emp_role, role in employee_roles_data:
-        roles_list.append({
-            "RoleId": role.RoleId,
-            "RoleName": role.RoleName,
-            "Description": role.Description
-        })
-        role_ids.append(role.RoleId)
-    
-    # Get permissions for all roles (combine with OR logic)
-    permissions_by_module = {}
-    
-    if role_ids:
-        permissions_query = select(RoleModules, Modules).join(
-            Modules, RoleModules.ModuleId == Modules.ModuleId
-        ).where(RoleModules.RoleId.in_(role_ids))
+    # Función auxiliar para obtener permisos usando una sesión específica
+    def get_permissions_with_session(session: Session):
+        # Get employee's roles
+        employee_roles_query = select(EmployeeRoles, Roles).join(
+            Roles, EmployeeRoles.RoleId == Roles.RoleId
+        ).where(EmployeeRoles.EmployeeId == current_employee.EmployeeId)
         
-        permissions_data = db.exec(permissions_query).all()
+        employee_roles_data = session.exec(employee_roles_query).all()
         
-        for role_module, module in permissions_data:
-            module_key = module.ModuleKey
+        roles_list = []
+        role_ids = []
+        
+        for emp_role, role in employee_roles_data:
+            roles_list.append({
+                "RoleId": role.RoleId,
+                "RoleName": role.RoleName,
+                "Description": role.Description
+            })
+            role_ids.append(role.RoleId)
+        
+        # Get permissions for all roles (combine with OR logic)
+        permissions_by_module = {}
+        
+        if role_ids:
+            permissions_query = select(RoleModules, Modules).join(
+                Modules, RoleModules.ModuleId == Modules.ModuleId
+            ).where(RoleModules.RoleId.in_(role_ids))
             
-            if module_key not in permissions_by_module:
-                permissions_by_module[module_key] = {
-                    "module_key": module_key,
-                    "module_info": {
-                        "ModuleId": module.ModuleId,
-                        "ModuleName": module.ModuleName,
-                        "ModuleKey": module.ModuleKey,
-                        "RouteUrl": module.RouteUrl,
-                        "Icon": module.Icon,
-                        "DisplayOrder": module.DisplayOrder,
-                        "IsActive": module.IsActive
-                    },
-                    "permissions": {
-                        "CanView": False,
-                        "CanCreate": False,
-                        "CanEdit": False,
-                        "CanDelete": False,
-                        "CanExport": False,
-                        "AdminActions": False,
-                        "OtherActions": False
+            permissions_data = session.exec(permissions_query).all()
+            
+            for role_module, module in permissions_data:
+                module_key = module.ModuleKey
+                
+                if module_key not in permissions_by_module:
+                    permissions_by_module[module_key] = {
+                        "module_key": module_key,
+                        "module_info": {
+                            "ModuleId": module.ModuleId,
+                            "ModuleName": module.ModuleName,
+                            "ModuleKey": module.ModuleKey,
+                            "RouteUrl": module.RouteUrl,
+                            "Icon": module.Icon,
+                            "DisplayOrder": module.DisplayOrder,
+                            "IsActive": module.IsActive
+                        },
+                        "permissions": {
+                            "CanView": False,
+                            "CanCreate": False,
+                            "CanEdit": False,
+                            "CanDelete": False,
+                            "CanExport": False,
+                            "AdminActions": False,
+                            "OtherActions": False
+                        }
                     }
-                }
-            
-            # Combine permissions with OR logic (if any role has permission, user has it)
-            perms = permissions_by_module[module_key]["permissions"]
-            perms["CanView"] = perms["CanView"] or role_module.CanView
-            perms["CanCreate"] = perms["CanCreate"] or role_module.CanCreate
-            perms["CanEdit"] = perms["CanEdit"] or role_module.CanEdit
-            perms["CanDelete"] = perms["CanDelete"] or role_module.CanDelete
-            perms["CanExport"] = perms["CanExport"] or role_module.CanExport
-            perms["AdminActions"] = perms["AdminActions"] or role_module.AdminActions
-            perms["OtherActions"] = perms["OtherActions"] or role_module.OtherActions
-    
-    # Build response
-    permissions_list = list(permissions_by_module.values())
-    accessible_modules = [p["module_key"] for p in permissions_list if p["permissions"]["CanView"]]
-    
-    return {
-        "employee": {
-            "EmployeeId": current_employee.EmployeeId,
-            "FirstName": current_employee.FirstName,
-            "LastName": current_employee.LastName,
-            "DisplayName": current_employee.DisplayName,
-            "Title": current_employee.Title,
-            "Email": current_employee.Email,
-            "Department": current_employee.Department,
-            "Office": current_employee.Office,
-        },
-        "roles": roles_list,
-        "permissions": permissions_list,
-        "accessible_modules": accessible_modules
-    }
+                
+                # Combine permissions with OR logic (if any role has permission, user has it)
+                perms = permissions_by_module[module_key]["permissions"]
+                perms["CanView"] = perms["CanView"] or role_module.CanView
+                perms["CanCreate"] = perms["CanCreate"] or role_module.CanCreate
+                perms["CanEdit"] = perms["CanEdit"] or role_module.CanEdit
+                perms["CanDelete"] = perms["CanDelete"] or role_module.CanDelete
+                perms["CanExport"] = perms["CanExport"] or role_module.CanExport
+                perms["AdminActions"] = perms["AdminActions"] or role_module.AdminActions
+                perms["OtherActions"] = perms["OtherActions"] or role_module.OtherActions
+        
+        # Build response
+        permissions_list = list(permissions_by_module.values())
+        accessible_modules = [p["module_key"] for p in permissions_list if p["permissions"]["CanView"]]
+        
+        return {
+            "employee": {
+                "EmployeeId": current_employee.EmployeeId,
+                "FirstName": current_employee.FirstName,
+                "LastName": current_employee.LastName,
+                "DisplayName": current_employee.DisplayName,
+                "Title": current_employee.Title,
+                "Email": current_employee.Email,
+                "Department": current_employee.Department,
+                "Office": current_employee.Office,
+            },
+            "roles": roles_list,
+            "permissions": permissions_list,
+            "accessible_modules": accessible_modules
+        }
+
+    if is_azure_user:
+        # Usar sesión de PrimeFire para usuarios de Microsoft
+        with SessionSync() as sync_db:
+            return get_permissions_with_session(sync_db)
+    else:
+        # Usar sesión estándar para usuarios internos
+        return get_permissions_with_session(db)

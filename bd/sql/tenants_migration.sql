@@ -9,12 +9,10 @@ CREATE TABLE Tenants (
 
 CREATE TABLE TenantEmployees (
     Id INT IDENTITY(1,1) PRIMARY KEY,
-    TenantId INT NOT NULL,
-    EmployeeId INT NOT NULL,
-    Status NVARCHAR(20) DEFAULT 'Pending', -- Pending, Active, Rejected
-    IsDefault BIT DEFAULT 0,
+    Email NVARCHAR(100) NULL,
+    PasswordHash NVARCHAR(255) NULL,
+    TenantId INT NULL,
     CreatedAt DATETIME2 DEFAULT GETDATE(),
-    CONSTRAINT FK_TenantEmployees_Tenants FOREIGN KEY (TenantId) REFERENCES Tenants(TenantId),
-    CONSTRAINT FK_TenantEmployees_Employees FOREIGN KEY (EmployeeId) REFERENCES Employees(EmployeeId)
+    CONSTRAINT FK_TenantEmployees_Tenants FOREIGN KEY (TenantId) REFERENCES Tenants(TenantId)
 );
 

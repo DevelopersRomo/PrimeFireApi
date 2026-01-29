@@ -1,3 +1,4 @@
+import argparse
 import sys
 import os
 from datetime import datetime
@@ -82,7 +83,7 @@ def format_value(value):
     else:
         return f"'{str(value)}'"
 
-def generate_partial_backup(tables_with_data=None):
+def generate_partial_backup(tables_with_data=None, target_table=None):
     """
     Generate partial backup: ALL table structures, but data only for specified tables
     
@@ -104,8 +105,15 @@ def generate_partial_backup(tables_with_data=None):
         f.write(f"/****** This script contains ALL table structures and data for: {', '.join(tables_with_data)} ******/\n\n")
         
         with SessionLocal() as session:
-            # Get all tables
-            tables = get_all_tables(session)
+            # Get all tables or a single table
+            all_tables = get_all_tables(session)
+            if target_table:
+                if target_table not in all_tables:
+                    raise ValueError(f"Table '{target_table}' not found in database")
+                tables = [target_table]
+                tables_with_data = [target_table]
+            else:
+                tables = all_tables
             print(f"Found {len(tables)} tables")
             
             # First pass: Drop all tables
@@ -235,10 +243,13 @@ def generate_partial_backup(tables_with_data=None):
             f.write("-- FOREIGN KEYS\n")
             f.write("-- =============================================\n\n")
             
+            tables_set = set(tables)
             for table in tables:
                 fks = get_foreign_keys(session, table)
                 for fk in fks:
                     fk_name, parent_table, parent_col, ref_table, ref_col, delete_action, update_action = fk
+                    if parent_table not in tables_set or ref_table not in tables_set:
+                        continue
                     
                     f.write(f"ALTER TABLE [dbo].[{parent_table}] WITH CHECK ADD CONSTRAINT [{fk_name}]\n")
                     f.write(f"FOREIGN KEY([{parent_col}])\n")
@@ -277,6 +288,7 @@ def generate_partial_backup(tables_with_data=None):
     print(f"   - {total_records} total records")
 
 if __name__ == "__main__":
-    # You can customize which tables to include data for
-    # Example: generate_partial_backup(['Countries', 'Roles', 'Modules', 'RoleModules', 'Employees'])
-    generate_partial_backup()  # Uses default tables
+    parser = argparse.ArgumentParser(description="Generate partial database backup")
+    parser.add_argument("--table", help="Backup a single table only")
+    args = parser.parse_args()
+    generate_partial_backup(target_table=args.table)

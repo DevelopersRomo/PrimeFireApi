@@ -1,8 +1,9 @@
 from fastapi import Request, Header, HTTPException
 from sqlmodel import Session
-from bd.connection import SessionLocal
+from bd.connection import SessionLocal, SessionSync
 from bd.multitenancy import ConnectionManager
 from jose import jwt as jose_jwt, JWTError
+import jwt
 from core.config import settings
 
 # Re-use secret from auth module
@@ -12,11 +13,14 @@ ALGORITHM = "HS256"
 # Dependency function to get DB session
 def get_db(request: Request = None) -> Session:
     """
-    Get DB session. Checks X-Tenant-ID header OR tenant_key from JWT token.
-    If tenant_key exists, connects to that tenant's DB.
-    Otherwise connects to Main DB.
+    Get DB session. 
+    1. Checks X-Tenant-ID header.
+    2. Checks tenant_key from Internal JWT token.
+    3. Checks if it's an Azure AD token (oid claim) -> Connects to PrimeFire DB (SessionSync).
+    4. Otherwise connects to Main DB (DevRomo).
     """
     tenant_key = None
+    is_azure_token = False
     
     # 1. Check header first
     if request:
@@ -29,10 +33,22 @@ def get_db(request: Request = None) -> Session:
                 try:
                     scheme, token = auth_header.split(" ", 1)
                     if scheme.lower() == "bearer":
-                        payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": True})
-                        tenant_key = payload.get("tenant_key")
-                except (ValueError, JWTError, Exception):
-                    pass  # Not a valid JWT or not our token, ignore
+                        # Try Internal JWT first
+                        try:
+                            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": True})
+                            tenant_key = payload.get("tenant_key")
+                        except (ValueError, JWTError):
+                            # Not internal, check if Azure AD
+                            try:
+                                # Decode without verification just to check claims
+                                # Verification happens in require_authentication dependency
+                                payload = jwt.decode(token, options={"verify_signature": False})
+                                if "oid" in payload:
+                                    is_azure_token = True
+                            except Exception:
+                                pass
+                except Exception:
+                    pass  # Invalid header format
     
     if tenant_key:
         try:
@@ -68,7 +84,11 @@ def get_db(request: Request = None) -> Session:
                 status_code=500,
                 detail=f"Error connecting to tenant '{tenant_key}': {str(e)}"
             )
+    elif is_azure_token:
+        # Azure AD users go to PrimeFire DB
+        db = SessionSync()
     else:
+        # Internal users without tenant go to Main DB (DevRomo)
         db = SessionLocal()
         
     try:

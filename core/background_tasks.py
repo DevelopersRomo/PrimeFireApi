@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from core.microsoft_graph import graph_client
 from models.employees import Employees
 from models.countries import Countries
-from bd.connection import engine
+from bd.connection import sync_engine as engine
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class EmployeeSyncScheduler:
         Returns sync statistics
         """
         try:
-            logger.info("🔄 Starting automatic sync from Microsoft 365...")
+            logger.info("Starting automatic sync from Microsoft 365...")
             
             ms_users = await graph_client.get_all_users()
             
@@ -157,7 +157,7 @@ class EmployeeSyncScheduler:
                         email = ms_user.get("userPrincipalName") or ms_user.get("mail")
                         if not email or not is_primefire_domain(email):
                             # Debug: log skipped users
-                            logger.debug(f"⏭️ Skipping user {email} - not PrimeFire domain")
+                            logger.debug(f"Skipping user {email} - not PrimeFire domain")
                             continue  # Skip non-PrimeFire users
 
                         stats["primefire_users"] += 1
@@ -224,7 +224,7 @@ class EmployeeSyncScheduler:
                 await asyncio.sleep(3600)
             
             except asyncio.CancelledError:
-                logger.info("🛑 Sync scheduler cancelled")
+                logger.info("Sync scheduler cancelled")
                 break
             except Exception as e:
                 logger.error(f"❌ Error in sync loop: {e}")
@@ -238,13 +238,13 @@ class EmployeeSyncScheduler:
             interval_hours: Hours between syncs (default: 24)
         """
         if self.is_running:
-            logger.warning("⚠️ Sync scheduler already running")
+            logger.warning("Sync scheduler already running")
             return
         
         self.sync_interval_hours = interval_hours
         self.is_running = True
         
-        logger.info(f"🚀 Starting periodic sync (every {interval_hours} hours)")
+        logger.info(f"Starting periodic sync (every {interval_hours} hours)")
         
         # Run initial sync immediately
         try:
@@ -269,21 +269,21 @@ class EmployeeSyncScheduler:
             except asyncio.CancelledError:
                 pass
         
-        logger.info("🛑 Sync scheduler stopped")
+        logger.info("Sync scheduler stopped")
     
     async def sync_on_startup(self):
         """
         Run a one-time sync on application startup
         Recommended for simpler use cases
         """
-        logger.info("🚀 Running startup sync from Microsoft 365...")
+        logger.info("Running startup sync from Microsoft 365...")
         
         try:
             stats = await self.sync_employees_from_microsoft()
             logger.info(f"✅ Startup sync completed: {stats}")
             return stats
         except asyncio.CancelledError:
-            logger.info("🛑 Startup sync cancelled")
+            logger.info("Startup sync cancelled")
             raise  # Re-raise to properly handle cancellation
         except Exception as e:
             logger.error(f"❌ Startup sync failed: {e}")

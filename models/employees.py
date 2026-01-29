@@ -96,5 +96,4 @@ class Employees(SQLModel, table=True):
     hardware_inventories: List["HardwareInventory"] = Relationship(
         back_populates="Employee"
     )
-    tenant_employees: List["TenantEmployees"] = Relationship(back_populates="employee", link_model=None)
     

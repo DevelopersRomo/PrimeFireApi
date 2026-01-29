@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 
 # Import configuration
@@ -120,6 +121,34 @@ except Exception as e:
     print(f"Warning: Auth router not available: {e}")
     auth_available = False
 
+try:
+    from api.customers import router as customers_router
+    customers_available = True
+except Exception as e:
+    print(f"Warning: Customers router not available: {e}")
+    customers_available = False
+
+try:
+    from api.customer_notes import router as customer_notes_router
+    customer_notes_available = True
+except Exception as e:
+    print(f"Warning: Customer notes router not available: {e}")
+    customer_notes_available = False
+
+try:
+    from api.customer_contacts import router as customer_contacts_router
+    customer_contacts_available = True
+except Exception as e:
+    print(f"Warning: Customer contacts router not available: {e}")
+    customer_contacts_available = False
+
+try:
+    from api.customer_attachments import router as customer_attachments_router
+    customer_attachments_available = True
+except Exception as e:
+    print(f"Warning: Customer attachments router not available: {e}")
+    customer_attachments_available = False
+
 # Import database connection
 try:
     from bd.connection import create_db_and_tables
@@ -145,12 +174,12 @@ async def lifespan(app: FastAPI):
     sync_task = None
     
     # Import and run sync scheduler in background
-    if settings.ENABLE_AUTO_SYNC:
+    if settings.SYNC_EMPLOYEES_PRIMEFIRE:
         try:
             from core.background_tasks import sync_scheduler
             
             # Run sync in background without blocking startup
-            print("🔄 Starting initial employee sync from Microsoft 365 in background...")
+            print("Starting initial employee sync from Microsoft 365 in background...")
             
             async def run_startup_sync():
                 """Run sync in background task"""
@@ -158,10 +187,10 @@ async def lifespan(app: FastAPI):
                     await sync_scheduler.sync_on_startup()
                 except asyncio.CancelledError:
                     # Task was cancelled during shutdown - this is normal
-                    print("🛑 Startup sync task cancelled")
+                    print("Startup sync task cancelled")
                     raise  # Re-raise to properly handle cancellation
                 except Exception as e:
-                    print(f"⚠️ Warning: Background sync failed: {e}")
+                    print(f"Warning: Background sync failed: {e}")
             
             # Create background task - doesn't block startup
             sync_task = asyncio.create_task(run_startup_sync())
@@ -170,10 +199,10 @@ async def lifespan(app: FastAPI):
             # await sync_scheduler.start_periodic_sync(interval_hours=settings.SYNC_INTERVAL_HOURS)
             
         except Exception as e:
-            print(f"⚠️ Warning: Could not start employee sync: {e}")
+            print(f"Warning: Could not start employee sync: {e}")
             print("   (API will continue running without automatic sync)")
     else:
-        print("ℹ️ Auto-sync disabled (ENABLE_AUTO_SYNC=False)")
+        print("Auto-sync disabled (SYNC_EMPLOYEES_PRIMEFIRE=False)")
     
     yield
     
@@ -188,14 +217,14 @@ async def lifespan(app: FastAPI):
                 pass
             except Exception as e:
                 # Log but don't fail shutdown
-                print(f"⚠️ Warning during sync task cleanup: {e}")
+                print(f"Warning during sync task cleanup: {e}")
     
     try:
         from core.background_tasks import sync_scheduler
         await sync_scheduler.stop_periodic_sync()
     except Exception as e:
         # Don't fail shutdown if cleanup fails
-        print(f"⚠️ Warning during sync scheduler cleanup: {e}")
+        print(f"Warning during sync scheduler cleanup: {e}")
 
 app = FastAPI(
     title="PrimeFire API",
@@ -325,10 +354,22 @@ if tenants_available:
 if auth_available:
     app.include_router(auth_router, prefix="/auth", tags=["authentication"])
 
+if customers_available:
+    app.include_router(customers_router, prefix="/customers", tags=["customers"])
+
+if customer_notes_available:
+    app.include_router(customer_notes_router, tags=["customer_notes"])
+
+if customer_contacts_available:
+    app.include_router(customer_contacts_router, tags=["customer_contacts"])
+
+if customer_attachments_available:
+    app.include_router(customer_attachments_router, tags=["customer_attachments"])
+
 @app.get("/")
 async def root():
-    """Root endpoint."""
-    return {"message": "PrimeFire API is running!"}
+    """Root endpoint. Redirects to docs."""
+    return RedirectResponse(url="/docs")
 
 @app.get("/health")
 async def health_check():

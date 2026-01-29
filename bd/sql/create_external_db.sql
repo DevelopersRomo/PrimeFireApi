@@ -84,10 +84,9 @@ GO
 
 CREATE TABLE [dbo].[TenantEmployees] (
     [Id] INT IDENTITY(1,1) PRIMARY KEY,
-    [TenantId] INT NOT NULL,
-    [EmployeeId] INT NOT NULL,
-    [Status] NVARCHAR(20) DEFAULT 'Pending',
-    [IsDefault] BIT DEFAULT 0,
+    [Email] NVARCHAR(100) NULL,
+    [PasswordHash] NVARCHAR(255) NULL,
+    [TenantId] INT NULL,
     [CreatedAt] DATETIME2 DEFAULT GETDATE()
 )
 GO
@@ -135,6 +134,7 @@ CREATE TABLE [dbo].[Licenses](
 	[Key] [varchar](50) NULL,
 	[Account] [varchar](50) NULL,
 	[Password] [varchar](50) NULL,
+	[Notes] [nvarchar](255) NULL,
 	[EmployeeId] [int] NULL,
  CONSTRAINT [PK_Licenses] PRIMARY KEY CLUSTERED ([LicenseId] ASC)
 )

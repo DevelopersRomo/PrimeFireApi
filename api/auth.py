@@ -5,15 +5,13 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 import bcrypt
 import uuid
+import httpx
 from sqlmodel import Session, select
 from pydantic import BaseModel
 
-from bd.dependencies import get_db, get_main_db
-from bd.connection import SessionLocal
-from bd.multitenancy import ConnectionManager
+from bd.dependencies import get_main_db
 from models.employees import Employees
 from models.tenants import Tenants, TenantEmployees
-from sqlmodel import select
 from core.config import settings
 
 # --- CONFIGURACIÓN ---
@@ -21,6 +19,7 @@ from core.config import settings
 SECRET_KEY = settings.BACKEND_CLIENT_SECRET or "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 300
+REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
@@ -30,6 +29,7 @@ router = APIRouter()
 class Token(BaseModel):
     access_token: str
     token_type: str
+    refresh_token: Optional[str] = None
 
 class TokenData(BaseModel):
     username: Optional[str] = None
@@ -40,6 +40,13 @@ class UserRegister(BaseModel):
     first_name: str
     last_name: str
     tenant_key: Optional[str] = None  # Opcional - admin lo asignará después
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class AzureRefreshTokenRequest(BaseModel):
+    refresh_token: str
+    scope: Optional[str] = None
 
 # --- UTILS ---
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -61,6 +68,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -144,7 +161,14 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_main_
             data=token_data,
             expires_delta=access_token_expires
         )
-        return {"access_token": access_token, "token_type": "bearer"}
+        refresh_token = create_refresh_token(
+            data={"sub": user_data.email, "tenant_key": user_data.tenant_key}
+        )
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": refresh_token,
+        }
     
     else:
         # No tenant_key: keep TenantId as NULL (pending approval)
@@ -214,7 +238,14 @@ async def login_for_access_token(
             data=token_data,
             expires_delta=access_token_expires
         )
-        return {"access_token": access_token, "token_type": "bearer"}
+        refresh_token = create_refresh_token(
+            data={"sub": external_user.Email, "tenant_key": tenant.DbConnectionKey}
+        )
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": refresh_token,
+        }
     
     # 2. Si no es externo, buscar en Employees de BD Principal (usuarios internos de PrimeFire)
     user = db.exec(select(Employees).where(Employees.Email == form_data.username)).first()
@@ -231,5 +262,118 @@ async def login_for_access_token(
         data={"sub": user.Email, "type": "internal"},
         expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_token = create_refresh_token(data={"sub": user.Email})
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "refresh_token": refresh_token,
+    }
+
+@router.post("/refresh", response_model=Token)
+async def refresh_access_token(
+    refresh_data: RefreshTokenRequest,
+    db: Session = Depends(get_main_db)
+):
+    """Refresh internal access token using a refresh token."""
+    try:
+        payload = jwt.decode(refresh_data.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token type",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    email = payload.get("sub")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Validate user status (internal or external)
+    external_user = db.exec(select(TenantEmployees).where(TenantEmployees.Email == email)).first()
+    if external_user:
+        if not external_user.TenantId:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your account is pending approval. Please wait for an administrator to assign you to a tenant."
+            )
+
+        tenant = db.get(Tenants, external_user.TenantId)
+        if not tenant or tenant.DbConnectionKey == "PENDING" or not tenant.IsActive:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your account is pending approval. Please wait for an administrator to assign you to an active tenant."
+            )
+
+        token_data = {"sub": external_user.Email, "type": "internal"}
+        if tenant.TenantId != 1:
+            token_data["tenant_key"] = tenant.DbConnectionKey
+        refresh_payload = {"sub": external_user.Email, "tenant_key": tenant.DbConnectionKey}
+    else:
+        user = db.exec(select(Employees).where(Employees.Email == email)).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        token_data = {"sub": user.Email, "type": "internal"}
+        refresh_payload = {"sub": user.Email}
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data=token_data,
+        expires_delta=access_token_expires
+    )
+    refresh_token = create_refresh_token(data=refresh_payload)
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "refresh_token": refresh_token,
+    }
+
+@router.post("/azure/refresh")
+async def refresh_azure_token(refresh_data: AzureRefreshTokenRequest):
+    """Refresh Azure AD token using refresh token (PKCE authorization code flow)."""
+    client_id = settings.FRONTEND_CLIENT_ID or settings.BACKEND_CLIENT_ID
+    if not client_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Azure client ID is not configured",
+        )
+
+    token_url = f"https://login.microsoftonline.com/{settings.TENANT_ID}/oauth2/v2.0/token"
+    scope = refresh_data.scope or " ".join(settings.scopes.keys())
+
+    data = {
+        "client_id": client_id,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_data.refresh_token,
+        "scope": scope,
+    }
+
+    if settings.BACKEND_CLIENT_SECRET and client_id == settings.BACKEND_CLIENT_ID:
+        data["client_secret"] = settings.BACKEND_CLIENT_SECRET
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(token_url, data=data)
+
+    if response.status_code >= 400:
+        detail = response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=detail,
+        )
+
+    return response.json()
 

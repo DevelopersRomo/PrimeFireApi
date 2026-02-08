@@ -292,6 +292,7 @@ app.openapi = custom_openapi
 origins = [
     "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net",
     "https://app.devromo.com",
+    "https://app.primefire.us",
     "http://localhost:4200",
     "http://localhost:4201",
 ]

@@ -101,6 +101,20 @@ except Exception as e:
     time_off_available = False
 
 try:
+    from api.timesheet import router as timesheet_router
+    timesheet_available = True
+except Exception as e:
+    print(f"Warning: Timesheet router not available: {e}")
+    timesheet_available = False
+
+try:
+    from api.catalogs import router as catalogs_router
+    catalogs_available = True
+except Exception as e:
+    print(f"Warning: Catalogs router not available: {e}")
+    catalogs_available = False
+
+try:
     from api.notifications import router as notifications_router
     notifications_available = True
 except Exception as e:
@@ -346,6 +360,12 @@ if ticket_attachments_available:
 
 if time_off_available:
     app.include_router(time_off_router, tags=["time_off"])
+
+if timesheet_available:
+    app.include_router(timesheet_router, tags=["timesheet"])
+
+if catalogs_available:
+    app.include_router(catalogs_router, tags=["catalogs"])
 
 if notifications_available:
     app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])

@@ -124,6 +124,13 @@ class Settings(BaseSettings):
         description="Directory for uploaded files (use /home/uploads in Azure Linux)"
     )
 
+    # IP Geolocation
+    IPGEOLOCATION_API_KEY: str = Field(
+        default="",
+        validation_alias="IPGEOLOCATION_API_KEY",
+        description="API key for ipgeolocation.io"
+    )
+
     @property
     def scope_name(self) -> str:
         """Returns the scope name."""

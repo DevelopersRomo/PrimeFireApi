@@ -1,8 +1,11 @@
 import enum
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models.customers import Customers
 
 from sqlalchemy import CheckConstraint
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, Relationship
 
 
 class TimeSheetPunchStatusEnum(str, enum.Enum):
@@ -43,6 +46,10 @@ class TimeSheetPunch(SQLModel, table=True):
     CreatedAt: str = Field(nullable=False, max_length=19)
     UpdatedAt: str = Field(nullable=False, max_length=19)
 
+    Customer: Optional["Customers"] = Relationship(
+        sa_relationship_kwargs={"lazy": "joined"}
+    )
+
 
 class TimeSheetLocationSnapshot(SQLModel, table=True):
     __tablename__ = "TimeSheetLocationSnapshots"
@@ -50,7 +57,9 @@ class TimeSheetLocationSnapshot(SQLModel, table=True):
 
     SnapshotId: Optional[int] = Field(default=None, primary_key=True)
     EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", nullable=False)
-    CustomerId: Optional[int] = Field(default=None, foreign_key="dbo.Customers.CustomerId")
+    CustomerId: Optional[int] = Field(
+        default=None, foreign_key="dbo.Customers.CustomerId"
+    )
     IpAddress: Optional[str] = Field(default=None, max_length=45)
     Latitude: Optional[str] = Field(default=None, max_length=20)
     Longitude: Optional[str] = Field(default=None, max_length=20)

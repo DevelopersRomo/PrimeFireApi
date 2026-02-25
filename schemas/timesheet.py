@@ -4,6 +4,7 @@ from typing import List, Optional
 from sqlmodel import SQLModel
 
 from models.timesheet import TimeSheetPunchStatusEnum
+from schemas.time_off import TimeOffRequestRead
 
 
 class TimeSheetClockInCreate(SQLModel):
@@ -23,10 +24,22 @@ class TimeSheetClockOutCreate(SQLModel):
     GpsAccuracy: Optional[str] = None
 
 
+class TimeSheetCustomerRead(SQLModel):
+    CustomerId: int
+    CustomerType: str
+    CompanyName: Optional[str] = None
+    FirstName: Optional[str] = None
+    LastName: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class TimeSheetPunchRead(SQLModel):
     PunchId: int
     EmployeeId: int
     CustomerId: int
+    Customer: Optional[TimeSheetCustomerRead] = None
     ClockInAt: str
     ClockOutAt: Optional[str] = None
     WorkedMinutes: int
@@ -67,6 +80,7 @@ class TimeSheetSummaryItem(SQLModel):
     SickHours: float = 0
     TotalHours: float = 0
     Punches: Optional[List["TimeSheetPunchRead"]] = None
+    TimeOffRequests: Optional[List[TimeOffRequestRead]] = None
 
 
 class TimeSheetSummaryTotals(SQLModel):

@@ -148,6 +148,14 @@ try:
 except Exception as e:
     print(f"Warning: Customer attachments router not available: {e}")
     customer_attachments_available = False
+    
+try:
+    from api.products import router as products_router
+    products_available = True
+except Exception as e:
+    print(f"Warning: Products router not available: {e}")
+    products_available = False
+
 
 # Import database connection
 try:
@@ -366,6 +374,9 @@ if customer_contacts_available:
 
 if customer_attachments_available:
     app.include_router(customer_attachments_router, tags=["customer_attachments"])
+if products_available:
+    app.include_router(products_router, prefix="/products", tags=["products"])
+
 
 @app.get("/")
 async def root():

@@ -72,7 +72,9 @@ def _get_client_ip(request: Request) -> Optional[str]:
     return None
 
 
-def _get_request_timezone(request: Request) -> tuple[timezone, str] | tuple[ZoneInfo, str]:
+def _get_request_timezone(
+    request: Request,
+) -> tuple[timezone, str] | tuple[ZoneInfo, str]:
     tz_name = request.headers.get("x-timezone") or "UTC"
     try:
         return ZoneInfo(tz_name), tz_name
@@ -171,7 +173,9 @@ def _create_location_snapshot(
         Region=location.get("Region"),
         Country=location.get("Country"),
         Timezone=location.get("Timezone"),
-        LocationRaw=location.get("LocationRaw") if location.get("LocationRaw") else None,
+        LocationRaw=location.get("LocationRaw")
+        if location.get("LocationRaw")
+        else None,
         CapturedAt=_now_str(),
     )
     db.add(snapshot)
@@ -214,13 +218,16 @@ def _get_settings(db: Session) -> TimeSheetSettings:
 
 def _get_time_off_maps(
     db: Session, employee_id: int, start_date: date, end_date: date
-) -> Dict[date, Dict[str, Decimal]]:
+) -> Tuple[Dict[date, Dict[str, Decimal]], Dict[date, List[TimeOffRequest]]]:
     totals: Dict[date, Dict[str, Decimal]] = {}
+    daily_requests: Dict[date, List[TimeOffRequest]] = {}
 
     requests = db.exec(
         select(TimeOffRequest).where(
             TimeOffRequest.EmployeeId == employee_id,
-            TimeOffRequest.Status == RequestStatusEnum.APPROVED.value,
+            TimeOffRequest.Status.in_(
+                [RequestStatusEnum.APPROVED.value, RequestStatusEnum.PENDING.value]
+            ),
             TimeOffRequest.StartDate <= end_date.strftime("%Y-%m-%d"),
             TimeOffRequest.EndDate >= start_date.strftime("%Y-%m-%d"),
         )
@@ -238,18 +245,24 @@ def _get_time_off_maps(
                     "sick": Decimal("0"),
                     "holiday": Decimal("0"),
                 }
-            bucket = "sick" if request.AbsenceType == "sick" else "vacation"
-            if request.TimeUnit == TimeUnitEnum.HOURS.value and request.TotalHours:
-                if request_start == request_end:
-                    hours = Decimal(request.TotalHours)
+            if current not in daily_requests:
+                daily_requests[current] = []
+            if request not in daily_requests[current]:
+                daily_requests[current].append(request)
+
+            if request.Status == RequestStatusEnum.APPROVED.value:
+                bucket = "sick" if request.AbsenceType == "sick" else "vacation"
+                if request.TimeUnit == TimeUnitEnum.HOURS.value and request.TotalHours:
+                    if request_start == request_end:
+                        hours = Decimal(request.TotalHours)
+                    else:
+                        span_days = (request_end - request_start).days + 1
+                        hours = Decimal(request.TotalHours) / Decimal(span_days)
+                elif request.TimeUnit == TimeUnitEnum.HALF_DAY.value:
+                    hours = DEFAULT_WORKDAY_HOURS / Decimal("2")
                 else:
-                    span_days = (request_end - request_start).days + 1
-                    hours = Decimal(request.TotalHours) / Decimal(span_days)
-            elif request.TimeUnit == TimeUnitEnum.HALF_DAY.value:
-                hours = DEFAULT_WORKDAY_HOURS / Decimal("2")
-            else:
-                hours = DEFAULT_WORKDAY_HOURS
-            totals[current][bucket] += hours
+                    hours = DEFAULT_WORKDAY_HOURS
+                totals[current][bucket] += hours
             current += timedelta(days=1)
 
     holidays = db.exec(
@@ -268,7 +281,7 @@ def _get_time_off_maps(
             }
         totals[holiday_date]["holiday"] += DEFAULT_WORKDAY_HOURS
 
-    return totals
+    return totals, daily_requests
 
 
 def _has_admin_actions(user_permissions: dict) -> bool:
@@ -278,7 +291,9 @@ def _has_admin_actions(user_permissions: dict) -> bool:
     return False
 
 
-def _resolve_range(view: str, start_date: Optional[date], end_date: Optional[date]) -> Tuple[date, date]:
+def _resolve_range(
+    view: str, start_date: Optional[date], end_date: Optional[date]
+) -> Tuple[date, date]:
     today = date.today()
     if not start_date and not end_date:
         if view == "day":
@@ -328,6 +343,7 @@ def _build_summary_items(
     end_date: date,
     punches: List[TimeSheetPunch],
     time_off_map: Dict[date, Dict[str, Decimal]],
+    time_off_requests_map: Dict[date, List[TimeOffRequest]],
     overtime_daily: Decimal,
     tzinfo: ZoneInfo,
 ) -> List[TimeSheetSummaryItem]:
@@ -339,7 +355,9 @@ def _build_summary_items(
         punch_date = _to_local_date(punch.ClockInAt, tzinfo)
         if punch_date < start_date or punch_date > end_date:
             continue
-        daily_minutes[punch_date] = daily_minutes.get(punch_date, 0) + punch.WorkedMinutes
+        daily_minutes[punch_date] = (
+            daily_minutes.get(punch_date, 0) + punch.WorkedMinutes
+        )
         daily_punches.setdefault(punch_date, []).append(punch)
 
     items_map: Dict[date, TimeSheetSummaryItem] = {}
@@ -368,10 +386,16 @@ def _build_summary_items(
         item.VacationHours += float(time_off["vacation"])
         item.HolidayHours += float(time_off["holiday"])
         item.SickHours += float(time_off["sick"])
-        item.TotalHours += float(hours + time_off["vacation"] + time_off["holiday"] + time_off["sick"])
+        item.TotalHours += float(
+            hours + time_off["vacation"] + time_off["holiday"] + time_off["sick"]
+        )
         if item.Punches is None:
             item.Punches = []
         item.Punches.extend(daily_punches.get(current, []))
+
+        if item.TimeOffRequests is None:
+            item.TimeOffRequests = []
+        item.TimeOffRequests.extend(time_off_requests_map.get(current, []))
 
         current += timedelta(days=1)
 
@@ -390,7 +414,11 @@ def _build_totals(items: List[TimeSheetSummaryItem]) -> TimeSheetSummaryTotals:
     return totals
 
 
-@router.post("/timesheet/clock-in", response_model=TimeSheetPunchRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/timesheet/clock-in",
+    response_model=TimeSheetPunchRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def clock_in(
     payload: TimeSheetClockInCreate,
     request: Request,
@@ -401,7 +429,9 @@ def clock_in(
         select(Customers).where(Customers.CustomerId == payload.CustomerId)
     ).first()
     if not customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+        )
 
     open_punch = _get_open_punch(db, current_employee.EmployeeId)
     if open_punch:
@@ -452,7 +482,9 @@ def clock_out(
 ):
     open_punch = _get_open_punch(db, current_employee.EmployeeId)
     if not open_punch:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found"
+        )
 
     now_str = _now_str()
     _, tz_name = _get_request_timezone(request)
@@ -508,9 +540,7 @@ def list_timesheet(
     if customer_id:
         filters.append(TimeSheetPunch.CustomerId == customer_id)
 
-    punches = db.exec(
-        select(TimeSheetPunch).where(and_(*filters))
-    ).all()
+    punches = db.exec(select(TimeSheetPunch).where(and_(*filters))).all()
 
     settings_row = _get_settings(db)
     overtime_daily = (
@@ -519,15 +549,18 @@ def list_timesheet(
         else DEFAULT_DAILY_OVERTIME
     )
 
-    time_off_map = _get_time_off_maps(db, current_employee.EmployeeId, start_date, end_date)
+    time_off_map, time_off_requests_map = _get_time_off_maps(
+        db, current_employee.EmployeeId, start_date, end_date
+    )
     items = _build_summary_items(
-        view,
-        start_date,
-        end_date,
-        punches,
-        time_off_map,
-        overtime_daily,
-        tzinfo,
+        view=view,
+        start_date=start_date,
+        end_date=end_date,
+        punches=punches,
+        time_off_map=time_off_map,
+        time_off_requests_map=time_off_requests_map,
+        overtime_daily=overtime_daily,
+        tzinfo=tzinfo,
     )
     totals = _build_totals(items)
 
@@ -552,7 +585,9 @@ def get_open_punch(
         return TimeSheetOpenRead(Punch=None, ElapsedMinutes=0, ElapsedHours=0)
     now_str = _now_str()
     elapsed_minutes = _calculate_minutes(punch.ClockInAt, now_str)
-    elapsed_hours = float(Decimal(elapsed_minutes) / Decimal(60)) if elapsed_minutes else 0
+    elapsed_hours = (
+        float(Decimal(elapsed_minutes) / Decimal(60)) if elapsed_minutes else 0
+    )
     return TimeSheetOpenRead(
         Punch=punch,
         ElapsedMinutes=elapsed_minutes,
@@ -573,7 +608,9 @@ def export_timesheet(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
     is_admin = _has_admin_actions(user_permissions)
-    target_employee_id = employee_id if (employee_id and is_admin) else current_employee.EmployeeId
+    target_employee_id = (
+        employee_id if (employee_id and is_admin) else current_employee.EmployeeId
+    )
 
     tzinfo, _ = _get_request_timezone(request)
     start_date, end_date = _resolve_range(view, start_date, end_date)
@@ -611,7 +648,11 @@ def export_timesheet(
     )
     for punch in punches:
         local_day = _to_local_date(punch.ClockInAt, tzinfo).strftime("%Y-%m-%d")
-        worked_hours = float(Decimal(punch.WorkedMinutes) / Decimal(60)) if punch.WorkedMinutes else 0
+        worked_hours = (
+            float(Decimal(punch.WorkedMinutes) / Decimal(60))
+            if punch.WorkedMinutes
+            else 0
+        )
         customer = customer_map.get(punch.CustomerId)
         customer_name = (
             customer.CompanyName
@@ -653,9 +694,13 @@ def get_current_location(
     current_employee=Depends(get_current_employee),
 ):
     if customer_id:
-        customer = db.exec(select(Customers).where(Customers.CustomerId == customer_id)).first()
+        customer = db.exec(
+            select(Customers).where(Customers.CustomerId == customer_id)
+        ).first()
         if not customer:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+            )
 
     location: Dict[str, Optional[str]] = {}
     ip_address = _get_client_ip(request)
@@ -705,7 +750,9 @@ def list_punches_admin(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+        )
 
     filters = []
     if employee_id:
@@ -715,9 +762,13 @@ def list_punches_admin(
     if status_filter:
         filters.append(TimeSheetPunch.Status == status_filter)
     if start_date:
-        filters.append(TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00")
+        filters.append(
+            TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00"
+        )
     if end_date:
-        filters.append(TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59")
+        filters.append(
+            TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59"
+        )
 
     query = select(TimeSheetPunch)
     if filters:
@@ -738,7 +789,9 @@ def export_punches_admin(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+        )
 
     tzinfo, _ = _get_request_timezone(request)
     filters = []
@@ -749,9 +802,13 @@ def export_punches_admin(
     if status_filter:
         filters.append(TimeSheetPunch.Status == status_filter)
     if start_date:
-        filters.append(TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00")
+        filters.append(
+            TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00"
+        )
     if end_date:
-        filters.append(TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59")
+        filters.append(
+            TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59"
+        )
 
     query = select(TimeSheetPunch)
     if filters:
@@ -794,7 +851,11 @@ def export_punches_admin(
     )
     for punch in punches:
         local_day = _to_local_date(punch.ClockInAt, tzinfo).strftime("%Y-%m-%d")
-        worked_hours = float(Decimal(punch.WorkedMinutes) / Decimal(60)) if punch.WorkedMinutes else 0
+        worked_hours = (
+            float(Decimal(punch.WorkedMinutes) / Decimal(60))
+            if punch.WorkedMinutes
+            else 0
+        )
         customer = customer_map.get(punch.CustomerId)
         employee = employee_map.get(punch.EmployeeId)
         customer_name = (
@@ -841,18 +902,26 @@ def update_punch(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+        )
 
-    punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)).first()
+    punch = db.exec(
+        select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)
+    ).first()
     if not punch:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found"
+        )
 
     if payload.CustomerId is not None:
         customer = db.exec(
             select(Customers).where(Customers.CustomerId == payload.CustomerId)
         ).first()
         if not customer:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+            )
         punch.CustomerId = payload.CustomerId
 
     if payload.ClockInAt is not None:
@@ -881,11 +950,17 @@ def approve_punch(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+        )
 
-    punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)).first()
+    punch = db.exec(
+        select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)
+    ).first()
     if not punch:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found"
+        )
 
     punch.Status = TimeSheetPunchStatusEnum.APPROVED.value
     punch.ApprovedBy = user_permissions["employee"]["EmployeeId"]
@@ -904,11 +979,17 @@ def reject_punch(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+        )
 
-    punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)).first()
+    punch = db.exec(
+        select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)
+    ).first()
     if not punch:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found"
+        )
 
     punch.Status = TimeSheetPunchStatusEnum.REJECTED.value
     punch.ApprovedBy = user_permissions["employee"]["EmployeeId"]

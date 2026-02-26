@@ -14,7 +14,7 @@ from models.tenants import Tenants, TenantEmployees
 from bd.multitenancy import ConnectionManager
 
 # Re-use secret from auth module or config
-SECRET_KEY = settings.BACKEND_CLIENT_SECRET or "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+SECRET_KEY = settings.BACKEND_CLIENT_SECRET
 ALGORITHM = "HS256"
 
 async def extract_token_from_azure_scheme(request: Request) -> str:

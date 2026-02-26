@@ -17,6 +17,7 @@ from models.licenses import Licenses
 from models.modules import Modules, RoleModules
 from models.ticket_messages import TicketMessages, TicketAttachments
 from models.time_off import Department, Holiday, TimeOffBalance, TimeOffRequest
+from models.timesheet import TimeSheetLocationSnapshot, TimeSheetPunch, TimeSheetSettings
 from models.tenants import Tenants, TenantEmployees, TenantLogos
 from models.addresses import Addresses
 from models.customers import Customers, CustomerNotes, CustomerAlternateContacts, CustomerAttachments

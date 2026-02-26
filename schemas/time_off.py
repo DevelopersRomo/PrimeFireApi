@@ -2,6 +2,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Dict, Optional
 
+from pydantic import field_validator
 from sqlmodel import SQLModel
 
 from models.time_off import AbsenceTypeEnum, RequestStatusEnum, TimeUnitEnum
@@ -36,6 +37,23 @@ class TimeOffRequestRead(SQLModel):
     ReviewNotes: Optional[str] = None
     CreatedAt: str
     UpdatedAt: str
+
+    @field_validator("StartTime", "EndTime", mode="before")
+    @classmethod
+    def append_z_to_time(cls, v: Optional[str]) -> Optional[str]:
+        if v and isinstance(v, str) and not v.endswith("Z"):
+            return f"{v}Z"
+        return v
+
+    @field_validator("ReviewedAt", "CreatedAt", "UpdatedAt", mode="before")
+    @classmethod
+    def format_datetime_utc(cls, v: Optional[str]) -> Optional[str]:
+        if v and isinstance(v, str):
+            if len(v) == 19 and v[10] == " ":
+                return v.replace(" ", "T") + "Z"
+            if not v.endswith("Z"):
+                return f"{v}Z"
+        return v
 
     class Config:
         from_attributes = True
@@ -89,6 +107,13 @@ class CalendarEvent(SQLModel):
     EmployeeId: Optional[int] = None
     StartTime: Optional[str] = None
     EndTime: Optional[str] = None
+
+    @field_validator("StartTime", "EndTime", mode="before")
+    @classmethod
+    def append_z_to_time(cls, v: Optional[str]) -> Optional[str]:
+        if v and isinstance(v, str) and not v.endswith("Z"):
+            return f"{v}Z"
+        return v
 
 
 class StatusSummary(SQLModel):

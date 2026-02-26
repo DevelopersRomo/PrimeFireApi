@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone, time
 from decimal import Decimal
 from io import StringIO
 import csv
@@ -52,6 +52,25 @@ def _quantize(value: Decimal | float | int | None) -> str:
     return str(value.quantize(DECIMAL_PLACES))
 
 
+def _time_to_utc_str(t: time | str) -> str:
+    """Convert a time object or string to a UTC string HH:MM:SS."""
+    if isinstance(t, str):
+        # If it's already a string, try to parse it to handle Z or offsets
+        try:
+            # Handle ISO format like "14:30:00Z" or "14:30:00-05:00"
+            t_obj = time.fromisoformat(t.replace("Z", "+00:00"))
+            t = t_obj
+        except ValueError:
+            # If it fails, just return the first 8 chars (HH:MM:SS)
+            return t[:8]
+            
+    if t.tzinfo is not None:
+        dt = datetime.combine(date.today(), t)
+        dt_utc = dt.astimezone(timezone.utc)
+        return dt_utc.strftime("%H:%M:%S")
+    return t.strftime("%H:%M:%S")
+
+
 def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal | None]:
     """Calculate total days and hours based on payload."""
     if payload.EndDate < payload.StartDate:
@@ -74,8 +93,11 @@ def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal |
             detail="StartTime and EndTime are required when TimeUnit is 'hours'",
         )
 
-    start_time_clean = payload.StartTime.replace(tzinfo=None, microsecond=0)
-    end_time_clean = payload.EndTime.replace(tzinfo=None, microsecond=0)
+    start_time_str = _time_to_utc_str(payload.StartTime)
+    end_time_str = _time_to_utc_str(payload.EndTime)
+
+    start_time_clean = datetime.strptime(start_time_str, "%H:%M:%S").time()
+    end_time_clean = datetime.strptime(end_time_str, "%H:%M:%S").time()
 
     combined_start = datetime.combine(date.today(), start_time_clean)
     combined_end = datetime.combine(date.today(), end_time_clean)
@@ -164,10 +186,10 @@ def create_request(
     start_time_str = None
     end_time_str = None
     if payload.TimeUnit == TimeUnitEnum.HOURS and payload.StartTime and payload.EndTime:
-        start_time_str = payload.StartTime.replace(tzinfo=None, microsecond=0).strftime("%H:%M:%S")
-        end_time_str = payload.EndTime.replace(tzinfo=None, microsecond=0).strftime("%H:%M:%S")
+        start_time_str = _time_to_utc_str(payload.StartTime)
+        end_time_str = _time_to_utc_str(payload.EndTime)
 
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     
     time_off_request = TimeOffRequest(
         EmployeeId=employee_id,
@@ -240,7 +262,7 @@ def approve_request(
     balance.PendingDays = _quantize(pending if pending > 0 else Decimal("0"))
     balance.UsedDays = _quantize(Decimal(balance.UsedDays) + Decimal(request.TotalDays))
 
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     
     request.Status = RequestStatusEnum.APPROVED.value
     request.ReviewedBy = current_employee.EmployeeId
@@ -297,7 +319,7 @@ def reject_request(
     pending = Decimal(balance.PendingDays) - Decimal(request.TotalDays)
     balance.PendingDays = _quantize(pending if pending > 0 else Decimal("0"))
 
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     
     request.Status = RequestStatusEnum.REJECTED.value
     request.ReviewedBy = current_employee.EmployeeId

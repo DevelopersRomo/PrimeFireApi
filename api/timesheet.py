@@ -56,7 +56,7 @@ def _parse_dt(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 
 
-def _calculate_minutes(start_str: str, end_str: str, daily_limit: int = 480) -> dict:
+def _calculate_minutes(start_str: str, end_str: str, daily_limit: int) -> dict:
     start_dt = _parse_dt(start_str)
     end_dt = _parse_dt(end_str)
     minutes = int((end_dt - start_dt).total_seconds() / 60)
@@ -936,7 +936,9 @@ def update_punch(
         punch.Status = payload.Status.value
 
     if punch.ClockOutAt:
-        punch.WorkedMinutes = _calculate_minutes(punch.ClockInAt, punch.ClockOutAt)
+        config = db.query(Settings).filter(Settings.IsActive == 1).first()
+daily_limit = int(float(config.OvertimeDailyHours) * 60) if config and config.OvertimeDailyHours else 480
+punch.WorkedMinutes = _calculate_minutes(punch.ClockInAt, punch.ClockOutAt, daily_limit)
 
     punch.UpdatedAt = _now_str()
     db.add(punch)

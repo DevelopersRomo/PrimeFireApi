@@ -56,11 +56,18 @@ def _parse_dt(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 
 
-def _calculate_minutes(start_str: str, end_str: str) -> int:
+def _calculate_minutes(start_str: str, end_str: str, daily_limit: int | None = None) -> int:
+    """Return total worked minutes between start and end (integer).
+
+    daily_limit is minutes; if provided the function still returns total minutes.
+    """
+    if daily_limit is None:
+        # Fallback to default overtime limit if none provided
+        daily_limit = int(DEFAULT_DAILY_OVERTIME * 60)
     start_dt = _parse_dt(start_str)
     end_dt = _parse_dt(end_str)
     minutes = int((end_dt - start_dt).total_seconds() / 60)
-    return max(minutes, 0)
+    return minutes
 
 
 def _get_client_ip(request: Request) -> Optional[str]:
@@ -934,7 +941,15 @@ def update_punch(
         punch.Status = payload.Status.value
 
     if punch.ClockOutAt:
-        punch.WorkedMinutes = _calculate_minutes(punch.ClockInAt, punch.ClockOutAt)
+        ts_settings = _get_settings(db)
+        daily_limit = (
+            int(float(ts_settings.OvertimeDailyHours) * 60)
+            if ts_settings and ts_settings.OvertimeDailyHours
+            else 480
+        )
+        punch.WorkedMinutes = _calculate_minutes(
+            punch.ClockInAt, punch.ClockOutAt, daily_limit
+        )
 
     punch.UpdatedAt = _now_str()
     db.add(punch)

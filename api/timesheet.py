@@ -56,11 +56,13 @@ def _parse_dt(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 
 
-def _calculate_minutes(start_str: str, end_str: str) -> int:
+def _calculate_minutes(start_str: str, end_str: str, daily_limit: int = 480) -> dict:
     start_dt = _parse_dt(start_str)
     end_dt = _parse_dt(end_str)
     minutes = int((end_dt - start_dt).total_seconds() / 60)
-    return max(minutes, 0)
+    normal_minutes = min(minutes, daily_limit)
+    overtime_minutes = max(minutes - daily_limit, 0)
+    return {"normal_minutes": normal_minutes, "overtime_minutes": overtime_minutes}
 
 
 def _get_client_ip(request: Request) -> Optional[str]:

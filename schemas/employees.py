@@ -33,6 +33,7 @@ class EmployeeUpdate(SQLModel):
     Anydesk: Optional[str] = None
     Manager: Optional[str] = None
     ManagerEmail: Optional[str] = None
+    ManagerEmployeeId: Optional[int] = None
     StreetAddress: Optional[str] = None
     City: Optional[str] = None
     State: Optional[str] = None
@@ -66,6 +67,7 @@ class Employee(SQLModel):
     Anydesk: Optional[str] = None
     Manager: Optional[str] = None
     ManagerEmail: Optional[str] = None
+    ManagerEmployeeId: Optional[int] = None
     StreetAddress: Optional[str] = None
     City: Optional[str] = None
     State: Optional[str] = None

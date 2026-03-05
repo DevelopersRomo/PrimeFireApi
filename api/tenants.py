@@ -240,6 +240,7 @@ async def get_tenant_logo_by_url(
     return logo
 
 @router.put("/logos/{logo_id}", response_model=TenantLogoRead)
+@router.patch("/logos/{logo_id}", response_model=TenantLogoRead)
 async def update_tenant_logo(
     logo_id: int,
     logo_data: TenantLogoUpdate,

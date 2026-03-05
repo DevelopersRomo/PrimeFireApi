@@ -4,6 +4,7 @@ from typing import Optional
 import logging
 
 from sqlmodel import Session, select
+from sqlalchemy import or_
 from core.microsoft_graph import graph_client
 from models.employees import Employees
 from models.countries import Countries
@@ -120,6 +121,95 @@ def get_country_id_from_domain(email: str) -> Optional[int]:
 
     return None  # Skip other domains
 
+def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees:
+    """Create or update an employee in SQL from a Microsoft Graph user and return the SQL employee."""
+    employee_data = graph_client.map_graph_user_to_employee(ms_user)
+
+    graph_country = employee_data.pop("Country", None)
+    country_id, _ = get_or_create_country_id(db, graph_country) if graph_country else (None, False)
+    employee_data["CountryId"] = country_id
+    employee_data["LastSyncedAt"] = datetime.now()
+
+    azure_oid = employee_data.get("AzureOid")
+    email = employee_data.get("Email")
+    azure_upn = employee_data.get("AzureUpn")
+
+    existing = None
+    if azure_oid:
+        existing = db.exec(select(Employees).where(Employees.AzureOid == azure_oid)).first()
+
+    if not existing and (email or azure_upn):
+        existing = db.exec(
+            select(Employees).where(
+                or_(
+                    Employees.Email == email,
+                    Employees.AzureUpn == azure_upn,
+                    Employees.Email == azure_upn,
+                    Employees.AzureUpn == email
+                )
+            )
+        ).first()
+
+    if existing:
+        for key, value in employee_data.items():
+            if value is not None:
+                setattr(existing, key, value)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    new_employee = Employees(**employee_data)
+    db.add(new_employee)
+    db.commit()
+    db.refresh(new_employee)
+    return new_employee
+
+async def resolve_manager_employee_id(
+    db: Session,
+    manager_email: Optional[str] = None,
+    manager_name: Optional[str] = None
+) -> Optional[int]:
+    """Resolve manager to SQL EmployeeId, creating manager in SQL from Microsoft if needed."""
+    manager_email = manager_email.strip() if isinstance(manager_email, str) else manager_email
+    manager_name = manager_name.strip() if isinstance(manager_name, str) else manager_name
+
+    if manager_email:
+        sql_manager = db.exec(
+            select(Employees).where(
+                or_(
+                    Employees.Email == manager_email,
+                    Employees.AzureUpn == manager_email
+                )
+            )
+        ).first()
+        if sql_manager:
+            return sql_manager.EmployeeId
+
+        ms_manager = await graph_client.get_user(manager_email)
+        sql_manager = upsert_employee_from_microsoft_user(db, ms_manager)
+        return sql_manager.EmployeeId
+
+    if manager_name:
+        sql_manager = db.exec(
+            select(Employees).where(Employees.DisplayName == manager_name)
+        ).first()
+        if sql_manager:
+            return sql_manager.EmployeeId
+
+        ms_manager = await graph_client.find_user_by_display_name(manager_name)
+        if not ms_manager:
+            return None
+
+        manager_identifier = ms_manager.get("id") or ms_manager.get("userPrincipalName") or ms_manager.get("mail")
+        if not manager_identifier:
+            return None
+
+        ms_manager_full = await graph_client.get_user(manager_identifier)
+        sql_manager = upsert_employee_from_microsoft_user(db, ms_manager_full)
+        return sql_manager.EmployeeId
+
+    return None
+
 class EmployeeSyncScheduler:
     """Background task scheduler for Microsoft 365 employee synchronization"""
     
@@ -173,6 +263,11 @@ class EmployeeSyncScheduler:
                         employee_data = graph_client.map_graph_user_to_employee(ms_user)
                         employee_data["LastSyncedAt"] = datetime.now()
                         employee_data["CountryId"] = country_id
+                        employee_data["ManagerEmployeeId"] = await resolve_manager_employee_id(
+                            db,
+                            manager_email=employee_data.get("ManagerEmail"),
+                            manager_name=employee_data.get("Manager")
+                        )
 
                         stats["processed"] += 1
 

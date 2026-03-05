@@ -57,6 +57,7 @@ class TenantLogoCreate(SQLModel):
     Description: Optional[str] = None
     Path: str
     Url: str
+    Email: Optional[str] = None
     PathBackground: Optional[str] = None
     PrimaryColor: Optional[str] = None
     SecondaryColor: Optional[str] = None
@@ -68,6 +69,7 @@ class TenantLogoUpdate(SQLModel):
     Description: Optional[str] = None
     Path: Optional[str] = None
     Url: Optional[str] = None
+    Email: Optional[str] = None
     PathBackground: Optional[str] = None
     PrimaryColor: Optional[str] = None
     SecondaryColor: Optional[str] = None
@@ -81,6 +83,7 @@ class TenantLogoRead(SQLModel):
     Description: Optional[str] = None
     Path: str
     Url: str
+    Email: Optional[str] = None
     PathBackground: Optional[str] = None
     PrimaryColor: Optional[str] = None
     SecondaryColor: Optional[str] = None

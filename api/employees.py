@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import or_
 from typing import List, Optional
 from datetime import datetime
 
@@ -114,6 +115,7 @@ def employee_to_schema(db_employee: Employees) -> Employee:
         Anydesk=db_employee.Anydesk,
         Manager=db_employee.Manager,
         ManagerEmail=db_employee.ManagerEmail,
+        ManagerEmployeeId=db_employee.ManagerEmployeeId,
         StreetAddress=db_employee.StreetAddress,
         City=db_employee.City,
         State=db_employee.State,
@@ -125,6 +127,211 @@ def employee_to_schema(db_employee: Employees) -> Employee:
         country_name=db_employee.country.Name if db_employee.country else None,
         roles=roles
     )
+
+async def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees:
+    """Create or update an employee in SQL from a Microsoft Graph user and return the SQL employee."""
+    employee_data = graph_client.map_graph_user_to_employee(ms_user)
+
+    graph_country = employee_data.pop("Country", None)
+    country_id, _ = await get_or_create_country_id(db, graph_country) if graph_country else (None, False)
+    employee_data["CountryId"] = country_id
+    employee_data["LastSyncedAt"] = datetime.now()
+
+    azure_oid = employee_data.get("AzureOid")
+    email = employee_data.get("Email")
+    azure_upn = employee_data.get("AzureUpn")
+
+    existing = None
+    if azure_oid:
+        existing = db.exec(select(Employees).where(Employees.AzureOid == azure_oid)).first()
+
+    if not existing and (email or azure_upn):
+        existing = db.exec(
+            select(Employees).where(
+                or_(
+                    Employees.Email == email,
+                    Employees.AzureUpn == azure_upn,
+                    Employees.Email == azure_upn,
+                    Employees.AzureUpn == email
+                )
+            )
+        ).first()
+
+    if existing:
+        for key, value in employee_data.items():
+            if value is not None:
+                setattr(existing, key, value)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    new_employee = Employees(**employee_data)
+    db.add(new_employee)
+    db.commit()
+    db.refresh(new_employee)
+    return new_employee
+
+async def resolve_manager_employee_id(
+    db: Session,
+    manager_email: Optional[str] = None,
+    manager_name: Optional[str] = None
+) -> Optional[int]:
+    """Resolve manager to a SQL EmployeeId, creating the manager in SQL from Microsoft if needed."""
+    manager_email = manager_email.strip() if isinstance(manager_email, str) else manager_email
+    manager_name = manager_name.strip() if isinstance(manager_name, str) else manager_name
+
+    if manager_email:
+        sql_manager = db.exec(
+            select(Employees).where(
+                or_(
+                    Employees.Email == manager_email,
+                    Employees.AzureUpn == manager_email
+                )
+            )
+        ).first()
+        if sql_manager:
+            return sql_manager.EmployeeId
+
+        ms_manager = await graph_client.get_user(manager_email)
+        sql_manager = await upsert_employee_from_microsoft_user(db, ms_manager)
+        return sql_manager.EmployeeId
+
+    if manager_name:
+        sql_manager = db.exec(
+            select(Employees).where(Employees.DisplayName == manager_name)
+        ).first()
+        if sql_manager:
+            return sql_manager.EmployeeId
+
+        ms_manager = await graph_client.find_user_by_display_name(manager_name)
+        if not ms_manager:
+            return None
+
+        manager_identifier = ms_manager.get("id") or ms_manager.get("userPrincipalName") or ms_manager.get("mail")
+        if not manager_identifier:
+            return None
+
+        ms_manager_full = await graph_client.get_user(manager_identifier)
+        sql_manager = await upsert_employee_from_microsoft_user(db, ms_manager_full)
+        return sql_manager.EmployeeId
+
+    return None
+
+async def validate_and_resolve_manager(
+    db: Session,
+    employee_id: int,
+    update_data: dict
+) -> dict:
+    """
+    Validate manager reference from PATCH payload.
+    Manager can be resolved from SQL employees or Microsoft Graph.
+    """
+    has_manager_data = any(
+        key in update_data
+        for key in ("ManagerEmployeeId", "ManagerEmail", "Manager")
+    )
+
+    if not has_manager_data:
+        return update_data
+
+    manager_employee_id = update_data.get("ManagerEmployeeId")
+    manager_email = update_data.get("ManagerEmail")
+    manager_name = update_data.get("Manager")
+
+    if isinstance(manager_email, str):
+        manager_email = manager_email.strip()
+        if not manager_email:
+            manager_email = None
+
+    if isinstance(manager_name, str):
+        manager_name = manager_name.strip()
+        if not manager_name:
+            manager_name = None
+
+    if manager_employee_id is not None:
+        if manager_employee_id == employee_id:
+            raise HTTPException(status_code=400, detail="Employee cannot be their own manager")
+
+        db_manager = db.exec(
+            select(Employees).where(Employees.EmployeeId == manager_employee_id)
+        ).first()
+        if not db_manager:
+            raise HTTPException(status_code=400, detail="ManagerEmployeeId not found in SQL employees")
+
+        update_data["ManagerEmployeeId"] = db_manager.EmployeeId
+        update_data["Manager"] = manager_name or db_manager.DisplayName or db_manager.FirstName
+        update_data["ManagerEmail"] = manager_email or db_manager.Email or db_manager.AzureUpn
+        return update_data
+
+    if manager_email:
+        try:
+            resolved_manager_id = await resolve_manager_employee_id(
+                db,
+                manager_email=manager_email,
+                manager_name=manager_name
+            )
+            if not resolved_manager_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ManagerEmail is invalid. Manager must exist in Microsoft or SQL employees."
+                )
+            if resolved_manager_id == employee_id:
+                raise HTTPException(status_code=400, detail="Employee cannot be their own manager")
+
+            db_manager = db.exec(
+                select(Employees).where(Employees.EmployeeId == resolved_manager_id)
+            ).first()
+            if not db_manager:
+                raise HTTPException(status_code=400, detail="Manager could not be resolved in SQL")
+
+            update_data["ManagerEmployeeId"] = db_manager.EmployeeId
+            update_data["Manager"] = manager_name or db_manager.DisplayName or db_manager.FirstName
+            update_data["ManagerEmail"] = db_manager.Email or db_manager.AzureUpn or manager_email
+            return update_data
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="ManagerEmail is invalid. Manager must exist in Microsoft or SQL employees."
+            )
+
+    if manager_name:
+        try:
+            resolved_manager_id = await resolve_manager_employee_id(
+                db,
+                manager_name=manager_name
+            )
+            if not resolved_manager_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Manager must exist in Microsoft or SQL employees"
+                )
+            if resolved_manager_id == employee_id:
+                raise HTTPException(status_code=400, detail="Employee cannot be their own manager")
+
+            db_manager = db.exec(
+                select(Employees).where(Employees.EmployeeId == resolved_manager_id)
+            ).first()
+            if not db_manager:
+                raise HTTPException(status_code=400, detail="Manager could not be resolved in SQL")
+
+            update_data["ManagerEmployeeId"] = db_manager.EmployeeId
+            update_data["Manager"] = db_manager.DisplayName or manager_name
+            update_data["ManagerEmail"] = db_manager.Email or db_manager.AzureUpn
+            return update_data
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Manager must exist in Microsoft or SQL employees"
+            )
+
+    update_data["ManagerEmployeeId"] = None
+    update_data["Manager"] = None
+    update_data["ManagerEmail"] = None
+    return update_data
 
 # ----------------------------
 # 📌 READ ALL
@@ -163,7 +370,7 @@ def get_employee(
 # ----------------------------
 # 📌 UPDATE (SIEMPRE SINCRONIZA CON MICROSOFT)
 # ----------------------------
-@router.patch("/{employee_id}")
+@router.patch("/{employee_id}", response_model=Employee)
 async def update_employee(
     employee_id: int,
     employee: EmployeeUpdate,
@@ -179,6 +386,7 @@ async def update_employee(
         raise HTTPException(status_code=404, detail="Employee not found")
 
     update_data = employee.model_dump(exclude_unset=True)
+    update_data = await validate_and_resolve_manager(db, employee_id, update_data)
 
     # Update local database first
     for key, value in update_data.items():
@@ -191,8 +399,24 @@ async def update_employee(
             graph_data = graph_client.map_employee_to_graph_user(update_data)
             if graph_data:
                 await graph_client.update_user(db_employee.AzureOid, graph_data)
-                db_employee.LastSyncedAt = datetime.now()
-                sync_success = True
+
+            manager_updated_in_payload = any(
+                key in update_data for key in ("ManagerEmployeeId", "ManagerEmail", "Manager")
+            )
+            if manager_updated_in_payload:
+                if db_employee.ManagerEmployeeId is None:
+                    await graph_client.clear_user_manager(db_employee.AzureOid)
+                else:
+                    db_manager = db.exec(
+                        select(Employees).where(Employees.EmployeeId == db_employee.ManagerEmployeeId)
+                    ).first()
+                    if db_manager:
+                        manager_identifier = db_manager.AzureOid or db_manager.AzureUpn or db_manager.Email
+                        if manager_identifier:
+                            await graph_client.set_user_manager(db_employee.AzureOid, manager_identifier)
+
+            db_employee.LastSyncedAt = datetime.now()
+            sync_success = True
         except Exception as e:
             # Log the error but don't fail the entire operation
             print(f"Warning: Failed to sync employee {employee_id} to Microsoft 365: {str(e)}")
@@ -200,14 +424,7 @@ async def update_employee(
 
     db.commit()
     db.refresh(db_employee)
-
-    # Add sync status to response (optional - for debugging)
-    response = db_employee.model_dump()
-    response["_sync_status"] = "successful" if sync_success else "not_synced"
-    if not db_employee.AzureOid:
-        response["_sync_status"] = "no_azure_oid"
-
-        return response
+    return employee_to_schema(db_employee)
 
 # ----------------------------
 # 📌 EMPLOYEE ROLES MANAGEMENT
@@ -333,6 +550,14 @@ async def sync_from_microsoft(
             employee_data["LastSyncedAt"] = datetime.now()
             employee_data["CountryId"] = country_id
 
+            manager_email = employee_data.get("ManagerEmail")
+            manager_name = employee_data.get("Manager")
+            employee_data["ManagerEmployeeId"] = await resolve_manager_employee_id(
+                db,
+                manager_email=manager_email,
+                manager_name=manager_name
+            )
+
             # Check if employee exists by AzureOid
             existing = db.exec(
                 select(Employees).filter(Employees.AzureOid == employee_data["AzureOid"])
@@ -444,6 +669,14 @@ async def sync_single_employee_from_microsoft(
         for key, value in employee_data.items():
             if value is not None:
                 setattr(db_employee, key, value)
+
+        manager_email = employee_data.get("ManagerEmail")
+        manager_name = employee_data.get("Manager")
+        db_employee.ManagerEmployeeId = await resolve_manager_employee_id(
+            db,
+            manager_email=manager_email,
+            manager_name=manager_name
+        )
         
         db_employee.LastSyncedAt = datetime.now()
         db.commit()

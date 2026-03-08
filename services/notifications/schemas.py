@@ -173,3 +173,16 @@ class UserApprovalNotificationData(BaseModel):
     approved_by_name: Optional[str] = None
     approved_by_email: Optional[str] = None
     action_url: Optional[str] = None
+
+
+class TimeSheetNotificationData(BaseModel):
+    """TimeSheet notification data."""
+
+    employee_id: int
+    employee_name: str
+    employee_email: str
+    notification_type: str  # "regular_hours" o "overtime"
+    hours_worked: float
+    customer_name: Optional[str] = None
+    clock_in_time: Optional[str] = None
+    action_url: Optional[str] = None

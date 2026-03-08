@@ -79,6 +79,7 @@ class TimeSheetSettings(SQLModel, table=True):
     SettingId: Optional[int] = Field(default=None, primary_key=True)
     OvertimeDailyHours: str = Field(default="8.00", max_length=10)
     OvertimeWeeklyHours: Optional[str] = Field(default="40.00", max_length=10)
+    MaxOvertimeDailyHours: Optional[str] = Field(default="8.00", max_length=10)  # Max overtime hours before auto clock out
     RoundToMinutes: Optional[int] = Field(default=None)
     IsActive: bool = Field(default=True)
     CreatedAt: str = Field(nullable=False, max_length=19)

@@ -50,6 +50,7 @@ class Employees(SQLModel, table=True):
     Anydesk: Optional[str] = Field(default=None, max_length=50)
     Manager: Optional[str] = Field(default=None, max_length=100)
     ManagerEmail: Optional[str] = Field(default=None, max_length=100)
+    ManagerEmployeeId: Optional[int] = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
     
     # Address fields
     StreetAddress: Optional[str] = Field(default=None, max_length=100)

@@ -157,26 +157,8 @@ def generate_form_notification_html(
                     </tr>
                     
                     <!-- Footer -->
-                    <tr>
-                        <td style="padding: 40px 40px 20px; text-align: center; border-top: 1px solid #bbbbbb;">
-                            <p style="margin: 0; color: #5b5b5b; font-size: 14px;">
-                                If you have any questions, please email us at
-                                <a href="mailto:{support_email}" style="color: #5b5b5b; text-decoration: none;">
-                                    {support_email}
-                                </a>
-                            </p>
-                        </td>
-                    </tr>
                     
                     <!-- Footer links -->
-                    <tr>
-                        <td style="padding: 10px 40px 40px; text-align: center;">
-                            <a href="{app_url}" 
-                               style="padding: 5px 15px; color: #5b5b5b; text-decoration: none; font-size: 14px;">
-                                PrimeFire App
-                            </a>
-                        </td>
-                    </tr>
                     
                 </table>
             </td>

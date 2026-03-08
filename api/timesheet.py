@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO, StringIO
@@ -27,6 +29,7 @@ from models.timesheet import (
     TimeSheetSettings,
 )
 from models.time_off import Holiday, RequestStatusEnum, TimeOffRequest, TimeUnitEnum
+from services.notifications.notifications import notify_timesheet_hours
 from schemas.timesheet import (
     TimeSheetClockInCreate,
     TimeSheetClockOutCreate,
@@ -37,10 +40,12 @@ from schemas.timesheet import (
     TimeSheetSummaryItem,
     TimeSheetSummaryResponse,
     TimeSheetSummaryTotals,
+    TimeSheetNotificationCheckResponse,
 )
 
 
 router = APIRouter(prefix="/api/v1", tags=["timesheet"])
+logger = logging.getLogger(__name__)
 
 DECIMAL_PLACES = Decimal("0.01")
 DEFAULT_DAILY_OVERTIME = Decimal("8.00")
@@ -56,11 +61,18 @@ def _parse_dt(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 
 
-def _calculate_minutes(start_str: str, end_str: str) -> int:
+def _calculate_minutes(start_str: str, end_str: str, daily_limit: int | None = None) -> int:
+    """Return total worked minutes between start and end (integer).
+
+    daily_limit is minutes; if provided the function still returns total minutes.
+    """
+    if daily_limit is None:
+        # Fallback to default overtime limit if none provided
+        daily_limit = int(DEFAULT_DAILY_OVERTIME * 60)
     start_dt = _parse_dt(start_str)
     end_dt = _parse_dt(end_str)
     minutes = int((end_dt - start_dt).total_seconds() / 60)
-    return max(minutes, 0)
+    return minutes
 
 
 def _get_client_ip(request: Request) -> Optional[str]:
@@ -205,6 +217,7 @@ def _get_settings(db: Session) -> TimeSheetSettings:
         settings_row = TimeSheetSettings(
             OvertimeDailyHours="8.00",
             OvertimeWeeklyHours="40.00",
+            MaxOvertimeDailyHours="8.00",
             RoundToMinutes=None,
             IsActive=True,
             CreatedAt=now_str,
@@ -440,8 +453,39 @@ def clock_in(
             detail="There is already an open punch",
         )
 
-    now_str = _now_str()
+    # Check weekly hours before allowing clock in
     tzinfo, tz_name = _get_request_timezone(request)
+
+    # Get current week start and end
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    utc_start, utc_end = _get_utc_range(week_start, week_end, tzinfo)
+
+    # Get punches for this week (excluding current open punch which doesn't exist yet)
+    weekly_punches = db.exec(
+        select(TimeSheetPunch).where(
+            TimeSheetPunch.EmployeeId == current_employee.EmployeeId,
+            TimeSheetPunch.ClockInAt >= utc_start,
+            TimeSheetPunch.ClockInAt <= utc_end,
+            TimeSheetPunch.Status == TimeSheetPunchStatusEnum.CLOSED.value,
+        )
+    ).all()
+
+    # Calculate weekly hours
+    weekly_minutes = sum(p.WorkedMinutes or 0 for p in weekly_punches)
+    weekly_hours = float(Decimal(weekly_minutes) / Decimal(60)) if weekly_minutes else 0
+
+    # Get settings
+    settings_row = _get_settings(db)
+    weekly_hours_limit = float(settings_row.OvertimeWeeklyHours) if settings_row.OvertimeWeeklyHours else 40.0
+    daily_hours_limit = float(settings_row.OvertimeDailyHours) if settings_row.OvertimeDailyHours else 8.0
+
+    # Check if user is already in overtime (weekly)
+    is_already_in_overtime = weekly_hours >= weekly_hours_limit
+
+    now_str = _now_str()
     punch = TimeSheetPunch(
         EmployeeId=current_employee.EmployeeId,
         CustomerId=payload.CustomerId,
@@ -470,6 +514,45 @@ def clock_in(
     db.add(punch)
     db.commit()
     db.refresh(punch)
+
+    # If user is already in overtime, send notification after clock in
+    if is_already_in_overtime:
+        employee = db.exec(
+            select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)
+        ).first()
+        employee_email = employee.Email if employee else None
+        employee_name = (
+            f"{employee.FirstName or ''} {employee.LastName or ''}".strip()
+            if employee
+            else "Employee"
+        )
+
+        customer_name = customer.CompanyName or (
+            f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
+        )
+
+        app_url = getattr(settings, "APP_URL", None)
+        if employee_email:
+            try:
+                asyncio.run(
+                    notify_timesheet_hours(
+                        employee_id=current_employee.EmployeeId,
+                        employee_name=employee_name,
+                        employee_email=employee_email,
+                        notification_type="overtime",
+                        hours_worked=weekly_hours,
+                        customer_name=customer_name,
+                        clock_in_time=now_str,
+                        action_url=app_url,
+                    )
+                )
+            except Exception:
+                # Don't fail the request if email fails, but keep traceability.
+                logger.exception(
+                    "Failed to send overtime notification after clock-in",
+                    extra={"employee_id": current_employee.EmployeeId},
+                )
+
     return punch
 
 
@@ -934,7 +1017,15 @@ def update_punch(
         punch.Status = payload.Status.value
 
     if punch.ClockOutAt:
-        punch.WorkedMinutes = _calculate_minutes(punch.ClockInAt, punch.ClockOutAt)
+        ts_settings = _get_settings(db)
+        daily_limit = (
+            int(float(ts_settings.OvertimeDailyHours) * 60)
+            if ts_settings and ts_settings.OvertimeDailyHours
+            else 480
+        )
+        punch.WorkedMinutes = _calculate_minutes(
+            punch.ClockInAt, punch.ClockOutAt, daily_limit
+        )
 
     punch.UpdatedAt = _now_str()
     db.add(punch)
@@ -999,3 +1090,252 @@ def reject_punch(
     db.commit()
     db.refresh(punch)
     return punch
+
+
+@router.get("/timesheet/notifications/check", response_model=TimeSheetNotificationCheckResponse)
+def check_notifications(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+):
+    """Check if user should receive notification for hours worked."""
+    # Get open punch
+    open_punch = _get_open_punch(db, current_employee.EmployeeId)
+
+    if not open_punch:
+        return TimeSheetNotificationCheckResponse(
+            has_open_punch=False,
+            elapsed_minutes=0,
+            elapsed_hours=0,
+            regular_hours_limit=8.0,
+            overtime_hours_limit=8.0,
+            max_overtime_hours_limit=8.0,
+            total_hours_limit=16.0,
+            weekly_hours_limit=40.0,
+            should_notify_regular=False,
+            should_notify_overtime=False,
+            should_auto_clock_out=False,
+        )
+
+    # Get settings
+    settings_row = _get_settings(db)
+    regular_hours = float(settings_row.OvertimeDailyHours) if settings_row.OvertimeDailyHours else 8.0
+    max_overtime_hours = float(settings_row.MaxOvertimeDailyHours) if settings_row.MaxOvertimeDailyHours else 8.0
+    total_hours_limit = regular_hours + max_overtime_hours  # Hours at which auto clock out occurs
+    weekly_hours_limit = float(settings_row.OvertimeWeeklyHours) if settings_row.OvertimeWeeklyHours else 40.0
+
+    # Calculate elapsed time for current punch
+    now_str = _now_str()
+    elapsed_minutes = _calculate_minutes(open_punch.ClockInAt, now_str)
+    elapsed_hours = float(Decimal(elapsed_minutes) / Decimal(60)) if elapsed_minutes else 0
+
+    # Calculate weekly hours (including current punch)
+    tzinfo, _ = _get_request_timezone(request)
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+    utc_start, utc_end = _get_utc_range(week_start, week_end, tzinfo)
+
+    # Get punches for this week (including current open punch)
+    weekly_punches = db.exec(
+        select(TimeSheetPunch).where(
+            TimeSheetPunch.EmployeeId == current_employee.EmployeeId,
+            TimeSheetPunch.ClockInAt >= utc_start,
+            TimeSheetPunch.ClockInAt <= utc_end,
+        )
+    ).all()
+
+    weekly_minutes = sum(p.WorkedMinutes or 0 for p in weekly_punches if p.WorkedMinutes)
+    # Add current punch elapsed minutes
+    weekly_minutes += elapsed_minutes
+    weekly_hours = float(Decimal(weekly_minutes) / Decimal(60))
+
+    # Get customer name
+    customer_name = None
+    if open_punch.CustomerId:
+        customer = db.exec(
+            select(Customers).where(Customers.CustomerId == open_punch.CustomerId)
+        ).first()
+        if customer:
+            customer_name = customer.CompanyName or (
+                f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
+            )
+
+    # Determine if should notify
+    # Notify regular when elapsed >= regular_hours
+    # Determine if should notify - check both daily and weekly limits
+    # Notify regular when elapsed hours >= daily regular hours
+    # Notify regular when elapsed >= regular_hours (e.g., 8 hours)
+    should_notify_regular = elapsed_hours >= regular_hours
+
+    # Notify overtime when elapsed >= regular_hours but < total_hours_limit
+    # (user is in overtime zone but not at auto clock out limit yet)
+    should_notify_overtime = elapsed_hours >= regular_hours and elapsed_hours < total_hours_limit
+
+    # Auto clock out when:
+    # 1. Daily total exceeded (elapsed >= total_hours_limit) OR
+    # 2. Weekly hours exceeded (weekly_hours >= weekly_hours_limit)
+    should_auto_clock_out = elapsed_hours >= total_hours_limit or weekly_hours >= weekly_hours_limit
+
+    return TimeSheetNotificationCheckResponse(
+        has_open_punch=True,
+        elapsed_minutes=elapsed_minutes,
+        elapsed_hours=elapsed_hours,
+        regular_hours_limit=regular_hours,
+        overtime_hours_limit=regular_hours,
+        max_overtime_hours_limit=max_overtime_hours,
+        total_hours_limit=total_hours_limit,
+        weekly_hours_limit=weekly_hours_limit,
+        should_notify_regular=should_notify_regular,
+        should_notify_overtime=should_notify_overtime,
+        should_auto_clock_out=should_auto_clock_out,
+        customer_name=customer_name,
+        clock_in_time=open_punch.ClockInAt,
+    )
+
+
+@router.post("/timesheet/clock-out-auto", response_model=TimeSheetPunchRead)
+def clock_out_auto(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+):
+    """Automatic clock out when overtime limit is reached."""
+    open_punch = _get_open_punch(db, current_employee.EmployeeId)
+    if not open_punch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found"
+        )
+
+    now_str = _now_str()
+    _, tz_name = _get_request_timezone(request)
+    open_punch.ClockOutAt = now_str
+    open_punch.WorkedMinutes = _calculate_minutes(open_punch.ClockInAt, now_str)
+    open_punch.Status = TimeSheetPunchStatusEnum.CLOSED.value
+    open_punch.Timezone = tz_name
+    open_punch.UpdatedAt = now_str
+
+    # Get customer name
+    customer_name = None
+    if open_punch.CustomerId:
+        customer = db.exec(
+            select(Customers).where(Customers.CustomerId == open_punch.CustomerId)
+        ).first()
+        if customer:
+            customer_name = customer.CompanyName or (
+                f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
+            )
+
+    # Get employee's email
+    employee = db.exec(
+        select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)
+    ).first()
+    employee_email = employee.Email if employee else None
+    employee_name = (
+        f"{employee.FirstName or ''} {employee.LastName or ''}".strip()
+        if employee
+        else "Employee"
+    )
+
+    elapsed_hours = (
+        float(Decimal(open_punch.WorkedMinutes) / Decimal(60))
+        if open_punch.WorkedMinutes
+        else 0
+    )
+
+    # Send notification email
+    app_url = getattr(settings, "APP_URL", None)
+    if employee_email:
+        try:
+            asyncio.run(
+                notify_timesheet_hours(
+                    employee_id=current_employee.EmployeeId,
+                    employee_name=employee_name,
+                    employee_email=employee_email,
+                    notification_type="overtime",
+                    hours_worked=elapsed_hours,
+                    customer_name=customer_name,
+                    clock_in_time=open_punch.ClockInAt,
+                    action_url=app_url,
+                )
+            )
+        except Exception:
+            # Don't fail the request if email fails, but keep traceability.
+            logger.exception(
+                "Failed to send overtime notification after auto clock-out",
+                extra={"employee_id": current_employee.EmployeeId},
+            )
+
+    db.add(open_punch)
+    db.commit()
+    db.refresh(open_punch)
+    return open_punch
+
+
+@router.post("/timesheet/notify-hours")
+def notify_hours(
+    notification_type: str = "regular_hours",
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+):
+    """Send notification email for hours worked."""
+    # Get open punch
+    open_punch = _get_open_punch(db, current_employee.EmployeeId)
+
+    if not open_punch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found"
+        )
+
+    # Calculate elapsed time
+    now_str = _now_str()
+    elapsed_minutes = _calculate_minutes(open_punch.ClockInAt, now_str)
+    elapsed_hours = float(Decimal(elapsed_minutes) / Decimal(60)) if elapsed_minutes else 0
+
+    # Get customer name
+    customer_name = None
+    if open_punch.CustomerId:
+        customer = db.exec(
+            select(Customers).where(Customers.CustomerId == open_punch.CustomerId)
+        ).first()
+        if customer:
+            customer_name = customer.CompanyName or (
+                f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
+            )
+
+    # Get employee's email
+    employee = db.exec(
+        select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)
+    ).first()
+    employee_email = employee.Email if employee else None
+    employee_name = (
+        f"{employee.FirstName or ''} {employee.LastName or ''}".strip()
+        if employee
+        else "Employee"
+    )
+
+    # Send notification email
+    app_url = getattr(settings, "APP_URL", None)
+    success = False
+    if employee_email:
+        try:
+            result = asyncio.run(
+                notify_timesheet_hours(
+                    employee_id=current_employee.EmployeeId,
+                    employee_name=employee_name,
+                    employee_email=employee_email,
+                    notification_type=notification_type,
+                    hours_worked=elapsed_hours,
+                    customer_name=customer_name,
+                    clock_in_time=open_punch.ClockInAt,
+                    action_url=app_url,
+                )
+            )
+            success = result.success if result else False
+        except Exception:
+            logger.exception(
+                "Failed to send timesheet hours notification",
+                extra={"employee_id": current_employee.EmployeeId},
+            )
+
+    return {"success": success}

@@ -122,6 +122,7 @@ class TimeSheetSettingsRead(SQLModel):
     SettingId: int
     OvertimeDailyHours: str
     OvertimeWeeklyHours: Optional[str] = None
+    MaxOvertimeDailyHours: Optional[str] = None
     RoundToMinutes: Optional[int] = None
     IsActive: bool
     CreatedAt: str
@@ -134,5 +135,24 @@ class TimeSheetSettingsRead(SQLModel):
 class TimeSheetSettingsUpdate(SQLModel):
     OvertimeDailyHours: Optional[float] = None
     OvertimeWeeklyHours: Optional[float] = None
+    MaxOvertimeDailyHours: Optional[float] = None
     RoundToMinutes: Optional[int] = None
     IsActive: Optional[bool] = None
+
+
+class TimeSheetNotificationCheckResponse(SQLModel):
+    """Response for timesheet notification check."""
+
+    has_open_punch: bool = False
+    elapsed_minutes: int = 0
+    elapsed_hours: float = 0
+    regular_hours_limit: float = 8.0
+    overtime_hours_limit: float = 8.0
+    max_overtime_hours_limit: float = 8.0  # Max overtime before auto clock out
+    total_hours_limit: float = 16.0  # regular + max overtime
+    weekly_hours_limit: float = 40.0
+    should_notify_regular: bool = False
+    should_notify_overtime: bool = False
+    should_auto_clock_out: bool = False
+    customer_name: Optional[str] = None
+    clock_in_time: Optional[str] = None

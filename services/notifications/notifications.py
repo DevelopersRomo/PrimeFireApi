@@ -19,6 +19,7 @@ from services.notifications.schemas import (
     TicketNotificationData,
     TicketMessageNotificationData,
     UserApprovalNotificationData,
+    TimeSheetNotificationData,
     EmailAttachment,
 )
 from core.config import settings
@@ -55,6 +56,15 @@ def get_action_icon(action_type: str) -> str:
 def format_absence_type(absence_type: str) -> str:
     """Format absence type for display."""
     return absence_type.replace("_", " ").title()
+
+
+def format_hours_to_readable(decimal_hours: float) -> str:
+    """Format decimal hours to readable format (e.g., '8 hours 30 min')."""
+    hours = int(decimal_hours)
+    minutes = round((decimal_hours - hours) * 60)
+    if minutes == 0:
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    return f"{hours} hour{'s' if hours != 1 else ''} {minutes} min"
 
 
 def _normalize_app_url(url: str) -> str:
@@ -989,16 +999,16 @@ async def notify_teams(
 ) -> NotificationResponse:
     """
     Send a Teams notification to a user.
-    
+
     Always uses BOT_EMAIL as sender (orchestrator).
-    
+
     Args:
         recipient_email: Email address of the recipient
         title: Notification title
         message_body: Main message content
         action_url: Optional URL for action button
         action_text: Text for action button
-        
+
     Returns:
         NotificationResponse with success status
     """
@@ -1008,5 +1018,99 @@ async def notify_teams(
         message_body=message_body,
         action_url=action_url,
         action_text=action_text,
+    )
+
+
+async def send_timesheet_notification(
+    notification_data: TimeSheetNotificationData,
+    to_email: str,
+) -> NotificationResponse:
+    """Send timesheet notification (regular hours or overtime)."""
+    try:
+        if notification_data.notification_type == "regular_hours":
+            title = "Regular Hours Completed"
+            message_body = "You have completed your regular hours of work. You may continue working or clock out when ready."
+            action_type = "info"
+        elif notification_data.notification_type == "overtime":
+            title = "Overtime Limit Reached"
+            message_body = "You have reached the overtime limit. Clock out has been performed automatically."
+            action_type = "warning"
+        else:
+            title = "TimeSheet Update"
+            message_body = "Your timesheet has been updated."
+            action_type = "info"
+
+        fields = [
+            NotificationField(label="Employee", value=notification_data.employee_name),
+            NotificationField(label="Hours Worked", value=format_hours_to_readable(notification_data.hours_worked)),
+        ]
+
+        if notification_data.customer_name:
+            fields.append(NotificationField(label="Customer", value=notification_data.customer_name))
+
+        if notification_data.clock_in_time:
+            fields.append(NotificationField(label="Clock In Time", value=notification_data.clock_in_time))
+
+        html_body = generate_notification_html(
+            title=title,
+            sub_title="TimeSheet Notification",
+            action_type=action_type,
+            message_body=message_body,
+            fields=fields,
+        )
+
+        to_emails = parse_email_list(to_email)
+
+        sender_email = getattr(settings, "BOT_EMAIL", None)
+        if not sender_email:
+            return NotificationResponse(
+                success=False,
+                error_message="No sender email configured (BOT_EMAIL)",
+            )
+
+        subject = title
+        success, message_id, error_message = await send_outlook_email(
+            send_as_email=sender_email,
+            to_emails=to_emails,
+            subject=subject,
+            body=html_body,
+        )
+
+        if success:
+            return NotificationResponse(success=True, message_id=message_id)
+        else:
+            return NotificationResponse(success=False, error_message=error_message)
+
+    except Exception as e:
+        return NotificationResponse(
+            success=False,
+            error_message=f"Error sending timesheet notification: {str(e)}",
+        )
+
+
+async def notify_timesheet_hours(
+    employee_id: int,
+    employee_name: str,
+    employee_email: str,
+    notification_type: str,
+    hours_worked: float,
+    customer_name: Optional[str] = None,
+    clock_in_time: Optional[str] = None,
+    action_url: Optional[str] = None,
+) -> NotificationResponse:
+    """Helper function to send timesheet notification."""
+    notification_data = TimeSheetNotificationData(
+        employee_id=employee_id,
+        employee_name=employee_name,
+        employee_email=employee_email,
+        notification_type=notification_type,
+        hours_worked=hours_worked,
+        customer_name=customer_name,
+        clock_in_time=clock_in_time,
+        action_url=action_url,
+    )
+    return await send_timesheet_notification(
+        notification_data=notification_data,
+        to_email=employee_email,
     )
 

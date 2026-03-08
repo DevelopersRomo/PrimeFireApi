@@ -2,12 +2,17 @@ from datetime import date, datetime, timezone, time
 from decimal import Decimal
 from io import StringIO
 import csv
-from typing import List
+from typing import List, Optional, Set
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Response, status, BackgroundTasks, Query, Request
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee, require_authentication
+from api.dependencies import (
+    get_current_employee,
+    get_current_employee_with_permissions,
+    require_authentication,
+)
+from core.config import settings
 from bd.dependencies import get_db
 from models.employees import Employees
 from services.notifications.notifications import (
@@ -148,13 +153,114 @@ def _get_request_or_404(db: Session, request_id: int) -> TimeOffRequest:
     return request
 
 
+def _has_timeoff_admin_actions(user_permissions: dict) -> bool:
+    for perm in user_permissions.get("permissions", []):
+        if perm.get("module_key") == "timeoff":
+            return perm.get("permissions", {}).get("AdminActions", False)
+    return False
+
+
+def _get_direct_report_ids(db: Session, manager_employee_id: int) -> Set[int]:
+    rows = db.exec(
+        select(Employees.EmployeeId).where(
+            Employees.ManagerEmployeeId == manager_employee_id
+        )
+    ).all()
+    return {employee_id for employee_id in rows if employee_id is not None}
+
+
+def _build_visible_employee_ids(
+    db: Session,
+    current_employee: Employees,
+    is_admin: bool,
+) -> Optional[Set[int]]:
+    if is_admin:
+        return None
+
+    visible_ids = _get_direct_report_ids(db, current_employee.EmployeeId)
+    visible_ids.add(current_employee.EmployeeId)
+    return visible_ids
+
+
+def _assert_request_visibility(request: TimeOffRequest, visible_employee_ids: Optional[Set[int]]):
+    if visible_employee_ids is not None and request.EmployeeId not in visible_employee_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to access this request",
+        )
+
+
+def _assert_can_review_request(
+    db: Session,
+    request: TimeOffRequest,
+    current_employee: Employees,
+    is_admin: bool,
+):
+    if request.EmployeeId == current_employee.EmployeeId:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot approve or reject your own request",
+        )
+
+    if is_admin:
+        return
+
+    requester = db.exec(
+        select(Employees).where(Employees.EmployeeId == request.EmployeeId)
+    ).first()
+    if not requester:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Requester employee not found",
+        )
+
+    if requester.ManagerEmployeeId != current_employee.EmployeeId:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the direct manager or an admin can review this request",
+        )
+
+
 @router.get("/requests", response_model=List[TimeOffRequestRead])
 def list_requests(
-    db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    request_status: Optional[str] = Query(default=None, alias="status"),
+    employee_id: Optional[int] = None,
+    team_only: bool = False,
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
-    requests = db.exec(
-        select(TimeOffRequest).order_by(TimeOffRequest.CreatedAt.desc())
-    ).all()
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+
+    if visible_employee_ids is not None:
+        scoped_ids = set(visible_employee_ids)
+        if team_only:
+            scoped_ids.discard(current_employee.EmployeeId)
+        if not scoped_ids:
+            return []
+    else:
+        scoped_ids = None
+
+    if employee_id is not None:
+        if scoped_ids is not None and employee_id not in scoped_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not allowed to query this employee",
+            )
+
+    query = select(TimeOffRequest)
+
+    if scoped_ids is not None:
+        query = query.where(TimeOffRequest.EmployeeId.in_(scoped_ids))
+
+    if employee_id is not None:
+        query = query.where(TimeOffRequest.EmployeeId == employee_id)
+
+    if request_status is not None:
+        query = query.where(TimeOffRequest.Status == request_status)
+
+    requests = db.exec(query.order_by(TimeOffRequest.CreatedAt.desc())).all()
     return requests
 
 
@@ -162,15 +268,22 @@ def list_requests(
 def get_request(
     request_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
-    return _get_request_or_404(db, request_id)
+    request = _get_request_or_404(db, request_id)
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+    _assert_request_visibility(request, visible_employee_ids)
+    return request
 
 
 @router.post("/requests", response_model=TimeOffRequestRead, status_code=status.HTTP_201_CREATED)
 def create_request(
     payload: TimeOffRequestCreate,
+    http_request: Request,
     background_tasks: BackgroundTasks,
+    tenant_key: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
@@ -220,6 +333,8 @@ def create_request(
     # Determine recipient email (Manager or default)
     manager_email = employee_exists.ManagerEmail
     recipient_email = manager_email if manager_email else "info@primefire.us"
+    support_cc_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
+    tenant_key = tenant_key or http_request.headers.get("X-Tenant-ID")
 
     background_tasks.add_task(
         notify_time_off_submitted,
@@ -232,7 +347,9 @@ def create_request(
         end_date=payload.EndDate.strftime('%Y-%m-%d'),
         total_days=_quantize(total_days),
         to_email=recipient_email,
+        cc_email=support_cc_email,
         reason=payload.Reason,
+        tenant_key=tenant_key,
         # action_url=f"https://primefireapp.azurewebsites.net/time-off/requests/{time_off_request.RequestId}"
     )
 
@@ -243,11 +360,17 @@ def create_request(
 def approve_request(
     request_id: int,
     review: RequestReview,
+    http_request: Request,
     background_tasks: BackgroundTasks,
+    tenant_key: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
     request = _get_request_or_404(db, request_id)
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    _assert_can_review_request(db, request, current_employee, is_admin)
+
     if request.Status != RequestStatusEnum.PENDING.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -278,6 +401,7 @@ def approve_request(
     # Notify requester
     requester = db.exec(select(Employees).where(Employees.EmployeeId == request.EmployeeId)).first()
     if requester and requester.Email:
+        tenant_key = tenant_key or http_request.headers.get("X-Tenant-ID")
         background_tasks.add_task(
             notify_time_off_approved,
             request_id=request.RequestId,
@@ -292,6 +416,7 @@ def approve_request(
             reviewed_by_name=current_employee.DisplayName,
             reviewed_by_email=current_employee.Email,
             review_notes=review.ReviewNotes,
+            tenant_key=tenant_key,
         )
 
     return request
@@ -301,11 +426,17 @@ def approve_request(
 def reject_request(
     request_id: int,
     review: RequestReview,
+    http_request: Request,
     background_tasks: BackgroundTasks,
+    tenant_key: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
     request = _get_request_or_404(db, request_id)
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    _assert_can_review_request(db, request, current_employee, is_admin)
+
     if request.Status != RequestStatusEnum.PENDING.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -335,6 +466,7 @@ def reject_request(
     # Notify requester
     requester = db.exec(select(Employees).where(Employees.EmployeeId == request.EmployeeId)).first()
     if requester and requester.Email:
+        tenant_key = tenant_key or http_request.headers.get("X-Tenant-ID")
         background_tasks.add_task(
             notify_time_off_rejected,
             request_id=request.RequestId,
@@ -349,6 +481,7 @@ def reject_request(
             reviewed_by_name=current_employee.DisplayName,
             reviewed_by_email=current_employee.Email,
             review_notes=review.ReviewNotes,
+            tenant_key=tenant_key,
         )
 
     return request
@@ -356,10 +489,20 @@ def reject_request(
 
 @router.get("/calendar", response_model=List[CalendarEvent])
 def get_calendar(
-    db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+
     holidays = db.exec(select(Holiday)).all()
-    requests = db.exec(select(TimeOffRequest)).all()
+    request_query = select(TimeOffRequest)
+    if visible_employee_ids is not None:
+        request_query = request_query.where(
+            TimeOffRequest.EmployeeId.in_(visible_employee_ids)
+        )
+    requests = db.exec(request_query).all()
 
     events: List[CalendarEvent] = []
     for holiday in holidays:
@@ -378,7 +521,7 @@ def get_calendar(
             CalendarEvent(
                 Id=str(request.RequestId),
                 Type="time_off_request",
-                Title=f"{request.AbsenceType.value} - {request.Status.value}",
+                Title=f"{request.AbsenceType} - {request.Status}",
                 StartDate=request.StartDate,
                 EndDate=request.EndDate,
                 Status=request.Status,
@@ -394,10 +537,25 @@ def get_calendar(
 
 @router.get("/reports/summary", response_model=ReportSummary)
 def get_report_summary(
-    db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
-    requests = db.exec(select(TimeOffRequest)).all()
-    balances = db.exec(select(TimeOffBalance)).all()
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+
+    request_query = select(TimeOffRequest)
+    balance_query = select(TimeOffBalance)
+    if visible_employee_ids is not None:
+        request_query = request_query.where(
+            TimeOffRequest.EmployeeId.in_(visible_employee_ids)
+        )
+        balance_query = balance_query.where(
+            TimeOffBalance.EmployeeId.in_(visible_employee_ids)
+        )
+
+    requests = db.exec(request_query).all()
+    balances = db.exec(balance_query).all()
 
     status_counts = {
         "pending": 0,
@@ -408,12 +566,12 @@ def get_report_summary(
     absence_totals = {"vacation": 0.0, "personal": 0.0, "sick": 0.0}
 
     for request in requests:
-        status_counts[request.Status.value] += 1
-        absence_totals[request.AbsenceType.value] += float(request.TotalDays)
+        status_counts[request.Status] += 1
+        absence_totals[request.AbsenceType] += float(request.TotalDays)
 
     balance_map: dict[str, BalanceTotals] = {}
     for balance in balances:
-        key = balance.AbsenceType.value
+        key = balance.AbsenceType
         if key not in balance_map:
             balance_map[key] = BalanceTotals()
         current = balance_map[key]
@@ -433,9 +591,18 @@ def get_report_summary(
 
 @router.get("/reports/export")
 def export_requests_report(
-    db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
-    rows = db.exec(select(TimeOffRequest)).all()
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+
+    query = select(TimeOffRequest)
+    if visible_employee_ids is not None:
+        query = query.where(TimeOffRequest.EmployeeId.in_(visible_employee_ids))
+
+    rows = db.exec(query).all()
     buffer = StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
@@ -464,9 +631,9 @@ def export_requests_report(
             [
                 item.RequestId,
                 item.EmployeeId,
-                item.AbsenceType.value,
-                item.Status.value,
-                item.TimeUnit.value,
+                item.AbsenceType,
+                item.Status,
+                item.TimeUnit,
                 item.StartDate,
                 item.EndDate,
                 item.StartTime,
@@ -494,8 +661,17 @@ def export_requests_report(
 def get_balances(
     employee_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+    if visible_employee_ids is not None and employee_id not in visible_employee_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to view this employee balances",
+        )
+
     balances = db.exec(
         select(TimeOffBalance).where(TimeOffBalance.EmployeeId == employee_id)
     ).all()

@@ -6,6 +6,10 @@ This ensures consistent email delivery and proper authentication with Microsoft 
 """
 
 from typing import Optional
+from sqlmodel import select
+
+from bd.connection import SessionLocal
+from models.tenants import Tenants, TenantLogos
 from services.notifications.email_functions import send_outlook_email, parse_email_list
 from services.notifications.teams_functions import send_teams_notification
 from services.notifications.schemas import (
@@ -15,6 +19,7 @@ from services.notifications.schemas import (
     TicketNotificationData,
     TicketMessageNotificationData,
     UserApprovalNotificationData,
+    TimeSheetNotificationData,
     EmailAttachment,
 )
 from core.config import settings
@@ -53,6 +58,72 @@ def format_absence_type(absence_type: str) -> str:
     return absence_type.replace("_", " ").title()
 
 
+def format_hours_to_readable(decimal_hours: float) -> str:
+    """Format decimal hours to readable format (e.g., '8 hours 30 min')."""
+    hours = int(decimal_hours)
+    minutes = round((decimal_hours - hours) * 60)
+    if minutes == 0:
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    return f"{hours} hour{'s' if hours != 1 else ''} {minutes} min"
+
+
+def _normalize_app_url(url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+        return cleaned
+    return f"https://{cleaned}"
+
+
+def _resolve_email_branding(tenant_key: Optional[str]) -> dict:
+    """Resolve branding for emails using tenant key from request context."""
+    default_app_url = getattr(
+        settings,
+        "APP_URL",
+        "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net",
+    )
+    default_support_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
+    branding = {
+        "app_name": "",
+        "app_url": _normalize_app_url(default_app_url),
+        "support_email": default_support_email,
+        "include_support_section": bool(default_support_email),
+    }
+
+    if not tenant_key:
+        return branding
+
+    db = SessionLocal()
+    try:
+        tenant = db.exec(
+            select(Tenants).where(Tenants.DbConnectionKey == tenant_key)
+        ).first()
+        if not tenant:
+            return branding
+
+        logo = db.exec(
+            select(TenantLogos)
+            .where(TenantLogos.TenantId == tenant.TenantId)
+            .order_by(TenantLogos.LogoId.desc())
+        ).first()
+        if not logo:
+            return branding
+
+        app_name = (logo.Title or "").strip() or branding["app_name"]
+        app_url = _normalize_app_url((logo.Url or "").strip()) or branding["app_url"]
+        support_email = (logo.Email or "").strip() or None
+
+        return {
+            "app_name": app_name,
+            "app_url": app_url,
+            "support_email": support_email,
+            "include_support_section": bool(support_email),
+        }
+    finally:
+        db.close()
+
+
 def generate_notification_html(
     title: str,
     sub_title: Optional[str] = None,
@@ -63,13 +134,27 @@ def generate_notification_html(
     fields: Optional[list[NotificationField]] = None,
     action_url: Optional[str] = None,
     action_text: str = "View Details",
+    support_email: Optional[str] = None,
+    app_url: Optional[str] = None,
+    app_name: Optional[str] = None,
+    include_support_section: bool = True,
 ) -> str:
     """Generate unified HTML email template for notifications."""
     color = get_action_color(action_type)
     icon = get_action_icon(action_type)
     
-    support_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
-    app_url = getattr(settings, "APP_URL", "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net")
+    if support_email is None:
+        support_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
+    if app_url is None:
+        app_url = getattr(
+            settings,
+            "APP_URL",
+            "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net",
+        )
+    app_url = _normalize_app_url(app_url)
+    app_name = (app_name or "").strip()
+
+    support_html = ""
 
     performed_by_html = ""
     if performed_by_name:
@@ -183,24 +268,14 @@ def generate_notification_html(
                     
                     {action_button_html}
                     
-                    <!-- Footer -->
-                    <tr>
-                        <td style="padding: 40px 40px 20px; text-align: center; border-top: 1px solid #bbbbbb;">
-                            <p style="margin: 0; color: #5b5b5b; font-size: 14px;">
-                                If you have any questions, please email us at
-                                <a href="mailto:{support_email}" style="color: #5b5b5b; text-decoration: none;">
-                                    {support_email}
-                                </a>
-                            </p>
-                        </td>
-                    </tr>
+                    {support_html}
                     
                     <!-- Footer links -->
                     <tr>
                         <td style="padding: 10px 40px 40px; text-align: center;">
                             <a href="{app_url}" 
                                style="padding: 5px 15px; color: #5b5b5b; text-decoration: none; font-size: 14px;">
-                                PrimeFire App
+                                {app_name}
                             </a>
                         </td>
                     </tr>
@@ -221,6 +296,7 @@ async def send_time_off_notification(
     action_type: str,
     to_email: str,
     cc_email: Optional[str] = None,
+    tenant_key: Optional[str] = None,
 ) -> NotificationResponse:
     """Send time off notification (approved/rejected)."""
     try:
@@ -256,6 +332,8 @@ async def send_time_off_notification(
         if notification_data.review_notes:
             fields.append(NotificationField(label="Review Notes", value=notification_data.review_notes))
 
+        branding = _resolve_email_branding(tenant_key)
+
         html_body = generate_notification_html(
             title=title,
             sub_title=f"Request #{notification_data.request_id}",
@@ -266,6 +344,10 @@ async def send_time_off_notification(
             fields=fields,
             action_url=notification_data.action_url,
             action_text="View Request",
+            support_email=branding["support_email"],
+            app_url=branding["app_url"],
+            app_name=branding["app_name"],
+            include_support_section=branding["include_support_section"],
         )
 
         to_emails = parse_email_list(to_email)
@@ -570,6 +652,7 @@ async def notify_time_off_approved(
     reviewed_by_email: Optional[str] = None,
     review_notes: Optional[str] = None,
     action_url: Optional[str] = None,
+    tenant_key: Optional[str] = None,
 ) -> NotificationResponse:
     """Helper function to send time off approved notification."""
     notification_data = TimeOffNotificationData(
@@ -592,6 +675,7 @@ async def notify_time_off_approved(
         notification_data=notification_data,
         action_type="approved",
         to_email=employee_email,
+        tenant_key=tenant_key,
     )
 
 
@@ -610,6 +694,7 @@ async def notify_time_off_rejected(
     reviewed_by_email: Optional[str] = None,
     review_notes: Optional[str] = None,
     action_url: Optional[str] = None,
+    tenant_key: Optional[str] = None,
 ) -> NotificationResponse:
     """Helper function to send time off rejected notification."""
     notification_data = TimeOffNotificationData(
@@ -632,6 +717,7 @@ async def notify_time_off_rejected(
         notification_data=notification_data,
         action_type="rejected",
         to_email=employee_email,
+        tenant_key=tenant_key,
     )
 
 
@@ -648,6 +734,8 @@ async def notify_time_off_submitted(
     total_hours: Optional[str] = None,
     reason: Optional[str] = None,
     action_url: Optional[str] = None,
+    tenant_key: Optional[str] = None,
+    cc_email: Optional[str] = None,
 ) -> NotificationResponse:
     """Helper function to send time off submitted notification (to manager)."""
     notification_data = TimeOffNotificationData(
@@ -669,6 +757,8 @@ async def notify_time_off_submitted(
         notification_data=notification_data,
         action_type="submitted",
         to_email=to_email,
+        cc_email=cc_email,
+        tenant_key=tenant_key,
     )
 
 
@@ -909,16 +999,16 @@ async def notify_teams(
 ) -> NotificationResponse:
     """
     Send a Teams notification to a user.
-    
+
     Always uses BOT_EMAIL as sender (orchestrator).
-    
+
     Args:
         recipient_email: Email address of the recipient
         title: Notification title
         message_body: Main message content
         action_url: Optional URL for action button
         action_text: Text for action button
-        
+
     Returns:
         NotificationResponse with success status
     """
@@ -928,5 +1018,99 @@ async def notify_teams(
         message_body=message_body,
         action_url=action_url,
         action_text=action_text,
+    )
+
+
+async def send_timesheet_notification(
+    notification_data: TimeSheetNotificationData,
+    to_email: str,
+) -> NotificationResponse:
+    """Send timesheet notification (regular hours or overtime)."""
+    try:
+        if notification_data.notification_type == "regular_hours":
+            title = "Regular Hours Completed"
+            message_body = "You have completed your regular hours of work. You may continue working or clock out when ready."
+            action_type = "info"
+        elif notification_data.notification_type == "overtime":
+            title = "Overtime Limit Reached"
+            message_body = "You have reached the overtime limit. Clock out has been performed automatically."
+            action_type = "warning"
+        else:
+            title = "TimeSheet Update"
+            message_body = "Your timesheet has been updated."
+            action_type = "info"
+
+        fields = [
+            NotificationField(label="Employee", value=notification_data.employee_name),
+            NotificationField(label="Hours Worked", value=format_hours_to_readable(notification_data.hours_worked)),
+        ]
+
+        if notification_data.customer_name:
+            fields.append(NotificationField(label="Customer", value=notification_data.customer_name))
+
+        if notification_data.clock_in_time:
+            fields.append(NotificationField(label="Clock In Time", value=notification_data.clock_in_time))
+
+        html_body = generate_notification_html(
+            title=title,
+            sub_title="TimeSheet Notification",
+            action_type=action_type,
+            message_body=message_body,
+            fields=fields,
+        )
+
+        to_emails = parse_email_list(to_email)
+
+        sender_email = getattr(settings, "BOT_EMAIL", None)
+        if not sender_email:
+            return NotificationResponse(
+                success=False,
+                error_message="No sender email configured (BOT_EMAIL)",
+            )
+
+        subject = title
+        success, message_id, error_message = await send_outlook_email(
+            send_as_email=sender_email,
+            to_emails=to_emails,
+            subject=subject,
+            body=html_body,
+        )
+
+        if success:
+            return NotificationResponse(success=True, message_id=message_id)
+        else:
+            return NotificationResponse(success=False, error_message=error_message)
+
+    except Exception as e:
+        return NotificationResponse(
+            success=False,
+            error_message=f"Error sending timesheet notification: {str(e)}",
+        )
+
+
+async def notify_timesheet_hours(
+    employee_id: int,
+    employee_name: str,
+    employee_email: str,
+    notification_type: str,
+    hours_worked: float,
+    customer_name: Optional[str] = None,
+    clock_in_time: Optional[str] = None,
+    action_url: Optional[str] = None,
+) -> NotificationResponse:
+    """Helper function to send timesheet notification."""
+    notification_data = TimeSheetNotificationData(
+        employee_id=employee_id,
+        employee_name=employee_name,
+        employee_email=employee_email,
+        notification_type=notification_type,
+        hours_worked=hours_worked,
+        customer_name=customer_name,
+        clock_in_time=clock_in_time,
+        action_url=action_url,
+    )
+    return await send_timesheet_notification(
+        notification_data=notification_data,
+        to_email=employee_email,
     )
 

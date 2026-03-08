@@ -42,6 +42,7 @@ def _get_or_create_settings(db: Session) -> TimeSheetSettings:
     settings_row = TimeSheetSettings(
         OvertimeDailyHours="8.00",
         OvertimeWeeklyHours="40.00",
+        MaxOvertimeDailyHours="8.00",
         RoundToMinutes=None,
         IsActive=True,
         CreatedAt=now_str,
@@ -75,6 +76,8 @@ def upsert_timesheet_settings(
         settings_row.OvertimeDailyHours = _quantize(payload.OvertimeDailyHours)
     if payload.OvertimeWeeklyHours is not None:
         settings_row.OvertimeWeeklyHours = _quantize(payload.OvertimeWeeklyHours)
+    if payload.MaxOvertimeDailyHours is not None:
+        settings_row.MaxOvertimeDailyHours = _quantize(payload.MaxOvertimeDailyHours)
     if payload.RoundToMinutes is not None:
         settings_row.RoundToMinutes = payload.RoundToMinutes
     if payload.IsActive is not None:

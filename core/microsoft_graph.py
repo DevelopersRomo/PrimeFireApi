@@ -64,6 +64,8 @@ class MicrosoftGraphClient:
                 response = await client.patch(url, headers=headers, json=data)
             elif method == "POST":
                 response = await client.post(url, headers=headers, json=data)
+            elif method == "PUT":
+                response = await client.put(url, headers=headers, json=data)
             elif method == "DELETE":
                 response = await client.delete(url, headers=headers)
             else:
@@ -92,6 +94,25 @@ class MicrosoftGraphClient:
         """Get a single user by ID or userPrincipalName"""
         endpoint = f"/users/{user_id}?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode&$expand=manager($select=displayName,mail,userPrincipalName)"
         return await self._make_request("GET", endpoint)
+
+    async def find_user_by_display_name(self, display_name: str) -> Optional[Dict[str, Any]]:
+        """Find a Microsoft user by exact displayName."""
+        if not display_name or not display_name.strip():
+            return None
+
+        escaped_name = display_name.strip().replace("'", "''")
+        endpoint = (
+            f"/users?$filter=displayName eq '{escaped_name}'"
+            "&$select=id,userPrincipalName,displayName,mail"
+            "&$top=2"
+        )
+        data = await self._make_request("GET", endpoint)
+        users = data.get("value", [])
+
+        if not users:
+            return None
+
+        return users[0]
     
     async def update_user(self, user_id: str, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -121,6 +142,19 @@ class MicrosoftGraphClient:
         
         # Return updated user
         return await self.get_user(user_id)
+
+    async def set_user_manager(self, user_id: str, manager_user_id: str) -> None:
+        """Set manager relation for a user in Microsoft Graph."""
+        endpoint = f"/users/{user_id}/manager/$ref"
+        payload = {
+            "@odata.id": f"https://graph.microsoft.com/v1.0/users/{manager_user_id}"
+        }
+        await self._make_request("PUT", endpoint, payload)
+
+    async def clear_user_manager(self, user_id: str) -> None:
+        """Remove manager relation for a user in Microsoft Graph."""
+        endpoint = f"/users/{user_id}/manager/$ref"
+        await self._make_request("DELETE", endpoint)
     
     def map_graph_user_to_employee(self, graph_user: Dict[str, Any]) -> Dict[str, Any]:
         """Map Microsoft Graph user to Employee model"""

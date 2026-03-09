@@ -19,8 +19,9 @@ IS_PRODUCTION = ENV == "prod"
 
 # Directorio de backups según el entorno
 if IS_PRODUCTION:
-    # En Azure Linux: ~/sql_backups
-    BACKUP_DIR = os.path.expanduser("~/sql_backups")
+    # En Azure App Service Linux: /home/home/sql_backups
+    # o usar variable BACKUP_DIR si está configurada
+    BACKUP_DIR = os.getenv("BACKUP_DIR", "/home/home/sql_backups")
 else:
     # En local: bd/sql/backups
     BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd", "sql", "backups")
@@ -91,7 +92,7 @@ async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authe
     if all_success:
         return BackupResponse(
             success=True,
-            message=f"Backup{'s' if len(db_prefixes) > 1 else ''} completado(s) exitosamente",
+            message=f"Backup{'s' if len(db_prefixes) > 1 else ''} completed successfully",
             backup_files=backup_files
         )
     else:
@@ -100,7 +101,7 @@ async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authe
             status_code=500,
             content=BackupResponse(
                 success=False,
-                message=f"Error en backup: {'; '.join(errors)}",
+                message=f"Backup error: {'; '.join(errors)}",
                 backup_files=backup_files
             ).model_dump()
         )
@@ -108,7 +109,7 @@ async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authe
 
 @router.get("/status")
 async def get_backup_status(_: dict = Depends(require_authentication)):
-    """Obtiene el estado de los backups (directorio y archivos recientes)."""
+    """Get backup status and recent files."""
     files = []
     if os.path.exists(BACKUP_DIR):
         # Obtener archivos .sql ordenados por fecha de modificación (más recientes primero)

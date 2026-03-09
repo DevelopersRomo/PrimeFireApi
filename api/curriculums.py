@@ -5,6 +5,7 @@ from typing import List, Optional
 import os
 import uuid
 from pathlib import Path
+from dotenv import load_dotenv
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
@@ -13,11 +14,25 @@ from models.jobs import Jobs
 from schemas.curriculums import Curriculum, CurriculumCreate, CurriculumUpdate
 from core.config import settings
 
-router = APIRouter()
+# Load .env
+load_dotenv()
 
-# Directory to store Curriculums
-UPLOAD_DIR = Path(settings.UPLOAD_DIR) / "curriculums"
+# Detectar entorno
+ENV = os.getenv("ENVIRONMENT", "local").lower()
+IS_PRODUCTION = ENV == "prod"
+
+# Directorio de uploads según el entorno
+if IS_PRODUCTION:
+    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home/uploads
+    uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    UPLOAD_DIR = Path(uploads_base) / "jobs"
+else:
+    # Local: uploads/curriculums
+    UPLOAD_DIR = Path(settings.UPLOAD_DIR) / "curriculums"
+
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+router = APIRouter()
 
 def save_upload_file(upload_file: UploadFile) -> str:
     """Save uploaded file and return relative path"""

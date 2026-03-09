@@ -20,6 +20,7 @@ from api.dependencies import (
 )
 from bd.dependencies import get_db
 from core.config import settings
+from core.date_helpers import format_hours_minutes, calculate_regular_overtime
 from models.customers import Customers
 from models.employees import Employees
 from models.timesheet import (
@@ -47,7 +48,6 @@ from schemas.timesheet import (
 router = APIRouter(prefix="/api/v1", tags=["timesheet"])
 logger = logging.getLogger(__name__)
 
-DECIMAL_PLACES = Decimal("0.01")
 DEFAULT_DAILY_OVERTIME = Decimal("8.00")
 DEFAULT_WEEKLY_OVERTIME = Decimal("40.00")
 DEFAULT_WORKDAY_HOURS = Decimal("8.00")
@@ -714,28 +714,66 @@ def export_timesheet(
         ).all()
         customer_map = {customer.CustomerId: customer for customer in customers}
 
+    # Get settings for overtime calculation
+    settings = db.exec(select(TimeSheetSettings).where(TimeSheetSettings.IsActive == True)).first()
+    overtime_daily_minutes = 480  # default 8 hours
+    if settings and settings.OvertimeDailyHours:
+        overtime_daily_minutes = int(float(settings.OvertimeDailyHours) * 60)
+
+    # Get holidays for the date range
+    holidays = db.exec(select(Holiday).where(
+        Holiday.Date >= start_date.strftime("%Y-%m-%d"),
+        Holiday.Date <= end_date.strftime("%Y-%m-%d")
+    )).all()
+    holiday_dates = {h.Date for h in holidays}
+
+    # Get time off requests for the employee in date range
+    time_off_requests = db.exec(select(TimeOffRequest).where(
+        TimeOffRequest.EmployeeId == target_employee_id,
+        TimeOffRequest.Status == "approved",
+        TimeOffRequest.StartDate >= start_date.strftime("%Y-%m-%d"),
+        TimeOffRequest.EndDate <= end_date.strftime("%Y-%m-%d")
+    )).all()
+
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "timesheet"
     sheet.append(
         [
             "day",
-            "clock_in_at",
-            "clock_out_at",
-            "worked_minutes",
-            "worked_hours",
-            "customer_id",
+            "clocking",
+            "clokout",
+            "worked_hours_total",
+            "regular",
+            "overtime",
+            "vacation",
+            "holiday",
+            "sick",
             "customer_name",
             "note",
         ]
     )
     for punch in punches:
         local_day = _to_local_date(punch.ClockInAt, tzinfo).strftime("%Y-%m-%d")
-        worked_hours = (
-            float(Decimal(punch.WorkedMinutes) / Decimal(60))
-            if punch.WorkedMinutes
-            else 0
+
+        # Calculate regular and overtime
+        regular_minutes, overtime_minutes = calculate_regular_overtime(
+            punch.WorkedMinutes or 0, overtime_daily_minutes
         )
+
+        # Check if it's a holiday
+        is_holiday = local_day in holiday_dates
+
+        # Check if there's a time off request for this day
+        is_vacation = False
+        is_sick = False
+        for req in time_off_requests:
+            if req.StartDate <= local_day <= req.EndDate:
+                if req.AbsenceType == "vacation":
+                    is_vacation = True
+                elif req.AbsenceType == "sick":
+                    is_sick = True
+
         customer = customer_map.get(punch.CustomerId)
         customer_name = (
             customer.CompanyName
@@ -748,9 +786,12 @@ def export_timesheet(
                 local_day,
                 punch.ClockInAt,
                 punch.ClockOutAt,
-                punch.WorkedMinutes,
-                float(f"{worked_hours:.2f}"),
-                punch.CustomerId,
+                format_hours_minutes(punch.WorkedMinutes or 0),
+                format_hours_minutes(regular_minutes),
+                format_hours_minutes(overtime_minutes),
+                "true" if is_vacation else "false",
+                "true" if is_holiday else "false",
+                "true" if is_sick else "false",
                 customer_name,
                 punch.Note,
             ]
@@ -914,31 +955,74 @@ def export_punches_admin(
         ).all()
         employee_map = {employee.EmployeeId: employee for employee in employees}
 
+    # Get settings for overtime calculation
+    settings = db.exec(select(TimeSheetSettings).where(TimeSheetSettings.IsActive == True)).first()
+    overtime_daily_minutes = 480  # default 8 hours
+    if settings and settings.OvertimeDailyHours:
+        overtime_daily_minutes = int(float(settings.OvertimeDailyHours) * 60)
+
+    # Get date range for holidays and time off
+    query_start = start_date.strftime("%Y-%m-%d") if start_date else "1900-01-01"
+    query_end = end_date.strftime("%Y-%m-%d") if end_date else "2100-12-31"
+
+    # Get holidays for the date range
+    holidays = db.exec(select(Holiday).where(
+        Holiday.Date >= query_start,
+        Holiday.Date <= query_end
+    )).all()
+    holiday_dates = {h.Date for h in holidays}
+
+    # Get time off requests for all employees in date range
+    time_off_filter = [TimeOffRequest.Status == "approved"]
+    if employee_ids:
+        time_off_filter.append(TimeOffRequest.EmployeeId.in_(list(employee_ids)))
+    time_off_requests = db.exec(select(TimeOffRequest).where(*time_off_filter)).all()
+
+    # Group time off requests by employee and date
+    time_off_by_employee = {}
+    for req in time_off_requests:
+        if req.EmployeeId not in time_off_by_employee:
+            time_off_by_employee[req.EmployeeId] = {}
+        for d in range((datetime.strptime(req.EndDate, "%Y-%m-%d") - datetime.strptime(req.StartDate, "%Y-%m-%d")).days + 1):
+            current_date = (datetime.strptime(req.StartDate, "%Y-%m-%d") + timedelta(days=d)).strftime("%Y-%m-%d")
+            time_off_by_employee[req.EmployeeId][current_date] = req.AbsenceType
+
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "timesheet_admin"
     sheet.append(
         [
-            "employee_id",
             "employee_name",
             "day",
-            "clock_in_at",
-            "clock_out_at",
-            "worked_minutes",
-            "worked_hours",
-            "customer_id",
+            "clocking",
+            "clokout",
+            "worked_hours_total",
+            "regular",
+            "overtime",
+            "vacation",
+            "holiday",
+            "sick",
             "customer_name",
-            "status",
             "note",
         ]
     )
     for punch in punches:
         local_day = _to_local_date(punch.ClockInAt, tzinfo).strftime("%Y-%m-%d")
-        worked_hours = (
-            float(Decimal(punch.WorkedMinutes) / Decimal(60))
-            if punch.WorkedMinutes
-            else 0
+
+        # Calculate regular and overtime
+        regular_minutes, overtime_minutes = calculate_regular_overtime(
+            punch.WorkedMinutes or 0, overtime_daily_minutes
         )
+
+        # Check if it's a holiday
+        is_holiday = local_day in holiday_dates
+
+        # Check if there's a time off request for this employee and day
+        employee_time_offs = time_off_by_employee.get(punch.EmployeeId, {})
+        day_off_type = employee_time_offs.get(local_day)
+        is_vacation = day_off_type == "vacation"
+        is_sick = day_off_type == "sick"
+
         customer = customer_map.get(punch.CustomerId)
         employee = employee_map.get(punch.EmployeeId)
         customer_name = (
@@ -954,16 +1038,17 @@ def export_punches_admin(
         )
         sheet.append(
             [
-                punch.EmployeeId,
                 employee_name,
                 local_day,
                 punch.ClockInAt,
                 punch.ClockOutAt,
-                punch.WorkedMinutes,
-                float(f"{worked_hours:.2f}"),
-                punch.CustomerId,
+                format_hours_minutes(punch.WorkedMinutes or 0),
+                format_hours_minutes(regular_minutes),
+                format_hours_minutes(overtime_minutes),
+                "true" if is_vacation else "false",
+                "true" if is_holiday else "false",
+                "true" if is_sick else "false",
                 customer_name,
-                punch.Status,
                 punch.Note,
             ]
         )

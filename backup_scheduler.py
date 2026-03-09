@@ -19,8 +19,9 @@ IS_PRODUCTION = ENV == "prod"
 
 # Ruta de backups según el entorno
 if IS_PRODUCTION:
-    # En Azure Linux: ~/sql_backups
-    BACKUP_DIR = os.path.expanduser("~/sql_backups")
+    # En Azure App Service Linux: /home/home/sql_backups
+    # o usar variable BACKUP_DIR si está configurada
+    BACKUP_DIR = os.getenv("BACKUP_DIR", "/home/home/sql_backups")
 else:
     # En local: bd/sql/backups
     BACKUP_DIR = os.path.join(os.path.dirname(__file__), "bd", "sql", "backups")

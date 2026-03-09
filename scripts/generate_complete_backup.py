@@ -5,8 +5,20 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from bd.connection import SessionLocal
+# Crear carpeta de backups si no existe
+backup_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd", "sql", "backups")
+os.makedirs(backup_dir, exist_ok=True)
+
+from bd.connection import create_engine_from_env
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session
 from sqlalchemy import text
+
+
+def get_session_local(db_prefix="DB"):
+    """Create a session maker for the specified database prefix."""
+    engine = create_engine_from_env(db_prefix)
+    return sessionmaker(bind=engine, class_=Session)
 
 def get_all_tables(session):
     """Get all user tables in the database"""
@@ -122,16 +134,33 @@ def topological_sort_tables(tables, dependencies):
     
     return sorted_tables
 
-def generate_complete_backup(target_table=None):
-    """Generate complete backup of entire database with ALL data"""
-    
-    output_file = f"bd/sql/complete_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql"
-    
+def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None):
+    """Generate complete backup of entire database with ALL data
+
+    Args:
+        target_table: Optional single table to backup
+        db_prefix: Database prefix for environment variables (e.g., 'DB', 'PRIMEFIRE_DB')
+        backup_dir: Custom backup directory (optional)
+    """
+    SessionLocal = get_session_local(db_prefix)
+    database_name = os.getenv(f"{db_prefix}_DATABASE", "unknown")
+    server_name = os.getenv(f"{db_prefix}_SERVER", "unknown")
+
+    print(f"\n[INFO] Backing up database: {database_name} on {server_name}")
+
+    # Usar directorio por defecto si no se especifica
+    if backup_dir is None:
+        backup_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd", "sql", "backups")
+
+    os.makedirs(backup_dir, exist_ok=True)
+    output_file = os.path.join(backup_dir, f"complete_backup_{database_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql")
+
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("USE [primefirebd]\n")
+        f.write(f"USE [{database_name}]\n")
         f.write("GO\n\n")
         f.write("/****** COMPLETE DATABASE BACKUP WITH ALL DATA ******/\n")
         f.write(f"/****** Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ******/\n")
+        f.write(f"/****** Database: {database_name} on {server_name} ******/\n")
         f.write("/****** This script contains ALL table structures and ALL data ******/\n\n")
         
         with SessionLocal() as session:
@@ -326,5 +355,15 @@ def generate_complete_backup(target_table=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate complete database backup")
     parser.add_argument("--table", help="Backup a single table only")
+    parser.add_argument(
+        "--db",
+        default="DB",
+        help="Database prefix for environment variables (e.g., DB, PRIMEFIRE_DB). Default: DB"
+    )
+    parser.add_argument(
+        "--backup-dir",
+        default=None,
+        help="Custom backup directory (optional)"
+    )
     args = parser.parse_args()
-    generate_complete_backup(target_table=args.table)
+    generate_complete_backup(target_table=args.table, db_prefix=args.db, backup_dir=args.backup_dir)

@@ -34,6 +34,7 @@ from api.customer_contacts import router as customer_contacts_router
 from api.customer_attachments import router as customer_attachments_router
 from api.products import router as products_router
 from api.quotations import router as quotations_router
+from api.backups import router as backups_router
 
 # DB
 from bd.connection import create_db_and_tables
@@ -176,6 +177,7 @@ app.include_router(customer_attachments_router, tags=["customer_attachments"])
 # IMPORTANT
 app.include_router(products_router, prefix="/products", tags=["products"])
 app.include_router(quotations_router)  # prefix already defined in router
+app.include_router(backups_router, prefix="/backups", tags=["backups"])
 
 
 @app.get("/")

@@ -70,7 +70,12 @@ pip install -r requirements.txt
 
 To update all dependencies to their latest versions and regenerate `requirements.txt`:
 
+
 ```bash
+pip list --outdated
+pip install -U -r requirements.txt
+
+or 
 pip install --upgrade fastapi uvicorn pydantic pydantic-core pydantic-settings python-dotenv sqlalchemy sqlmodel httpx pytest pytest-asyncio pyodbc cryptography pyjwt starlette typing-extensions fastapi-azure-auth requests python-multipart
 pip freeze | Select-String -Pattern "^(fastapi|uvicorn|pydantic|pydantic-core|pydantic-settings|python-dotenv|sqlalchemy|sqlmodel|httpx|pytest|pytest-asyncio|pyodbc|cryptography|pyjwt|starlette|typing-extensions|fastapi-azure-auth|requests|python-multipart)==" | Out-File -FilePath requirements.txt -Encoding utf8
 ```

@@ -95,6 +95,10 @@ app = FastAPI(
         "clientId": settings.BACKEND_CLIENT_ID,
         "scopes": settings.scope_name,
     },
+    swagger_ui_parameters={
+        "docExpansion": "none",
+        "persistAuthorization": True,
+    },
 )
 
 

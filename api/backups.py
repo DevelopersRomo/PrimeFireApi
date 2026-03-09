@@ -6,15 +6,28 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
 from api.dependencies import require_authentication
-from core.config import settings
+
+# Load .env before accessing settings
+load_dotenv()
+
+# Detectar entorno
+ENV = os.getenv("ENVIRONMENT", "local").lower()
+IS_PRODUCTION = ENV == "prod"
+
+# Directorio de backups según el entorno
+if IS_PRODUCTION:
+    # En Azure Linux: ~/sql_backups
+    BACKUP_DIR = os.path.expanduser("~/sql_backups")
+else:
+    # En local: bd/sql/backups
+    BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd", "sql", "backups")
+
+os.makedirs(BACKUP_DIR, exist_ok=True)
 
 router = APIRouter(prefix="/backups", tags=["backups"])
-
-# Directorio de backups
-BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd", "sql", "backups")
-os.makedirs(BACKUP_DIR, exist_ok=True)
 
 
 class BackupResponse(BaseModel):
@@ -104,6 +117,7 @@ async def get_backup_status(_: dict = Depends(require_authentication)):
         files = sql_files[:10]  # Últimos 10 archivos
 
     return {
+        "environment": "production" if IS_PRODUCTION else "local",
         "backup_dir": BACKUP_DIR,
         "recent_backups": files
     }

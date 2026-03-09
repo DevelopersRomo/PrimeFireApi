@@ -6,23 +6,41 @@ from datetime import datetime, timezone
 from fastapi.responses import FileResponse
 from uuid import uuid4
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 from bd.dependencies import get_db
 from api.dependencies import require_authentication, get_current_employee_with_permissions
 from models.customers import Customers, CustomerAttachments
 from models.employees import Employees
 from schemas.customers import CustomerAttachment, CustomerEmployee
-from core.config import settings
+
+# Load .env
+load_dotenv()
+
+# Detectar entorno
+ENV = os.getenv("ENVIRONMENT", "local").lower()
+IS_PRODUCTION = ENV == "prod"
+
+# Directorio de uploads según el entorno
+if IS_PRODUCTION:
+    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home/uploads
+    uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    UPLOAD_DIR = Path(uploads_base) / "customers"
+else:
+    # Local: uploads/customers
+    from core.config import settings
+    BASE_DIR = Path(__file__).resolve().parents[1]
+    UPLOAD_DIR = BASE_DIR / settings.UPLOAD_DIR / "customers"
+
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
-BASE_DIR = Path(__file__).resolve().parents[1]
+
 
 def resolve_upload_root() -> Path:
     """Resolve uploads directory path."""
-    upload_root = Path(settings.UPLOAD_DIR)
-    if upload_root.is_absolute():
-        return upload_root
-    return BASE_DIR / upload_root
+    return UPLOAD_DIR
 
 def attachment_to_schema(db_att: CustomerAttachments) -> CustomerAttachment:
     """Convert CustomerAttachments model to CustomerAttachment schema."""

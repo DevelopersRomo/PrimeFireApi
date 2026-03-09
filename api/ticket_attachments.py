@@ -6,11 +6,31 @@ from fastapi.responses import FileResponse
 import os
 from uuid import uuid4
 from pathlib import Path
+from dotenv import load_dotenv
 
 from bd.dependencies import get_db
 from api.dependencies import require_authentication, get_current_employee_with_permissions
 from models.ticket_messages import TicketAttachments
 from schemas.ticket_messages import TicketAttachmentCreate, TicketAttachment
+
+# Load .env
+load_dotenv()
+
+# Detectar entorno
+ENV = os.getenv("ENVIRONMENT", "local").lower()
+IS_PRODUCTION = ENV == "prod"
+
+# Directorio de uploads según el entorno
+if IS_PRODUCTION:
+    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home/uploads
+    uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    UPLOAD_DIR = Path(uploads_base) / "tickets"
+else:
+    # Local: uploads/tickets
+    from core.config import settings
+    UPLOAD_DIR = Path(settings.UPLOAD_DIR) / "tickets"
+
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
 
@@ -72,13 +92,13 @@ def create_attachment(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db)
 ):
-    # If an UploadFile is provided, save it to UPLOAD_DIR/tickets/{ticket_id}/ and set FilePath
+    # If an UploadFile is provided, save it to UPLOAD_DIR/{ticket_id}/ and set FilePath
     rel_path = None
     final_file_name = file_name
     final_file_type = file_type
     if file is not None:
         # ensure directory exists
-        base_dir = Path(settings.UPLOAD_DIR) / "tickets" / str(ticket_id)
+        base_dir = UPLOAD_DIR / str(ticket_id)
         base_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(file.filename).suffix
         unique = f"{uuid4().hex}{ext}"

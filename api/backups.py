@@ -19,9 +19,9 @@ IS_PRODUCTION = ENV == "prod"
 
 # Directorio de backups según el entorno
 if IS_PRODUCTION:
-    # En Azure App Service Linux: /home/home/sql_backups
-    # o usar variable BACKUP_DIR si está configurada
-    BACKUP_DIR = os.getenv("BACKUP_DIR", "/home/home/sql_backups")
+    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home
+    uploads_base = os.getenv("UPLOADS_DIR", "/home/home")
+    BACKUP_DIR = os.path.join(uploads_base, "sql_backups")
 else:
     # En local: bd/sql/backups
     BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd", "sql", "backups")

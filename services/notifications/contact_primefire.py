@@ -43,8 +43,6 @@ def _build_field_rows(notification_data: ContactPrimeFireRequest) -> str:
     ]
 
     if notification_data.note:
-        if notification_data.title:
-            fields.append(("Subject", notification_data.title))
         fields.append(("Note", notification_data.note))
 
     for field in notification_data.fields:

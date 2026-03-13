@@ -1,8 +1,10 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from starlette.responses import Response
 from contextlib import asynccontextmanager
 from fastapi.openapi.utils import get_openapi
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Config
 from api.dependencies import require_authentication
@@ -113,7 +115,11 @@ def custom_openapi():
         routes=app.routes,
     )
 
-    openapi_schema["components"]["securitySchemes"] = {
+    components = openapi_schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+
+    # Preserve existing schemes and expose both Azure PKCE and local token auth.
+    security_schemes.update({
         "AzureAD_PKCE_single_tenant": {
             "type": "oauth2",
             "flows": {
@@ -123,12 +129,42 @@ def custom_openapi():
                     "scopes": settings.scopes
                 }
             }
+        },
+        "LocalPasswordAuth": {
+            "type": "oauth2",
+            "flows": {
+                "password": {
+                    "tokenUrl": "/auth/token",
+                    "scopes": {}
+                }
+            }
+        },
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        },
+        "ContactTokenAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "x-contact-token",
+            "description": "Static token for /notifications/send/contact-primefire"
         }
-    }
+    })
 
     openapi_schema["security"] = [
-        {"AzureAD_PKCE_single_tenant": list(settings.scopes.keys())}
+        {"AzureAD_PKCE_single_tenant": list(settings.scopes.keys())},
+        {"LocalPasswordAuth": []},
+        {"BearerAuth": []}
     ]
+
+    contact_path = openapi_schema.get("paths", {}).get(
+        "/notifications/send/contact-primefire",
+        {},
+    )
+    contact_post = contact_path.get("post")
+    if contact_post:
+        contact_post["security"] = [{"ContactTokenAuth": []}]
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
@@ -152,6 +188,44 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Custom CORS middleware for open endpoints like contact-primefire
+class OpenCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        open_paths = {
+            "/notifications/send/contact-primefire",
+            "/notifications/send/contact-primefire/",
+        }
+
+        if request.url.path in open_paths:
+            if request.method == "OPTIONS":
+                # Handle preflight here so this endpoint is CORS-open regardless of global origins.
+                return Response(
+                    status_code=204,
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "POST, OPTIONS",
+                        "Access-Control-Allow-Headers": request.headers.get(
+                            "access-control-request-headers",
+                            "*",
+                        ),
+                        "Access-Control-Max-Age": "86400",
+                    },
+                )
+
+            response = await call_next(request)
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = request.headers.get(
+                "access-control-request-headers",
+                "*",
+            )
+            return response
+        return await call_next(request)
+
+
+app.add_middleware(OpenCORSMiddleware)
 
 
 # Routers

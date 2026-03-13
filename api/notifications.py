@@ -1,12 +1,20 @@
 """Notification API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from secrets import compare_digest
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlmodel import Session
 from typing import Optional
 
 from api.dependencies import get_current_employee, require_authentication
+from core.config import settings
 from bd.dependencies import get_db
-from schemas.notifications import NotificationRequestWrapper
+from schemas.notifications import (
+    ContactPrimeFireRequest,
+    ContactPrimeFireResponse,
+    NotificationRequestWrapper,
+)
+from services.notifications.contact_primefire import send_contact_primefire_notification
 from services.notifications.notifications import (
     send_custom_notification,
     notify_time_off_approved,
@@ -19,6 +27,21 @@ from services.notifications.forms import send_form_notification
 from services.notifications.schemas import NotificationResponse, NotificationField
 
 router = APIRouter()
+
+
+def _extract_contact_token(
+    authorization: Optional[str],
+    x_contact_token: Optional[str],
+) -> Optional[str]:
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token:
+            return token.strip()
+
+    if x_contact_token:
+        return x_contact_token.strip()
+
+    return None
 
 
 @router.post("/send", response_model=NotificationResponse)
@@ -218,4 +241,36 @@ async def send_notification(
             status_code=500,
             detail=f"Error sending notification: {str(e)}",
         )
+
+
+@router.post("/send/contact-primefire", response_model=ContactPrimeFireResponse)
+async def send_contact_primefire(
+    request: ContactPrimeFireRequest,
+    authorization: Optional[str] = Header(default=None),
+    x_contact_token: Optional[str] = Header(default=None),
+) -> ContactPrimeFireResponse:
+    """Send PrimeFire contact template email with dedicated static token auth."""
+    received_token = _extract_contact_token(authorization, x_contact_token)
+    configured_token = getattr(settings, "CONTACT_PRIMEFIRE_API_TOKEN", "")
+
+    if not received_token or not configured_token or not compare_digest(received_token, configured_token):
+        raise HTTPException(status_code=401, detail="Invalid or missing contact endpoint token")
+
+    notification_result = await send_contact_primefire_notification(request)
+    if not notification_result.success:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "delivery_failed",
+                "message": notification_result.error_message
+                or "Unable to send contact-primefire notification",
+            },
+        )
+
+    return ContactPrimeFireResponse(
+        success=True,
+        status="sent",
+        message="Contact PrimeFire notification sent successfully",
+        message_id=notification_result.message_id,
+    )
 

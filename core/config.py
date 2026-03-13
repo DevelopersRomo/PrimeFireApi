@@ -116,6 +116,11 @@ class Settings(BaseSettings):
         validation_alias="APP_URL",
         description="Application URL for notification links"
     )
+    CONTACT_PRIMEFIRE_API_TOKEN: str = Field(
+        default="7dd8430e-2c2b-4239-9ddf-b299dea05bc4",
+        validation_alias="CONTACT_PRIMEFIRE_API_TOKEN",
+        description="Static API token for /notifications/send/contact-primefire endpoint"
+    )
     
     # File upload settings
     UPLOAD_DIR: str = Field(

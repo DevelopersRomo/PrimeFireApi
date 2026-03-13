@@ -10,7 +10,7 @@ class Quotations(SQLModel, table=True):
 
     Id: Optional[int] = Field(default=None, primary_key=True)
 
-    CustomerId: int = Field(foreign_key="dbo.Customers.Id", index=True)
+    CustomerId: int = Field(foreign_key="dbo.Customers.CustomerId", index=True)
 
     QuoteDate: datetime
     ExpirationDate: Optional[datetime] = None

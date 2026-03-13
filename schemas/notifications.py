@@ -63,7 +63,7 @@ class ContactPrimeFireRequest(BaseModel):
 
     # Optional fields
     to_email: Optional[EmailStr] = None
-    cc_email: Optional[EmailStr] = None
+    cc_email: Optional[str] = Field(default=None, max_length=500)
     logo_url: Optional[AnyHttpUrl] = None
     title: Optional[str] = Field(default=None, max_length=180)
     subtitle: Optional[str] = Field(default=None, max_length=300)

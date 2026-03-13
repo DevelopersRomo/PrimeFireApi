@@ -66,6 +66,7 @@ class ContactPrimeFireRequest(BaseModel):
     cc_email: Optional[str] = Field(default=None, max_length=500)
     logo_url: Optional[AnyHttpUrl] = None
     title: Optional[str] = Field(default=None, max_length=180)
+    subject: Optional[str] = Field(default=None, max_length=180)
     subtitle: Optional[str] = Field(default=None, max_length=300)
     company: Optional[str] = Field(default=None, max_length=150)
     industry: Optional[str] = Field(default=None, max_length=120)
@@ -73,7 +74,7 @@ class ContactPrimeFireRequest(BaseModel):
     fields: list[ContactPrimeFireField] = Field(default_factory=list)
     note: Optional[str] = Field(default=None, max_length=4000)
 
-    @field_validator("title", "subtitle", "name", "company", "industry", "service", "note", "phone", mode="before")
+    @field_validator("title", "subject", "subtitle", "name", "company", "industry", "service", "note", "phone", mode="before")
     @classmethod
     def strip_optional_strings(cls, value):
         if isinstance(value, str):

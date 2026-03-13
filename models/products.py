@@ -9,8 +9,8 @@ class Products(SQLModel, table=True):
 
     Id: Optional[int] = Field(default=None, primary_key=True)
 
-    Name: str = Field(index=True)
-    Description: Optional[str] = None
+    Name: str = Field(max_length=200, index=True)
+    Description: Optional[str] = Field(default=None, max_length=2000)
     # Product | Service
     Type: str = Field(index=True)
     SKU: Optional[str] = Field(default=None, index=True)

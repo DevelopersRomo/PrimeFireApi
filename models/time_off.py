@@ -1,27 +1,23 @@
 import enum
-from datetime import date, datetime, time
-from decimal import Decimal
-from typing import Optional
-from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
-class AbsenceTypeEnum(str, enum.Enum):
+class AbsenceTypeEnum(enum.StrEnum):
     VACATION = "vacation"
     PERSONAL = "personal"
     SICK = "sick"
 
 
-class RequestStatusEnum(str, enum.Enum):
+class RequestStatusEnum(enum.StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
 
 
-class TimeUnitEnum(str, enum.Enum):
+class TimeUnitEnum(enum.StrEnum):
     FULL_DAY = "full_day"
     HALF_DAY = "half_day"
     HOURS = "hours"
@@ -36,23 +32,21 @@ class TimeOffRequest(SQLModel, table=True):
         {"schema": "dbo"},
     )
 
-    RequestId: Optional[int] = Field(default=None, primary_key=True)
+    RequestId: int | None = Field(default=None, primary_key=True)
     EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", nullable=False)
     AbsenceType: str = Field(nullable=False, max_length=20)
     Status: str = Field(default="pending", nullable=False, max_length=20)
     TimeUnit: str = Field(nullable=False, max_length=20)
     StartDate: str = Field(nullable=False, max_length=10)
     EndDate: str = Field(nullable=False, max_length=10)
-    StartTime: Optional[str] = Field(default=None, max_length=8)
-    EndTime: Optional[str] = Field(default=None, max_length=8)
-    TotalHours: Optional[str] = Field(default=None, max_length=10)
+    StartTime: str | None = Field(default=None, max_length=8)
+    EndTime: str | None = Field(default=None, max_length=8)
+    TotalHours: str | None = Field(default=None, max_length=10)
     TotalDays: str = Field(nullable=False, max_length=10)
-    Reason: Optional[str] = Field(default=None, max_length=2000)
-    ReviewedBy: Optional[int] = Field(
-        default=None, foreign_key="dbo.Employees.EmployeeId"
-    )
-    ReviewedAt: Optional[str] = Field(default=None, max_length=19)
-    ReviewNotes: Optional[str] = Field(default=None, max_length=2000)
+    Reason: str | None = Field(default=None, max_length=2000)
+    ReviewedBy: int | None = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
+    ReviewedAt: str | None = Field(default=None, max_length=19)
+    ReviewNotes: str | None = Field(default=None, max_length=2000)
     CreatedAt: str = Field(nullable=False, max_length=19)
     UpdatedAt: str = Field(nullable=False, max_length=19)
 
@@ -65,7 +59,7 @@ class TimeOffBalance(SQLModel, table=True):
         {"schema": "dbo"},
     )
 
-    BalanceId: Optional[int] = Field(default=None, primary_key=True)
+    BalanceId: int | None = Field(default=None, primary_key=True)
     EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", nullable=False)
     AbsenceType: str = Field(nullable=False, max_length=20)
     Year: int = Field(nullable=False)
@@ -79,7 +73,7 @@ class Holiday(SQLModel, table=True):
     __tablename__ = "Holidays"
     __table_args__ = {"schema": "dbo"}
 
-    HolidayId: Optional[int] = Field(default=None, primary_key=True)
+    HolidayId: int | None = Field(default=None, primary_key=True)
     Name: str = Field(max_length=100, nullable=False)
     Date: str = Field(nullable=False, max_length=10)
     Year: int = Field(nullable=False)
@@ -89,6 +83,6 @@ class Department(SQLModel, table=True):
     __tablename__ = "Departments"
     __table_args__ = {"schema": "dbo"}
 
-    DepartmentId: Optional[int] = Field(default=None, primary_key=True)
+    DepartmentId: int | None = Field(default=None, primary_key=True)
     Name: str = Field(max_length=100, nullable=False, unique=True)
-    Code: Optional[str] = Field(default=None, max_length=20)
+    Code: str | None = Field(default=None, max_length=20)

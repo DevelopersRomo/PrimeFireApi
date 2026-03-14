@@ -8,19 +8,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel, Session, create_engine
 
 # Import all models to ensure they are registered with SQLModel
-from models.countries import Countries
-from models.curriculums import Curriculums
-from models.employees import Employees, Roles
-from models.hardware_inventory import HardwareInventory
-from models.jobs import Jobs
-from models.licenses import Licenses
-from models.modules import Modules, RoleModules
-from models.ticket_messages import TicketMessages, TicketAttachments
-from models.time_off import Department, Holiday, TimeOffBalance, TimeOffRequest
-from models.timesheet import TimeSheetLocationSnapshot, TimeSheetPunch, TimeSheetSettings
-from models.tenants import Tenants, TenantEmployees, TenantLogos
-from models.addresses import Addresses
-from models.customers import Customers, CustomerNotes, CustomerAlternateContacts, CustomerAttachments
 
 # Load environment variables
 load_dotenv()
@@ -32,19 +19,16 @@ load_dotenv()
 available_drivers = pyodbc.drivers()
 sql_server_drivers = [d for d in available_drivers if "SQL Server" in d]
 
+
 def get_driver(requested_driver):
     if requested_driver in available_drivers:
         return requested_driver
-    elif sql_server_drivers:
-        driver = sql_server_drivers[0]
-        print(f"Driver '{requested_driver}' not found. Using '{driver}' instead.")
-        return driver
-    else:
-        raise RuntimeError(
-            f"No SQL Server ODBC driver found. "
-            f"Requested: '{requested_driver}'. "
-            f"Available drivers: {available_drivers}"
-        )
+    if sql_server_drivers:
+        return sql_server_drivers[0]
+    raise RuntimeError(
+        f"No SQL Server ODBC driver found. Requested: '{requested_driver}'. Available drivers: {available_drivers}"
+    )
+
 
 def create_engine_from_env(prefix="DB"):
     server = os.getenv(f"{prefix}_SERVER", "localhost\\SQLEXPRESS")
@@ -67,42 +51,31 @@ def create_engine_from_env(prefix="DB"):
     has_instance = "\\" in server
     has_port_in_server = ":" in server
     server_lower = server.lower()
-    is_local = (server_lower.startswith("localhost") or 
-                server_lower.startswith("127.0.0.1") or 
-                server_lower.startswith(".") or
-                server_lower.startswith("(local)") or
-                server_lower.startswith("(localdb)"))
-    
-    use_shared_memory = False
+    is_local = server_lower.startswith(("localhost", "127.0.0.1", ".", "(local)", "(localdb)"))
+
     if has_instance and is_local:
         # For local named instances, keep original format but force Encrypt=no
         server_with_port = server
-        if not encrypt_env:
-            encrypt = False
-        else:
-            encrypt = encrypt_env == "yes"
+        encrypt = False if not encrypt_env else encrypt_env == "yes"
     elif has_instance:
         # Named instance - don't use port, let SQL Browser resolve
         server_with_port = server
     elif has_port_in_server:
         # Server already has port specified
         server_with_port = server
-    elif port and port != "1433" and port != "":
+    elif port and port not in {"1433", ""}:
         # Port specified and not default
         server_with_port = f"{server},{port}"
     else:
         # Default case
         server_with_port = server
-        if not encrypt_env:
+        if not encrypt_env:  # noqa: SIM108
             # Default to no encryption for local connections
             encrypt = not is_local
         else:
             encrypt = encrypt_env == "yes"
 
-    if encrypt_env:
-        encrypt = encrypt_env == "yes"
-    else:
-        encrypt = not is_local
+    encrypt = encrypt_env == "yes" if encrypt_env else not is_local
 
     odbc_params = [
         f"DRIVER={{{driver}}}",
@@ -112,14 +85,12 @@ def create_engine_from_env(prefix="DB"):
     ]
 
     if username and password:
-        odbc_params.append(f"UID={username}")
-        odbc_params.append(f"PWD={password}")
+        odbc_params.extend((f"UID={username}", f"PWD={password}"))
     else:
         odbc_params.append("Trusted_Connection=yes")
 
     if not is_old_driver:
-        odbc_params.append("TrustServerCertificate=yes")
-        odbc_params.append(f"Encrypt={'yes' if encrypt else 'no'}")
+        odbc_params.extend(("TrustServerCertificate=yes", f"Encrypt={'yes' if encrypt else 'no'}"))
 
     odbc_connect = ";".join(odbc_params)
     database_url = f"mssql+pyodbc:///?odbc_connect={quote_plus(odbc_connect)}"
@@ -133,23 +104,20 @@ def create_engine_from_env(prefix="DB"):
 
     return create_engine(database_url, **engine_kwargs)
 
+
 # Create main engine
 engine = create_engine_from_env("DB")
 
 # Create sync engine (fallback to main engine if PRIMEFIRE_DB_SERVER is not set or sync is disabled)
 sync_enabled = os.getenv("SYNC_EMPLOYEES_PRIMEFIRE", "True").lower() == "true"
-if sync_enabled and os.getenv("PRIMEFIRE_DB_SERVER"):
-    sync_engine = create_engine_from_env("PRIMEFIRE_DB")
-    print(f"Using separate database for sync/auth: {os.getenv('PRIMEFIRE_DB_SERVER')}/{os.getenv('PRIMEFIRE_DB_DATABASE')}")
-else:
-    sync_engine = engine
+sync_engine = create_engine_from_env("PRIMEFIRE_DB") if sync_enabled and os.getenv("PRIMEFIRE_DB_SERVER") else engine
 
 # Create the session
 SessionLocal = sessionmaker(bind=engine, class_=Session)
 SessionSync = sessionmaker(bind=sync_engine, class_=Session)
 
 
-def create_db_and_tables():
+def create_db_and_tables() -> None:
     """Create database tables, ignoring compatibility errors from old ODBC drivers."""
     try:
         SQLModel.metadata.create_all(engine)
@@ -168,14 +136,13 @@ def create_db_and_tables():
             raise
 
 
-def test_connection():
+def test_connection() -> None:
     """Test database connection."""
     try:
         with SessionLocal() as session:
-            result = session.exec(text("SELECT GETDATE()"))
-            print("✅ Success Conection! Date/Hour: server", result.one())
-    except Exception as e:
-        print("❌ Error de conexión:", e)
+            session.exec(text("SELECT GETDATE()"))
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

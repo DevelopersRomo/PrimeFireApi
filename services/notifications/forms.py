@@ -4,18 +4,16 @@ IMPORTANT: All notifications are sent using BOT_EMAIL as the sender (orchestrato
 Even though actions are performed by specific users, the email always comes from BOT_EMAIL.
 """
 
-import base64
-from typing import Optional
+from core.config import settings
 from services.notifications.email_functions import (
-    send_outlook_email,
     parse_email_list,
+    send_outlook_email,
 )
 from services.notifications.schemas import (
+    EmailAttachment,
     FormNotificationRequest,
     FormNotificationResponse,
-    EmailAttachment,
 )
-from core.config import settings
 
 
 def get_action_color(action_type: str) -> str:
@@ -50,9 +48,9 @@ def generate_form_notification_html(
 
     performed_by_name = notification_data.performed_by.name
     performed_by_email = notification_data.performed_by.email
-    
-    support_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
-    app_url = getattr(settings, "APP_URL", "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net")
+
+    getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
+    getattr(settings, "APP_URL", "https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net")
 
     notification_fields_html = ""
     if notification_data.notification_fields:
@@ -74,7 +72,7 @@ def generate_form_notification_html(
         notification_fields_html = f"""
             <tr>
                 <td style="padding: 20px 40px;">
-                    <table width="100%" cellpadding="0" cellspacing="0" 
+                    <table width="100%" cellpadding="0" cellspacing="0"
                            style="background-color: #f8f9fa; border: 1px solid #e1e1e1; border-radius: 6px;">
                         {fields_rows}
                     </table>
@@ -99,9 +97,9 @@ def generate_form_notification_html(
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
         <tr>
             <td align="center" style="padding: 40px 0;">
-                <table width="600" cellpadding="0" cellspacing="0" 
+                <table width="600" cellpadding="0" cellspacing="0"
                        style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    
+
                     <!-- Header with colored banner -->
                     <tr>
                         <td style="background-color: {color}; padding: 20px; text-align: center;">
@@ -110,17 +108,17 @@ def generate_form_notification_html(
                             </div>
                         </td>
                     </tr>
-                    
+
                     <!-- Form title -->
                     <tr>
                         <td style="padding: 40px 40px 20px;">
                             <h1 style="margin: 0; color: #333; font-size: 24px; font-weight: bold;">
                                 {notification_data.title}
                             </h1>
-                            {f'<p style="margin: 10px 0 0; color: #666; font-size: 16px;">{notification_data.sub_title}</p>' if notification_data.sub_title else ''}
+                            {f'<p style="margin: 10px 0 0; color: #666; font-size: 16px;">{notification_data.sub_title}</p>' if notification_data.sub_title else ""}
                         </td>
                     </tr>
-                    
+
                     <!-- Performed by information -->
                     <tr>
                         <td style="padding: 0 40px 20px;">
@@ -132,9 +130,9 @@ def generate_form_notification_html(
                             </p>
                         </td>
                     </tr>
-                    
+
                     {notification_fields_html}
-                    
+
                     <!-- Message body -->
                     <tr>
                         <td style="padding: 20px 40px;">
@@ -143,23 +141,23 @@ def generate_form_notification_html(
                             </p>
                         </td>
                     </tr>
-                    
+
                     <!-- Action button -->
                     <tr>
                         <td style="padding: 30px 40px; text-align: center;">
-                            <a href="{notification_data.submission_url}" 
+                            <a href="{notification_data.submission_url}"
                                target="_blank"
-                               style="display: inline-block; padding: 12px 30px; background-color: #000000; 
+                               style="display: inline-block; padding: 12px 30px; background-color: #000000;
                                       color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: bold;">
                                 View in App
                             </a>
                         </td>
                     </tr>
-                    
+
                     <!-- Footer -->
-                    
+
                     <!-- Footer links -->
-                    
+
                 </table>
             </td>
         </tr>
@@ -225,16 +223,13 @@ async def send_form_notification(
                 success=True,
                 message_id=message_id,
             )
-        else:
-            return FormNotificationResponse(
-                success=False,
-                error_message=error_message,
-            )
+        return FormNotificationResponse(
+            success=False,
+            error_message=error_message,
+        )
 
     except Exception as e:
         return FormNotificationResponse(
             success=False,
-            error_message=f"Error sending form notification: {str(e)}",
+            error_message=f"Error sending form notification: {e!s}",
         )
-
-

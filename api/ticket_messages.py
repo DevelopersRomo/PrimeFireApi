@@ -1,18 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlmodel import Session, select
-from typing import List
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
+
+from api.dependencies import get_current_employee, get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
-from api.dependencies import get_current_employee, require_authentication, get_current_employee_with_permissions
+from core.config import settings
+from models.employees import Employees
 from models.ticket_messages import TicketMessages
 from models.tickets import Tickets
-from models.employees import Employees
-from schemas.ticket_messages import TicketMessageCreate, TicketMessageUpdate, TicketMessage
 from schemas.employees import Employee as EmployeeSchema
+from schemas.ticket_messages import TicketMessage, TicketMessageCreate, TicketMessageUpdate
 from services.notifications.notifications import notify_ticket_message
-from core.config import settings
-from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -44,9 +44,11 @@ def message_to_schema(db_msg: TicketMessages, db: Session) -> TicketMessage:
     )
 
 
-@router.get("/tickets/{ticket_id}/messages", response_model=List[TicketMessage])
+@router.get("/tickets/{ticket_id}/messages", response_model=list[TicketMessage])
 def list_messages_for_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    msgs = db.exec(select(TicketMessages).where(TicketMessages.TicketId == ticket_id).order_by(TicketMessages.CreatedAt)).all()
+    msgs = db.exec(
+        select(TicketMessages).where(TicketMessages.TicketId == ticket_id).order_by(TicketMessages.CreatedAt)
+    ).all()
     return [message_to_schema(m, db) for m in msgs]
 
 
@@ -64,31 +66,28 @@ def create_message(
     payload: TicketMessageCreate,
     background_tasks: BackgroundTasks,
     current_employee: Employees = Depends(get_current_employee),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     # Get ticket with relationships
     ticket = db.exec(
         select(Tickets)
-        .options(
-            selectinload(Tickets.creator),
-            selectinload(Tickets.assignee)
-        )
+        .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
         .filter(Tickets.TicketId == ticket_id)
     ).first()
-    
+
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    
+
     db_msg = TicketMessages(
         TicketId=ticket_id,
         UserId=current_employee.EmployeeId,
         MessageTxt=payload.MessageTxt,
-        CreatedAt=datetime.now(timezone.utc)
+        CreatedAt=datetime.now(UTC),
     )
     db.add(db_msg)
     db.commit()
     db.refresh(db_msg)
-    
+
     # Send notification
     if ticket.creator and ticket.creator.Email:
         background_tasks.add_task(
@@ -106,12 +105,17 @@ def create_message(
             ticket_assigned_to_email=ticket.assignee.Email if ticket.assignee else None,
             action_url=f"{settings.APP_URL}/tickets/{ticket.TicketId}",
         )
-    
+
     return message_to_schema(db_msg, db)
 
 
 @router.patch("/messages/{message_id}", response_model=TicketMessage)
-def update_message(message_id: int, payload: TicketMessageUpdate, user_permissions: dict = Depends(get_current_employee_with_permissions), db: Session = Depends(get_db)):
+def update_message(
+    message_id: int,
+    payload: TicketMessageUpdate,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
     current_employee_id = user_permissions["employee"]["EmployeeId"]
     db_msg = db.get(TicketMessages, message_id)
     if not db_msg:
@@ -129,8 +133,8 @@ def update_message(message_id: int, payload: TicketMessageUpdate, user_permissio
     update_data = payload.model_dump(exclude_unset=True)
     for k, v in update_data.items():
         setattr(db_msg, k, v)
-    db_msg.UpdatedAt = datetime.now(timezone.utc)
-    db_msg.EditedAt = datetime.now(timezone.utc)
+    db_msg.UpdatedAt = datetime.now(UTC)
+    db_msg.EditedAt = datetime.now(UTC)
     db.add(db_msg)
     db.commit()
     db.refresh(db_msg)
@@ -138,7 +142,11 @@ def update_message(message_id: int, payload: TicketMessageUpdate, user_permissio
 
 
 @router.delete("/messages/{message_id}")
-def delete_message(message_id: int, user_permissions: dict = Depends(get_current_employee_with_permissions), db: Session = Depends(get_db)):
+def delete_message(
+    message_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
     current_employee_id = user_permissions["employee"]["EmployeeId"]
     db_msg = db.get(TicketMessages, message_id)
     if not db_msg:

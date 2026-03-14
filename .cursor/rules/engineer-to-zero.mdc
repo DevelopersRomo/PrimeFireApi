@@ -1,0 +1,59 @@
+---
+description: Engineering philosophy — "Engineer to Zero"
+globs:
+alwaysApply: true
+---
+
+# Engineer to Zero (E2Z)
+
+**Goal:** Ship solutions that drive *ongoing maintenance to ~zero*—minimal runbook steps, minimal hand-curation, minimal “somebody has to remember.” Optimize for idempotency, observability, and replace-yourself automation.
+
+## Principles (what to prioritize)
+- **Default to generic, data-driven solutions** over hand-maintained lookup tables or ad-hoc scripts.
+- **Idempotency first:** every write/action is safe to retry (keys, upserts/merge semantics, dedupe guards).
+- **Fail closed, alert early:** meaningful exceptions, structured logs, and actionable alerts.
+- **Prefer standards & mature libs** to reduce bespoke code and future upkeep.
+- **Configuration over code:** feature flags/policies and declarative configs (JSON/YAML/dbt/Pydantic) instead of branches.
+- **Automated lifecycle:** include migration/backfill, validation, and sunset/cleanup steps.
+- **Observability included:** metrics, health checks, SLOs (success rate, latency, backlog, error budget).
+
+## Patterns to prefer
+- Stateless, pure functions behind thin orchestration.
+- Schema-validated I/O (Pydantic/JSON Schema); contract tests for external APIs.
+- Retries with jittered backoff; circuit breakers; dead-letter queues where applicable.
+- Deterministic batch jobs with **idempotent** checkpoints (upsert/merge) and resumable backfills.
+- Library-backed normalization/transforms with a tiny, optional last-mile override.
+
+## Anti-patterns (avoid)
+- One-off cron scripts with no monitoring or retries.
+- Hand-curated mapping tables that grow forever.
+- Hidden side effects, global state, “magic” time windows.
+- “Docs-only” fixes instead of guardrails and tests.
+
+## Deliverable expectations (attach this with code/PRs)
+1. **Why this is E2Z:** 1–2 bullets on how recurring toil is eliminated.
+2. **Idempotency note:** what makes re-runs safe.
+3. **Observability:** logs/metrics/alerts emitted and where they surface.
+4. **Ops story:** how to backfill, recover, and safely rollback.
+5. **Cost of ownership:** one-line estimate of human steps/month (target ≈ 0).
+
+## Decision rubric (Agent must apply)
+- When trade-offs arise, choose the option that reduces **long-term human touch** even if initial effort is slightly higher.
+- If a non-E2Z path is unavoidable, **state why**, and list the concrete steps to reach E2Z later.
+
+## Style & quality hooks (Python-forward; apply equivalents in other stacks)
+- Classes **CamelCase**; funcs/vars **snake_case**; constants **UPPERCASE**.
+- **Async-first**; use **httpx** for HTTP.
+- **Pydantic** models & **Enums** for type safety; **type hints** everywhere; **f-strings**; built-ins > packages; list comprehensions when clearer.
+- Formatting with **Black**; lint with **Ruff**; static types with **MyPy**.
+- **Meaningful exceptions**; **structured logging** for key events & failures.
+- Keep functions single-purpose; small focused tests for critical paths.
+
+## What to include when adding tasks/jobs
+- Retry policy (max attempts + jittered backoff), idempotent writes, metrics (success/fail/latency/backlog), alert thresholds, health endpoint.
+- Config-driven behavior and feature flags; no environment-drift assumptions.
+
+## How to use this rule
+- Apply these defaults unless a requirement explicitly conflicts.
+- If deviating, document the debt and the “path to E2Z” in the PR footer.
+

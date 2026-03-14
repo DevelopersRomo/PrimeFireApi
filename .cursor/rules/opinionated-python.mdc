@@ -1,0 +1,172 @@
+---
+globs: **/*.py,**/*.ipynb,**/*.pyw
+alwaysApply: false
+---
+# Opinionated Python Formatting
+
+These rules define preferred Python code styling and formatting conventions beyond standard PEP 8, focusing on readability, maintainability, and error prevention.
+
+## Keyword Arguments Over Positional Arguments
+
+### Mandatory for Functions with 2+ Parameters
+- **Rule:** Functions with 2 or more parameters must use keyword-only arguments (enforced with `*`)
+- **Rule:** All function calls with 2+ arguments must use explicit keyword arguments
+- **Rationale:** Prevents argument order mistakes, improves readability, enables safe refactoring
+
+**PREFERRED:**
+```python
+# Function definition - keyword-only arguments
+def process_data(*, input_file: str, output_format: str, verbose: bool = False) -> None:
+    pass
+
+# Function calls - explicit keywords
+process_data(input_file="data.csv", output_format="json", verbose=True)
+build_url_with_percent_encoding(base_url=base_url, params=params)
+```
+
+**AVOID:**
+```python
+# Function definition - allows positional arguments
+def process_data(input_file: str, output_format: str, verbose: bool = False) -> None:
+    pass
+
+# Function calls - positional arguments
+process_data("data.csv", "json", True)  # ❌ What does True mean here?
+build_url_with_percent_encoding(base_url, params)  # ❌ Easy to swap arguments
+```
+
+### Exceptions
+- Single-parameter functions may use positional arguments
+- Built-in functions and third-party libraries (where we can't control the signature)
+- Mathematical operations where order is universally understood (`max(a, b)`, `pow(base, exponent)`)
+
+## Function Parameter Ordering
+
+### Standard Parameter Order
+```python
+def function_name(
+    *,  # Keyword-only marker
+    # Required parameters first
+    required_param1: str,
+    required_param2: int,
+    # Optional parameters with defaults
+    optional_param1: bool = False,
+    optional_param2: str | None = None
+) -> ReturnType:
+```
+
+## Type Annotations
+
+### Comprehensive Type Hints
+- **Rule:** All function parameters and return types must have type annotations
+- **Rule:** Use modern union syntax (`str | None`) over `Union[str, None]`
+- **Rule:** Use `list[str]` over `List[str]` for Python 3.12+
+
+**PREFERRED:**
+```python
+def fetch_user_data(
+    *,
+    user_id: str,
+    include_history: bool = False
+) -> dict[str, Any] | None:
+    pass
+```
+
+## Function Naming and Documentation
+
+### Descriptive Function Names
+- **Rule:** Function names should be verbs that clearly describe the action
+- **Rule:** Avoid abbreviations unless universally understood
+- **Rule:** Use `get_`, `fetch_`, `create_`, `update_`, `delete_` prefixes for CRUD operations
+
+**PREFERRED:**
+```python
+def fetch_customer_invoice_data(*, customer_id: str) -> CustomerInvoice | None:
+    """Fetch invoice data for a specific customer from the IFS API."""
+    pass
+
+def build_url_with_percent_encoding(*, base_url: str, params: dict | None = None) -> str:
+    """Build URL with RFC 3986 percent-encoding instead of form-encoding."""
+    pass
+```
+
+**AVOID:**
+```python
+def get_data(customer_id: str) -> dict:  # ❌ Too generic
+    pass
+
+def proc_url(url: str, params: dict) -> str:  # ❌ Abbreviated, unclear
+    pass
+```
+
+## Error Handling
+
+### Explicit Error Handling
+- **Rule:** Use specific exception types over bare `except:`
+- **Rule:** Include context in exception messages using f-strings
+- **Rule:** Log errors with function context for debugging
+
+**PREFERRED:**
+```python
+try:
+    result = await api_call(endpoint=endpoint, params=params)
+except httpx.HTTPStatusError as e:
+    logger.error(f"HTTP error in fetch_user_data(user_id={user_id}): {e}")
+    raise
+except Exception as e:
+    logger.error(f"Unexpected error in fetch_user_data(user_id={user_id}): {e}")
+    return None
+```
+
+## Import Organization
+
+### Structured Import Blocks
+```python
+# Standard library imports
+import asyncio
+from pathlib import Path
+
+# Third-party imports
+import httpx
+from pydantic import BaseModel
+
+# Local imports
+from libs.core.logger import get_logger
+from libs.core.url_helpers import build_url_with_percent_encoding
+```
+
+## Boolean Parameters
+
+### Explicit Boolean Names
+- **Rule:** Boolean parameters should have clear, positive names
+- **Rule:** Avoid negated boolean names (`disable_cache=False` vs `enable_cache=True`)
+
+**PREFERRED:**
+```python
+def process_data(
+    *,
+    data: str,
+    enable_validation: bool = True,
+    include_metadata: bool = False
+) -> dict:
+    pass
+```
+
+**AVOID:**
+```python
+def process_data(data: str, no_validation: bool = False) -> dict:  # ❌ Double negative
+    pass
+```
+
+These conventions ensure code is self-documenting, refactor-safe, and maintainable across the entire codebase.
+
+## General Engineering Preferences
+- Prefer stupid-simple, maintainable code; fewer abstractions; avoid helper functions unless necessary.
+- Strong typing with Pydantic models (not dataclasses); use Enums for categorical values.
+- Functions use keyword-only args; explicit names over positional.
+- Meaningful variable names (avoid abbreviations); e.g., `azure_employee_ids_with_duplicates` over `duplicate_eids`.
+- Inline logic rather than spreading helpers across modules when it improves readability.
+- Use Polars for quick CSV generation from list[dict]/Pydantic.
+- No NOOP audit rows — absence implies no change.
+- Counts should be derived from data (e.g., audit rows) rather than maintained as mutable counters.
+- Always run with Python 3.12 using UV.

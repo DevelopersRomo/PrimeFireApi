@@ -1,65 +1,69 @@
-from sqlmodel import SQLModel
-from typing import Optional
 from datetime import datetime
-from models.tickets import TicketStatus, TicketPriority, TicketSLA
+
 from pydantic import field_validator
+from sqlmodel import SQLModel
+
+from models.tickets import TicketPriority, TicketSLA, TicketStatus
+
 
 # Schema for creating tickets
 class TicketCreate(SQLModel):
     Title: str
-    Description: Optional[str] = None
+    Description: str | None = None
     Status: TicketStatus = TicketStatus.TODO
     Priority: TicketPriority = TicketPriority.NORMAL
-    SLA: Optional[TicketSLA] = None  # Service Level Agreement
-    AssignedTo: Optional[int] = None  # EmployeeId to assign ticket to
+    SLA: TicketSLA | None = None  # Service Level Agreement
+    AssignedTo: int | None = None  # EmployeeId to assign ticket to
+
 
 # Schema for updating tickets (partial updates allowed)
 class TicketUpdate(SQLModel):
-    Title: Optional[str] = None
-    Description: Optional[str] = None
-    Status: Optional[TicketStatus] = None
-    Priority: Optional[TicketPriority] = None
-    SLA: Optional[TicketSLA] = None  # Service Level Agreement (can be None to clear)
-    AssignedTo: Optional[int] = None  # Can be None to unassign
+    Title: str | None = None
+    Description: str | None = None
+    Status: TicketStatus | None = None
+    Priority: TicketPriority | None = None
+    SLA: TicketSLA | None = None  # Service Level Agreement (can be None to clear)
+    AssignedTo: int | None = None  # Can be None to unassign
 
-    @field_validator('SLA', mode='before')
+    @classmethod
+    @field_validator("SLA", mode="before")
     def validate_sla(cls, v):
-        if v == "":
+        if v == "":  # noqa: PLC1901
             return None
         return v
+
 
 # Schema for simplified employee info in ticket responses
 class TicketEmployee(SQLModel):
     EmployeeId: int
-    DisplayName: Optional[str] = None
-    Email: Optional[str] = None
-    Title: Optional[str] = None
+    DisplayName: str | None = None
+    Email: str | None = None
+    Title: str | None = None
+
 
 # Schema for ticket response with related data
 class Ticket(SQLModel):
-    TicketId: Optional[int] = None
+    TicketId: int | None = None
     Title: str
-    Description: Optional[str] = None
+    Description: str | None = None
     Status: TicketStatus
     Priority: TicketPriority
-    SLA: Optional[TicketSLA] = None  # Service Level Agreement
+    SLA: TicketSLA | None = None  # Service Level Agreement
     CreatedBy: int
-    AssignedTo: Optional[int] = None
+    AssignedTo: int | None = None
     CreatedAt: datetime
     UpdatedAt: datetime
 
     # Related data
-    creator: Optional[TicketEmployee] = None
-    assignee: Optional[TicketEmployee] = None
+    creator: TicketEmployee | None = None
+    assignee: TicketEmployee | None = None
+
 
 # Schema for ticket filters/pagination
 class TicketFilters(SQLModel):
-    status: Optional[TicketStatus] = None
-    priority: Optional[TicketPriority] = None
-    sla: Optional[TicketSLA] = None  # Service Level Agreement filter
-    assigned_to: Optional[int] = None  # EmployeeId
-    created_by: Optional[int] = None   # EmployeeId
-    search: Optional[str] = None        # Search in title/description
-
-
-
+    status: TicketStatus | None = None
+    priority: TicketPriority | None = None
+    sla: TicketSLA | None = None  # Service Level Agreement filter
+    assigned_to: int | None = None  # EmployeeId
+    created_by: int | None = None  # EmployeeId
+    search: str | None = None  # Search in title/description

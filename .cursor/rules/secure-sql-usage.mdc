@@ -1,0 +1,75 @@
+---
+description: Mandatory SQL-security rules for all code touching a database.
+globs: **/*.py,**/*.sql,**/*.ipynb
+alwaysApply: true
+---
+# Secure SQL Usage
+
+These rules apply to all code that interacts with SQL databases, regardless of language or framework, including generated code.
+
+All violations must include a clear explanation of which rule was triggered and why, to help developers understand and fix the issue effectively.
+Generated code must not violate these rules. If a rule is violated, a comment must be added explaining the issue and suggesting a correction.
+
+## 1. Always Use Parameterized Queries and Prepared Statements
+- **Rule:** Never construct SQL queries by concatenating or interpolating user input directly into the query string. Always use parameterized queries or prepared statements provided by your database library. Prepared statements ensure that user input is treated as data, not executable code, and are the most effective way to prevent SQL injection.
+- **Example (unsafe, Python):**
+  ```python
+  # UNSAFE – do not copy: vulnerable to SQL injection
+  cursor.execute(f"SELECT * FROM users WHERE username = '{username}'")
+  ```
+- **Example (safe, Python):**
+  ```python
+  cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+  ```
+
+## 2. Validate and Sanitize All Input
+- **Rule:** All external input used in queries must be validated for type, length, and format. Apply allow-lists where possible.
+
+## 3. Avoid Dynamic SQL Unless Absolutely Necessary
+- **Rule:** Do not use dynamic SQL (e.g., building table or column names from user input) unless there is no alternative. If unavoidable, strictly validate and allow-list all dynamic parts.
+
+## 4. Use Least Privilege Database Accounts
+- **Rule:** Connect to the database using accounts with the minimum privileges required for the task. Never use admin or superuser accounts for application queries.
+
+## 5. Do Not Expose Database Errors to Users
+- **Rule:** Never return raw database error messages to end users. Log errors securely and show generic error messages instead.
+
+## 6. Avoid Storing Sensitive Data in Plaintext
+- **Rule:** Do not store passwords, tokens, or sensitive data in plaintext. Use strong, salted hashing for passwords and encryption for sensitive fields.
+
+## 7. Close Database Connections Properly
+- **Rule:** Always close database connections and cursors to avoid resource leaks and potential security issues.
+
+## 8. Secure ORM Usage (SQLAlchemy, Django ORM)
+- **Rule:** Even when using ORMs, avoid raw SQL with string formatting. Use ORM's built-in parameterization or `text()` with bound parameters.
+- **Example (unsafe, SQLAlchemy):**
+  ```python
+  # UNSAFE – do not copy: vulnerable to SQL injection
+  session.execute(f"SELECT * FROM users WHERE id = {user_id}")
+  ```
+- **Example (safe, SQLAlchemy):**
+  ```python
+  session.execute(text("SELECT * FROM users WHERE id = :user_id"), {"user_id": user_id})
+  ```
+
+## 9. Secure Connection String Handling
+- **Rule:** Never hardcode database credentials in source code. Use environment variables, key vaults, or secure configuration management.
+- **Rule:** Connection strings should not be logged or exposed in error messages.
+
+## 10. dbt Security Best Practices
+- **Rule:** In dbt macros, validate and sanitize any dynamic inputs before using them in SQL generation.
+- **Rule:** Use `{{ var() }}` for configuration values rather than hardcoding sensitive data in models.
+- **Rule:** Be cautious with `run_query()` in dbt macros - validate inputs and avoid dynamic SQL construction.
+- **Rule:** Secure dbt seed files - don't include sensitive data in version control.
+
+## 11. Logging Security
+- **Rule:** Never log SQL queries that contain sensitive data, credentials, or user input.
+- **Rule:** If logging SQL for debugging, sanitize queries by removing parameter values.
+
+## 12. Transaction Security
+- **Rule:** Use proper transaction boundaries and rollback on errors to prevent partial data corruption.
+- **Rule:** Avoid long-running transactions that could lead to resource exhaustion.
+
+## 13. Environment Isolation
+- **Rule:** Use different database accounts and schemas for development, testing, and production environments.
+- **Rule:** Production credentials should never be used in development environments.

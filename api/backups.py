@@ -1,12 +1,15 @@
-"""Backup API - Endpoints para ejecutar backups manualmente"""
+"""Backup API - Endpoints para ejecutar backups manualmente."""
+
 import os
+import pathlib
 import subprocess
 import sys
 from datetime import datetime
+
+from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from dotenv import load_dotenv
 
 from api.dependencies import require_authentication
 
@@ -21,14 +24,14 @@ IS_PRODUCTION = ENV == "prod"
 if IS_PRODUCTION:
     # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home
     uploads_base = os.getenv("UPLOADS_DIR", "/home/home")
-    BACKUP_DIR = os.path.join(uploads_base, "sql_backups")
+    BACKUP_DIR = os.path.join(uploads_base, "sql_backups")  # noqa: PTH118
 else:
     # En local: bd/sql/backups
-    BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd", "sql", "backups")
+    BACKUP_DIR = os.path.join(pathlib.Path(pathlib.Path(__file__).parent).parent, "bd", "sql", "backups")  # noqa: PTH118
 
-os.makedirs(BACKUP_DIR, exist_ok=True)
+pathlib.Path(BACKUP_DIR).mkdir(exist_ok=True, parents=True)
 
-router = APIRouter(prefix="/backups", tags=["backups"])
+router = APIRouter(tags=["backups"])
 
 
 class BackupResponse(BaseModel):
@@ -39,20 +42,21 @@ class BackupResponse(BaseModel):
 
 def run_backup(db_prefix: str) -> dict:
     """Ejecuta el script de backup para una base de datos específica."""
-    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "generate_complete_backup.py")
+    script_path = os.path.join(
+        pathlib.Path(pathlib.Path(__file__).parent).parent, "scripts", "generate_complete_backup.py"
+    )
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: PLW1510
             [sys.executable, script_path, "--db", db_prefix, "--backup-dir", BACKUP_DIR],
             capture_output=True,
             text=True,
-            cwd=os.path.dirname(os.path.dirname(__file__))
+            cwd=pathlib.Path(pathlib.Path(__file__).parent).parent,
         )
 
         if result.returncode == 0:
             return {"success": True, "db": db_prefix, "output": result.stdout}
-        else:
-            return {"success": False, "db": db_prefix, "error": result.stderr}
+        return {"success": False, "db": db_prefix, "error": result.stderr}
 
     except Exception as e:
         return {"success": False, "db": db_prefix, "error": str(e)}
@@ -68,7 +72,7 @@ async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authe
     results = []
     backup_files = []
 
-    if db_prefix == "all":
+    if db_prefix == "all":  # noqa: SIM108
         # Ejecutar ambos backups
         db_prefixes = ["DB", "PRIMEFIRE_DB"]
     else:
@@ -81,10 +85,10 @@ async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authe
         if result["success"]:
             # Buscar archivos de backup creados recientemente
             prefix_lower = prefix.lower().replace("_", "")
-            timestamp = datetime.now().strftime("%Y%m%d")
-            for f in os.listdir(BACKUP_DIR):
-                if f.endswith(".sql") and timestamp in f and prefix_lower in f.lower():
-                    backup_files.append(f)
+            timestamp = datetime.now().strftime("%Y%m%d")  # noqa: DTZ005
+            backup_files.extend(
+                f for f in os.listdir(BACKUP_DIR) if f.endswith(".sql") and timestamp in f and prefix_lower in f.lower()
+            )
 
     # Verificar si todos los backups fueron exitosos
     all_success = all(r["success"] for r in results)
@@ -93,32 +97,29 @@ async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authe
         return BackupResponse(
             success=True,
             message=f"Backup{'s' if len(db_prefixes) > 1 else ''} completed successfully",
-            backup_files=backup_files
+            backup_files=backup_files,
         )
-    else:
-        errors = [f"{r['db']}: {r.get('error', 'Unknown error')}" for r in results if not r["success"]]
-        return JSONResponse(
-            status_code=500,
-            content=BackupResponse(
-                success=False,
-                message=f"Backup error: {'; '.join(errors)}",
-                backup_files=backup_files
-            ).model_dump()
-        )
+    errors = [f"{r['db']}: {r.get('error', 'Unknown error')}" for r in results if not r["success"]]
+    return JSONResponse(
+        status_code=500,
+        content=BackupResponse(
+            success=False, message=f"Backup error: {'; '.join(errors)}", backup_files=backup_files
+        ).model_dump(),
+    )
 
 
 @router.get("/status")
 async def get_backup_status(_: dict = Depends(require_authentication)):
     """Get backup status and recent files."""
     files = []
-    if os.path.exists(BACKUP_DIR):
+    if pathlib.Path(BACKUP_DIR).exists():  # noqa: ASYNC240
         # Obtener archivos .sql ordenados por fecha de modificación (más recientes primero)
         sql_files = [f for f in os.listdir(BACKUP_DIR) if f.endswith(".sql")]
-        sql_files.sort(key=lambda x: os.path.getmtime(os.path.join(BACKUP_DIR, x)), reverse=True)
+        sql_files.sort(key=lambda x: pathlib.Path(os.path.join(BACKUP_DIR, x)).stat().st_mtime, reverse=True)  # noqa: PTH118
         files = sql_files[:10]  # Últimos 10 archivos
 
     return {
         "environment": "production" if IS_PRODUCTION else "local",
         "backup_dir": BACKUP_DIR,
-        "recent_backups": files
+        "recent_backups": files,
     }

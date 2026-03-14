@@ -1,29 +1,32 @@
-import httpx
-from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
+from typing import Any
+
+import httpx
+
 from core.config import settings
+
 
 class MicrosoftGraphClient:
     """
     Client for Microsoft Graph API to manage users
-    Requires App Registration with User.Read.All and User.ReadWrite.All permissions
+    Requires App Registration with User.Read.All and User.ReadWrite.All permissions.
     """
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         self.tenant_id = settings.MICROSOFT_TENANT_ID
         self.client_id = settings.MICROSOFT_CLIENT_ID
         self.client_secret = settings.MICROSOFT_CLIENT_SECRET
         self.graph_url = "https://graph.microsoft.com/v1.0"
-        self._token: Optional[str] = None
-        self._token_expiry: Optional[datetime] = None
-    
+        self._token: str | None = None
+        self._token_expiry: datetime | None = None
+
     async def _get_access_token(self) -> str:
-        """Get access token using client credentials flow"""
-        if self._token and self._token_expiry and datetime.now() < self._token_expiry:
+        """Get access token using client credentials flow."""
+        if self._token and self._token_expiry and datetime.now() < self._token_expiry:  # noqa: DTZ005
             return self._token
-        
+
         token_url = f"https://login.microsoftonline.com/{self.tenant_id}/oauth2/v2.0/token"
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 token_url,
@@ -31,32 +34,24 @@ class MicrosoftGraphClient:
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
                     "scope": "https://graph.microsoft.com/.default",
-                    "grant_type": "client_credentials"
-                }
+                    "grant_type": "client_credentials",
+                },
             )
             response.raise_for_status()
-            
+
             data = response.json()
             self._token = data["access_token"]
-            self._token_expiry = datetime.now() + timedelta(seconds=data.get("expires_in", 3600) - 300)
-            
+            self._token_expiry = datetime.now() + timedelta(seconds=data.get("expires_in", 3600) - 300)  # noqa: DTZ005
+
             return self._token
-    
-    async def _make_request(
-        self, 
-        method: str, 
-        endpoint: str, 
-        data: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Make authenticated request to Graph API"""
+
+    async def _make_request(self, method: str, endpoint: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Make authenticated request to Graph API."""
         token = await self._get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
         url = f"{self.graph_url}{endpoint}"
-        
+
         async with httpx.AsyncClient() as client:
             if method == "GET":
                 response = await client.get(url, headers=headers)
@@ -70,41 +65,39 @@ class MicrosoftGraphClient:
                 response = await client.delete(url, headers=headers)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
-            
+
             response.raise_for_status()
-            
+
             if response.status_code == 204:
                 return {}
-            
+
             return response.json()
-    
-    async def get_all_users(self) -> List[Dict[str, Any]]:
-        """Get all users from Microsoft 365"""
+
+    async def get_all_users(self) -> list[dict[str, Any]]:
+        """Get all users from Microsoft 365."""
         users = []
         endpoint = "/users?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode&$expand=manager($select=displayName,mail,userPrincipalName)"
-        
+
         while endpoint:
             data = await self._make_request("GET", endpoint)
             users.extend(data.get("value", []))
             endpoint = data.get("@odata.nextLink", "").replace(self.graph_url, "")
-        
+
         return users
-    
-    async def get_user(self, user_id: str) -> Dict[str, Any]:
-        """Get a single user by ID or userPrincipalName"""
+
+    async def get_user(self, user_id: str) -> dict[str, Any]:
+        """Get a single user by ID or userPrincipalName."""
         endpoint = f"/users/{user_id}?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode&$expand=manager($select=displayName,mail,userPrincipalName)"
         return await self._make_request("GET", endpoint)
 
-    async def find_user_by_display_name(self, display_name: str) -> Optional[Dict[str, Any]]:
+    async def find_user_by_display_name(self, display_name: str) -> dict[str, Any] | None:
         """Find a Microsoft user by exact displayName."""
         if not display_name or not display_name.strip():
             return None
 
         escaped_name = display_name.strip().replace("'", "''")
         endpoint = (
-            f"/users?$filter=displayName eq '{escaped_name}'"
-            "&$select=id,userPrincipalName,displayName,mail"
-            "&$top=2"
+            f"/users?$filter=displayName eq '{escaped_name}'&$select=id,userPrincipalName,displayName,mail&$top=2"
         )
         data = await self._make_request("GET", endpoint)
         users = data.get("value", [])
@@ -113,11 +106,11 @@ class MicrosoftGraphClient:
             return None
 
         return users[0]
-    
-    async def update_user(self, user_id: str, user_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def update_user(self, user_id: str, user_data: dict[str, Any]) -> dict[str, Any]:
         """
-        Update a user in Microsoft 365
-        
+        Update a user in Microsoft 365.
+
         user_data can include:
         - givenName (firstName)
         - surname (lastName)
@@ -134,33 +127,31 @@ class MicrosoftGraphClient:
         - country (or countryLetterCode)
         """
         endpoint = f"/users/{user_id}"
-        
+
         # Filter out None values and fields that can't be updated
         update_data = {k: v for k, v in user_data.items() if v is not None}
-        
+
         await self._make_request("PATCH", endpoint, update_data)
-        
+
         # Return updated user
         return await self.get_user(user_id)
 
     async def set_user_manager(self, user_id: str, manager_user_id: str) -> None:
         """Set manager relation for a user in Microsoft Graph."""
         endpoint = f"/users/{user_id}/manager/$ref"
-        payload = {
-            "@odata.id": f"https://graph.microsoft.com/v1.0/users/{manager_user_id}"
-        }
+        payload = {"@odata.id": f"https://graph.microsoft.com/v1.0/users/{manager_user_id}"}
         await self._make_request("PUT", endpoint, payload)
 
     async def clear_user_manager(self, user_id: str) -> None:
         """Remove manager relation for a user in Microsoft Graph."""
         endpoint = f"/users/{user_id}/manager/$ref"
         await self._make_request("DELETE", endpoint)
-    
-    def map_graph_user_to_employee(self, graph_user: Dict[str, Any]) -> Dict[str, Any]:
-        """Map Microsoft Graph user to Employee model"""
+
+    def map_graph_user_to_employee(self, graph_user: dict[str, Any]) -> dict[str, Any]:
+        """Map Microsoft Graph user to Employee model."""
         business_phones = graph_user.get("businessPhones", [])
         office_phone = business_phones[0] if business_phones else None
-        
+
         return {
             "AzureOid": graph_user.get("id"),
             "AzureUpn": graph_user.get("userPrincipalName"),
@@ -172,7 +163,10 @@ class MicrosoftGraphClient:
             "Office": graph_user.get("officeLocation"),
             "Email": graph_user.get("mail") or graph_user.get("userPrincipalName"),
             "Manager": graph_user.get("manager", {}).get("displayName") if graph_user.get("manager") else None,
-            "ManagerEmail": graph_user.get("manager", {}).get("mail") or graph_user.get("manager", {}).get("userPrincipalName") if graph_user.get("manager") else None,
+            "ManagerEmail": graph_user.get("manager", {}).get("mail")
+            or graph_user.get("manager", {}).get("userPrincipalName")
+            if graph_user.get("manager")
+            else None,
             "MobilePhone": graph_user.get("mobilePhone"),
             "OfficePhone": office_phone,
             "StreetAddress": graph_user.get("streetAddress"),
@@ -181,11 +175,11 @@ class MicrosoftGraphClient:
             "PostalCode": graph_user.get("postalCode"),
             "Country": graph_user.get("countryLetterCode") or graph_user.get("country"),
         }
-    
-    def map_employee_to_graph_user(self, employee_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Map Employee model to Microsoft Graph user update format"""
+
+    def map_employee_to_graph_user(self, employee_data: dict[str, Any]) -> dict[str, Any]:
+        """Map Employee model to Microsoft Graph user update format."""
         graph_data = {}
-        
+
         if employee_data.get("FirstName"):
             graph_data["givenName"] = employee_data["FirstName"]
         if employee_data.get("LastName"):
@@ -212,9 +206,9 @@ class MicrosoftGraphClient:
             graph_data["postalCode"] = employee_data["PostalCode"]
         if employee_data.get("Country"):
             graph_data["country"] = employee_data["Country"]
-        
+
         return graph_data
+
 
 # Singleton instance
 graph_client = MicrosoftGraphClient()
-

@@ -1,6 +1,7 @@
-from sqlmodel import SQLModel
-from typing import Optional
 from datetime import datetime
+
+from sqlmodel import SQLModel
+
 from .employees import Employee as EmployeeSchema
 
 
@@ -10,34 +11,34 @@ class TicketMessageCreate(SQLModel):
 
 
 class TicketMessageUpdate(SQLModel):
-    MessageTxt: Optional[str] = None
+    MessageTxt: str | None = None
 
 
 class TicketMessage(SQLModel):
-    TicketMessageId: Optional[int] = None
+    TicketMessageId: int | None = None
     TicketId: int
     # Replaced numeric UserId with a nested User object (Employee schema)
-    User: Optional[EmployeeSchema] = None
-    MessageTxt: Optional[str] = None
+    User: EmployeeSchema | None = None
+    MessageTxt: str | None = None
     CreatedAt: datetime
-    UpdatedAt: Optional[datetime] = None
-    EditedAt: Optional[datetime] = None
+    UpdatedAt: datetime | None = None
+    EditedAt: datetime | None = None
 
 
 class TicketAttachmentCreate(SQLModel):
     # TicketId comes from the path param in the endpoint; make optional in body
-    TicketId: Optional[int] = None
-    TicketMessageId: Optional[int] = None
-    FileName: Optional[str] = None
-    FileType: Optional[str] = None
-    FilePath: Optional[str] = None
+    TicketId: int | None = None
+    TicketMessageId: int | None = None
+    FileName: str | None = None
+    FileType: str | None = None
+    FilePath: str | None = None
 
 
 class TicketAttachment(SQLModel):
-    TicketAttachmentId: Optional[int] = None
+    TicketAttachmentId: int | None = None
     TicketId: int
-    TicketMessageId: Optional[int] = None
+    TicketMessageId: int | None = None
     FileName: str
-    FileType: Optional[str] = None
-    FilePath: Optional[str] = None
+    FileType: str | None = None
+    FilePath: str | None = None
     CreatedAt: datetime

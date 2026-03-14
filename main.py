@@ -1,59 +1,57 @@
-from fastapi import FastAPI, Depends, Request
+from contextlib import asynccontextmanager, suppress
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
-from starlette.responses import Response
-from contextlib import asynccontextmanager
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+from api.auth import router as auth_router
+from api.backups import router as backups_router
+from api.catalogs import router as catalogs_router
+from api.countries import router as countries_router
+from api.curriculums import router as curriculums_router
+from api.customer_attachments import router as customer_attachments_router
+from api.customer_contacts import router as customer_contacts_router
+from api.customer_notes import router as customer_notes_router
+from api.customers import router as customers_router
 
 # Config
 from api.dependencies import require_authentication
-from core.config import AZURE_AUTH_SCHEME, settings
-from models.employees import Employees
+from api.employees import router as employees_router
+from api.hardware_inventory import router as hardware_inventory_router
+from api.jobs import router as jobs_router
 
 # Routers
 from api.licenses import router as licenses_router
-from api.employees import router as employees_router
-from api.jobs import router as jobs_router
-from api.curriculums import router as curriculums_router
-from api.roles import router as roles_router
-from api.countries import router as countries_router
 from api.modules import router as modules_router
-from api.permissions import router as permissions_router
-from api.tickets import router as tickets_router
-from api.ticket_messages import router as ticket_messages_router
-from api.ticket_attachments import router as ticket_attachments_router
-from api.hardware_inventory import router as hardware_inventory_router
-from api.time_off import router as time_off_router
-from api.timesheet import router as timesheet_router
-from api.catalogs import router as catalogs_router
 from api.notifications import router as notifications_router
-from api.tenants import router as tenants_router
-from api.auth import router as auth_router
-from api.customers import router as customers_router
-from api.customer_notes import router as customer_notes_router
-from api.customer_contacts import router as customer_contacts_router
-from api.customer_attachments import router as customer_attachments_router
+from api.permissions import router as permissions_router
 from api.products import router as products_router
 from api.quotations import router as quotations_router
-from api.backups import router as backups_router
+from api.roles import router as roles_router
+from api.tenants import router as tenants_router
+from api.ticket_attachments import router as ticket_attachments_router
+from api.ticket_messages import router as ticket_messages_router
+from api.tickets import router as tickets_router
+from api.time_off import router as time_off_router
+from api.timesheet import router as timesheet_router
 
 # DB
 from bd.connection import create_db_and_tables
+from core.config import AZURE_AUTH_SCHEME, settings
+from models.employees import Employees
 
 create_db_and_tables()
-print("Database tables created successfully")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
 
-    try:
+    with suppress(Exception):
         await AZURE_AUTH_SCHEME.openid_config.load_config()
-        print("Azure AD configuration loaded successfully")
-    except Exception as e:
-        print(f"Warning: Could not load Azure AD configuration: {e}")
 
     sync_task = None
 
@@ -61,19 +59,18 @@ async def lifespan(app: FastAPI):
         try:
             from core.background_tasks import sync_scheduler
 
-            async def run_startup_sync():
+            async def run_startup_sync() -> None:
                 try:
                     await sync_scheduler.sync_on_startup()
                 except asyncio.CancelledError:
-                    print("Startup sync task cancelled")
                     raise
-                except Exception as e:
-                    print(f"Warning: Background sync failed: {e}")
+                except Exception:
+                    pass
 
             sync_task = asyncio.create_task(run_startup_sync())
 
-        except Exception as e:
-            print(f"Warning: Could not start employee sync: {e}")
+        except Exception:
+            pass
 
     yield
 
@@ -82,6 +79,7 @@ async def lifespan(app: FastAPI):
 
     try:
         from core.background_tasks import sync_scheduler
+
         await sync_scheduler.stop_periodic_sync()
     except Exception:
         pass
@@ -119,43 +117,33 @@ def custom_openapi():
     security_schemes = components.setdefault("securitySchemes", {})
 
     # Preserve existing schemes and expose both Azure PKCE and local token auth.
-    security_schemes.update({
-        "AzureAD_PKCE_single_tenant": {
-            "type": "oauth2",
-            "flows": {
-                "authorizationCode": {
-                    "authorizationUrl": f"https://login.microsoftonline.com/{settings.TENANT_ID}/oauth2/v2.0/authorize",
-                    "tokenUrl": f"https://login.microsoftonline.com/{settings.TENANT_ID}/oauth2/v2.0/token",
-                    "scopes": settings.scopes
-                }
-            }
-        },
-        "LocalPasswordAuth": {
-            "type": "oauth2",
-            "flows": {
-                "password": {
-                    "tokenUrl": "/auth/token",
-                    "scopes": {}
-                }
-            }
-        },
-        "BearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT"
-        },
-        "ContactTokenAuth": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "x-contact-token",
-            "description": "Static token for /notifications/send/contact-primefire"
+    security_schemes.update(
+        {
+            "AzureAD_PKCE_single_tenant": {
+                "type": "oauth2",
+                "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": f"https://login.microsoftonline.com/{settings.TENANT_ID}/oauth2/v2.0/authorize",
+                        "tokenUrl": f"https://login.microsoftonline.com/{settings.TENANT_ID}/oauth2/v2.0/token",
+                        "scopes": settings.scopes,
+                    }
+                },
+            },
+            "LocalPasswordAuth": {"type": "oauth2", "flows": {"password": {"tokenUrl": "/auth/token", "scopes": {}}}},
+            "BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
+            "ContactTokenAuth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "x-contact-token",
+                "description": "Static token for /notifications/send/contact-primefire",
+            },
         }
-    })
+    )
 
     openapi_schema["security"] = [
         {"AzureAD_PKCE_single_tenant": list(settings.scopes.keys())},
         {"LocalPasswordAuth": []},
-        {"BearerAuth": []}
+        {"BearerAuth": []},
     ]
 
     contact_path = openapi_schema.get("paths", {}).get(
@@ -276,7 +264,7 @@ async def debug_auth(current_user=Depends(AZURE_AUTH_SCHEME)):
             "name": getattr(current_user, "name", "N/A"),
             "email": getattr(current_user, "preferred_username", "N/A"),
             "oid": getattr(current_user, "oid", "N/A"),
-        }
+        },
     }
 
 
@@ -290,6 +278,6 @@ async def debug_token(current_user: Employees = Depends(require_authentication))
             "email": current_user.Email,
             "title": current_user.Title,
             "azure_oid": current_user.AzureOid,
-            "role_id": current_user.RoleId
-        }
+            "role_id": current_user.RoleId,
+        },
     }

@@ -1,17 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlmodel import Session, select
-from typing import List, Optional
-from datetime import datetime, timezone
-from fastapi.responses import FileResponse
 import os
-from uuid import uuid4
+from datetime import UTC, datetime
 from pathlib import Path
-from dotenv import load_dotenv
+from uuid import uuid4
 
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sqlmodel import Session, select
+
+from api.dependencies import get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
-from api.dependencies import require_authentication, get_current_employee_with_permissions
 from models.ticket_messages import TicketAttachments
-from schemas.ticket_messages import TicketAttachmentCreate, TicketAttachment
+from schemas.ticket_messages import TicketAttachment
 
 # Load .env
 load_dotenv()
@@ -28,6 +28,7 @@ if IS_PRODUCTION:
 else:
     # Local: uploads/tickets
     from core.config import settings
+
     UPLOAD_DIR = Path(settings.UPLOAD_DIR) / "tickets"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -47,9 +48,11 @@ def attachment_to_schema(db_att: TicketAttachments) -> TicketAttachment:
     )
 
 
-@router.get("/tickets/{ticket_id}/attachments", response_model=List[TicketAttachment])
+@router.get("/tickets/{ticket_id}/attachments", response_model=list[TicketAttachment])
 def list_attachments_for_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    atts = db.exec(select(TicketAttachments).where(TicketAttachments.TicketId == ticket_id).order_by(TicketAttachments.CreatedAt)).all()
+    atts = db.exec(
+        select(TicketAttachments).where(TicketAttachments.TicketId == ticket_id).order_by(TicketAttachments.CreatedAt)
+    ).all()
     return [attachment_to_schema(a) for a in atts]
 
 
@@ -63,20 +66,24 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
     if db_att.FilePath:
         # Check if path in DB is absolute or relative
         saved_path = Path(db_att.FilePath)
-        
+
         # If path starts with uploads/ but UPLOAD_DIR is different, we might fail to find it if we just join.
         # But if we assume db_att.FilePath is the full relative path from app root as stored previously:
         storage_path = saved_path
-        
+
         # If not absolute, try joining with current working directory or check if it exists as is
         if not storage_path.is_absolute() and not storage_path.exists():
-             # Fallback: maybe it's relative to UPLOAD_DIR but stored as relative string?
-             # For now, rely on FilePath being what was returned by create_attachment
-             pass
-             
+            # Fallback: maybe it's relative to UPLOAD_DIR but stored as relative string?
+            # For now, rely on FilePath being what was returned by create_attachment
+            pass
+
         if storage_path.exists():
             # Use original filename for Content-Disposition
-            return FileResponse(path=str(storage_path), filename=db_att.FileName or storage_path.name, media_type=db_att.FileType or "application/octet-stream")
+            return FileResponse(
+                path=str(storage_path),
+                filename=db_att.FileName or storage_path.name,
+                media_type=db_att.FileType or "application/octet-stream",
+            )
         # if file missing, fall back to metadata
     return attachment_to_schema(db_att)
 
@@ -84,13 +91,13 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
 @router.post("/tickets/{ticket_id}/attachments", response_model=TicketAttachment)
 def create_attachment(
     ticket_id: int,
-    TicketMessageId: Optional[int] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    file_name: Optional[str] = Form(None),
-    file_type: Optional[str] = Form(None),
-    file_path: Optional[str] = Form(None),
+    TicketMessageId: int | None = Form(None),  # noqa: N803
+    file: UploadFile | None = File(None),
+    file_name: str | None = Form(None),
+    file_type: str | None = Form(None),
+    file_path: str | None = Form(None),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     # If an UploadFile is provided, save it to UPLOAD_DIR/{ticket_id}/ and set FilePath
     rel_path = None
@@ -103,9 +110,9 @@ def create_attachment(
         ext = Path(file.filename).suffix
         unique = f"{uuid4().hex}{ext}"
         storage_path = base_dir / unique
-        
+
         # write file to disk
-        with open(storage_path, "wb") as out:
+        with Path(storage_path).open("wb") as out:  # noqa: FURB103
             content = file.file.read()
             out.write(content)
         # Store the path that can be used to retrieve it later (relative to CWD or absolute)
@@ -123,7 +130,7 @@ def create_attachment(
         FileName=final_file_name,
         FileType=final_file_type,
         FilePath=rel_path,
-        CreatedAt=datetime.now(timezone.utc)
+        CreatedAt=datetime.now(UTC),
     )
     db.add(db_att)
     db.commit()
@@ -132,7 +139,11 @@ def create_attachment(
 
 
 @router.delete("/attachments/{attachment_id}")
-def delete_attachment(attachment_id: int, user_permissions: dict = Depends(get_current_employee_with_permissions), db: Session = Depends(get_db)):
+def delete_attachment(
+    attachment_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
     db_att = db.get(TicketAttachments, attachment_id)
     if not db_att:
         raise HTTPException(status_code=404, detail="Attachment not found")

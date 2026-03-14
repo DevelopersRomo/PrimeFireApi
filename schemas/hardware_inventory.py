@@ -1,5 +1,5 @@
-from datetime import datetime, date
-from typing import Optional
+from datetime import date, datetime
+
 from pydantic import BaseModel
 
 from schemas.employees import EmployeeRead
@@ -8,21 +8,21 @@ from schemas.employees import EmployeeRead
 class HardwareInventoryBase(BaseModel):
     SerialNumber: str
     Brand: str
-    Model: Optional[str] = None
-    DeviceType: Optional[str] = None
-    Processor: Optional[str] = None
-    RAM_GB: Optional[int] = None
-    StorageType: Optional[str] = None
-    StorageSize_GB: Optional[int] = None
-    GPU: Optional[str] = None
-    OperatingSystem: Optional[str] = None
-    WarrantyStartDate: Optional[date] = None
-    WarrantyEndDate: Optional[date] = None
-    PurchaseDate: Optional[date] = None
-    EmployeeId: Optional[int] = None
-    Location: Optional[str] = None
-    Status: Optional[str] = "Active"
-    Notes: Optional[str] = None
+    Model: str | None = None
+    DeviceType: str | None = None
+    Processor: str | None = None
+    RAM_GB: int | None = None
+    StorageType: str | None = None
+    StorageSize_GB: int | None = None
+    GPU: str | None = None
+    OperatingSystem: str | None = None
+    WarrantyStartDate: date | None = None
+    WarrantyEndDate: date | None = None
+    PurchaseDate: date | None = None
+    EmployeeId: int | None = None
+    Location: str | None = None
+    Status: str | None = "Active"
+    Notes: str | None = None
 
 
 class HardwareInventoryCreate(HardwareInventoryBase):
@@ -30,14 +30,14 @@ class HardwareInventoryCreate(HardwareInventoryBase):
 
 
 class HardwareInventoryUpdate(HardwareInventoryBase):
-    UpdatedAt: Optional[datetime] = datetime.utcnow()
+    UpdatedAt: datetime | None = datetime.utcnow()  # noqa: DTZ003
 
 
 class HardwareInventoryRead(HardwareInventoryBase):
     HardwareID: int
-    Employee: Optional[EmployeeRead] 
+    Employee: EmployeeRead | None
     CreatedAt: datetime
-    UpdatedAt: Optional[datetime]
+    UpdatedAt: datetime | None
 
     class Config:
         from_attributes = True

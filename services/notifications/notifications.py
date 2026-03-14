@@ -1,3 +1,5 @@
+from helpers.string_helpers import format_absence_type, format_hours_to_readable
+
 """Unified notification system with dynamic templates.
 
 IMPORTANT: All notifications are sent using BOT_EMAIL as the sender (orchestrator).
@@ -5,24 +7,22 @@ Even though actions are performed by specific users, the email always comes from
 This ensures consistent email delivery and proper authentication with Microsoft Graph API.
 """
 
-from typing import Optional
 from sqlmodel import select
 
 from bd.connection import SessionLocal
-from models.tenants import Tenants, TenantLogos
-from services.notifications.email_functions import send_outlook_email, parse_email_list
-from services.notifications.teams_functions import send_teams_notification
-from services.notifications.schemas import (
-    NotificationResponse,
-    NotificationField,
-    TimeOffNotificationData,
-    TicketNotificationData,
-    TicketMessageNotificationData,
-    UserApprovalNotificationData,
-    TimeSheetNotificationData,
-    EmailAttachment,
-)
 from core.config import settings
+from models.tenants import TenantLogos, Tenants
+from services.notifications.email_functions import parse_email_list, send_outlook_email
+from services.notifications.schemas import (
+    NotificationField,
+    NotificationResponse,
+    TicketMessageNotificationData,
+    TicketNotificationData,
+    TimeOffNotificationData,
+    TimeSheetNotificationData,
+    UserApprovalNotificationData,
+)
+from services.notifications.teams_functions import send_teams_notification
 
 
 def get_action_color(action_type: str) -> str:
@@ -53,30 +53,16 @@ def get_action_icon(action_type: str) -> str:
     return icons.get(action_type.lower(), "📧")
 
 
-def format_absence_type(absence_type: str) -> str:
-    """Format absence type for display."""
-    return absence_type.replace("_", " ").title()
-
-
-def format_hours_to_readable(decimal_hours: float) -> str:
-    """Format decimal hours to readable format (e.g., '8 hours 30 min')."""
-    hours = int(decimal_hours)
-    minutes = round((decimal_hours - hours) * 60)
-    if minutes == 0:
-        return f"{hours} hour{'s' if hours != 1 else ''}"
-    return f"{hours} hour{'s' if hours != 1 else ''} {minutes} min"
-
-
 def _normalize_app_url(url: str) -> str:
     cleaned = (url or "").strip()
     if not cleaned:
         return ""
-    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+    if cleaned.startswith(("http://", "https://")):
         return cleaned
     return f"https://{cleaned}"
 
 
-def _resolve_email_branding(tenant_key: Optional[str]) -> dict:
+def _resolve_email_branding(tenant_key: str | None) -> dict:
     """Resolve branding for emails using tenant key from request context."""
     default_app_url = getattr(
         settings,
@@ -96,16 +82,12 @@ def _resolve_email_branding(tenant_key: Optional[str]) -> dict:
 
     db = SessionLocal()
     try:
-        tenant = db.exec(
-            select(Tenants).where(Tenants.DbConnectionKey == tenant_key)
-        ).first()
+        tenant = db.exec(select(Tenants).where(Tenants.DbConnectionKey == tenant_key)).first()
         if not tenant:
             return branding
 
         logo = db.exec(
-            select(TenantLogos)
-            .where(TenantLogos.TenantId == tenant.TenantId)
-            .order_by(TenantLogos.LogoId.desc())
+            select(TenantLogos).where(TenantLogos.TenantId == tenant.TenantId).order_by(TenantLogos.LogoId.desc())
         ).first()
         if not logo:
             return branding
@@ -126,23 +108,23 @@ def _resolve_email_branding(tenant_key: Optional[str]) -> dict:
 
 def generate_notification_html(
     title: str,
-    sub_title: Optional[str] = None,
+    sub_title: str | None = None,
     action_type: str = "info",
     message_body: str = "",
-    performed_by_name: Optional[str] = None,
-    performed_by_email: Optional[str] = None,
-    fields: Optional[list[NotificationField]] = None,
-    action_url: Optional[str] = None,
+    performed_by_name: str | None = None,
+    performed_by_email: str | None = None,
+    fields: list[NotificationField] | None = None,
+    action_url: str | None = None,
     action_text: str = "View Details",
-    support_email: Optional[str] = None,
-    app_url: Optional[str] = None,
-    app_name: Optional[str] = None,
+    support_email: str | None = None,
+    app_url: str | None = None,
+    app_name: str | None = None,
     include_support_section: bool = True,
 ) -> str:
     """Generate unified HTML email template for notifications."""
     color = get_action_color(action_type)
     icon = get_action_icon(action_type)
-    
+
     if support_email is None:
         support_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
     if app_url is None:
@@ -189,7 +171,7 @@ def generate_notification_html(
         fields_html = f"""
             <tr>
                 <td style="padding: 20px 40px;">
-                    <table width="100%" cellpadding="0" cellspacing="0" 
+                    <table width="100%" cellpadding="0" cellspacing="0"
                            style="background-color: #f8f9fa; border: 1px solid #e1e1e1; border-radius: 6px;">
                         {fields_rows}
                     </table>
@@ -202,9 +184,9 @@ def generate_notification_html(
         action_button_html = f"""
             <tr>
                 <td style="padding: 30px 40px; text-align: center;">
-                    <a href="{action_url}" 
+                    <a href="{action_url}"
                        target="_blank"
-                       style="display: inline-block; padding: 12px 30px; background-color: #000000; 
+                       style="display: inline-block; padding: 12px 30px; background-color: #000000;
                               color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: bold;">
                         {action_text}
                     </a>
@@ -229,9 +211,9 @@ def generate_notification_html(
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
         <tr>
             <td align="center" style="padding: 40px 0;">
-                <table width="600" cellpadding="0" cellspacing="0" 
+                <table width="600" cellpadding="0" cellspacing="0"
                        style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    
+
                     <!-- Header with colored banner -->
                     <tr>
                         <td style="background-color: {color}; padding: 20px; text-align: center;">
@@ -240,23 +222,26 @@ def generate_notification_html(
                             </div>
                         </td>
                     </tr>
-                    
+
                     <!-- Title -->
                     <tr>
                         <td style="padding: 40px 40px 20px;">
                             <h1 style="margin: 0; color: #333; font-size: 24px; font-weight: bold;">
                                 {title}
                             </h1>
-                            {f'<p style="margin: 10px 0 0; color: #666; font-size: 16px;">{sub_title}</p>' if sub_title else ''}
+                            {
+        f'<p style="margin: 10px 0 0; color: #666; font-size: 16px;">{sub_title}</p>' if sub_title else ""
+    }
                         </td>
                     </tr>
-                    
+
                     {performed_by_html}
-                    
+
                     {fields_html}
-                    
+
                     <!-- Message body -->
-                    {f'''
+                    {
+        f'''
                     <tr>
                         <td style="padding: 20px 40px;">
                             <p style="margin: 0; color: #333; font-size: 16px; line-height: 1.6;">
@@ -264,22 +249,25 @@ def generate_notification_html(
                             </p>
                         </td>
                     </tr>
-                    ''' if message_body else ''}
-                    
+                    '''
+        if message_body
+        else ""
+    }
+
                     {action_button_html}
-                    
+
                     {support_html}
-                    
+
                     <!-- Footer links -->
                     <tr>
                         <td style="padding: 10px 40px 40px; text-align: center;">
-                            <a href="{app_url}" 
+                            <a href="{app_url}"
                                style="padding: 5px 15px; color: #5b5b5b; text-decoration: none; font-size: 14px;">
                                 {app_name}
                             </a>
                         </td>
                     </tr>
-                    
+
                 </table>
             </td>
         </tr>
@@ -295,13 +283,13 @@ async def send_time_off_notification(
     notification_data: TimeOffNotificationData,
     action_type: str,
     to_email: str,
-    cc_email: Optional[str] = None,
-    tenant_key: Optional[str] = None,
+    cc_email: str | None = None,
+    tenant_key: str | None = None,
 ) -> NotificationResponse:
     """Send time off notification (approved/rejected)."""
     try:
         absence_type_display = format_absence_type(notification_data.absence_type)
-        
+
         if action_type == "approved":
             title = f"Time Off Request Approved - {absence_type_display.title()}"
             message_body = f"Your {absence_type_display.lower()} request has been approved."
@@ -371,20 +359,19 @@ async def send_time_off_notification(
 
         if success:
             return NotificationResponse(success=True, message_id=message_id)
-        else:
-            return NotificationResponse(success=False, error_message=error_message)
+        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
-            error_message=f"Error sending time off notification: {str(e)}",
+            error_message=f"Error sending time off notification: {e!s}",
         )
 
 
 async def send_ticket_assigned_notification(
     notification_data: TicketNotificationData,
     to_email: str,
-    cc_email: Optional[str] = None,
+    cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a ticket is assigned to someone."""
     try:
@@ -400,7 +387,13 @@ async def send_ticket_assigned_notification(
         ]
 
         if notification_data.description:
-            fields.append(NotificationField(label="Description", value=notification_data.description[:200] + ("..." if len(notification_data.description) > 200 else "")))
+            fields.append(
+                NotificationField(
+                    label="Description",
+                    value=notification_data.description[:200]
+                    + ("..." if len(notification_data.description) > 200 else ""),
+                )
+            )
 
         html_body = generate_notification_html(
             title=title,
@@ -435,20 +428,19 @@ async def send_ticket_assigned_notification(
 
         if success:
             return NotificationResponse(success=True, message_id=message_id)
-        else:
-            return NotificationResponse(success=False, error_message=error_message)
+        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
-            error_message=f"Error sending ticket assigned notification: {str(e)}",
+            error_message=f"Error sending ticket assigned notification: {e!s}",
         )
 
 
 async def send_ticket_created_notification(
     notification_data: TicketNotificationData,
     to_email: str,
-    cc_email: Optional[str] = None,
+    cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a ticket is created."""
     try:
@@ -464,7 +456,13 @@ async def send_ticket_created_notification(
         ]
 
         if notification_data.description:
-            fields.append(NotificationField(label="Description", value=notification_data.description[:200] + ("..." if len(notification_data.description) > 200 else "")))
+            fields.append(
+                NotificationField(
+                    label="Description",
+                    value=notification_data.description[:200]
+                    + ("..." if len(notification_data.description) > 200 else ""),
+                )
+            )
 
         if notification_data.assigned_to_name:
             fields.append(NotificationField(label="Assigned To", value=notification_data.assigned_to_name))
@@ -502,27 +500,28 @@ async def send_ticket_created_notification(
 
         if success:
             return NotificationResponse(success=True, message_id=message_id)
-        else:
-            return NotificationResponse(success=False, error_message=error_message)
+        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
-            error_message=f"Error sending ticket created notification: {str(e)}",
+            error_message=f"Error sending ticket created notification: {e!s}",
         )
 
 
 async def send_ticket_message_notification(
     notification_data: TicketMessageNotificationData,
     to_email: str,
-    cc_email: Optional[str] = None,
+    cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a ticket message is posted."""
     try:
         title = "New Comment on Ticket"
         message_body = f"{notification_data.commenter_name} commented on ticket: {notification_data.ticket_title}"
 
-        message_preview = notification_data.message_text[:200] + ("..." if len(notification_data.message_text) > 200 else "")
+        message_preview = notification_data.message_text[:200] + (
+            "..." if len(notification_data.message_text) > 200 else ""
+        )
 
         fields = [
             NotificationField(label="Ticket ID", value=f"#{notification_data.ticket_id}"),
@@ -563,25 +562,24 @@ async def send_ticket_message_notification(
 
         if success:
             return NotificationResponse(success=True, message_id=message_id)
-        else:
-            return NotificationResponse(success=False, error_message=error_message)
+        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
-            error_message=f"Error sending ticket message notification: {str(e)}",
+            error_message=f"Error sending ticket message notification: {e!s}",
         )
 
 
 async def send_user_approval_notification(
     notification_data: UserApprovalNotificationData,
     to_email: str,
-    cc_email: Optional[str] = None,
+    cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a user is approved and ready to use."""
     try:
         title = "Account Approved and Ready"
-        message_body = f"Your account has been approved and is now ready to use."
+        message_body = "Your account has been approved and is now ready to use."
 
         fields = [
             NotificationField(label="User ID", value=f"#{notification_data.user_id}"),
@@ -625,17 +623,17 @@ async def send_user_approval_notification(
 
         if success:
             return NotificationResponse(success=True, message_id=message_id)
-        else:
-            return NotificationResponse(success=False, error_message=error_message)
+        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
-            error_message=f"Error sending user approval notification: {str(e)}",
+            error_message=f"Error sending user approval notification: {e!s}",
         )
 
 
 # Helper functions for easy integration with API endpoints
+
 
 async def notify_time_off_approved(
     request_id: int,
@@ -646,13 +644,13 @@ async def notify_time_off_approved(
     start_date: str,
     end_date: str,
     total_days: str,
-    total_hours: Optional[str] = None,
-    reason: Optional[str] = None,
-    reviewed_by_name: Optional[str] = None,
-    reviewed_by_email: Optional[str] = None,
-    review_notes: Optional[str] = None,
-    action_url: Optional[str] = None,
-    tenant_key: Optional[str] = None,
+    total_hours: str | None = None,
+    reason: str | None = None,
+    reviewed_by_name: str | None = None,
+    reviewed_by_email: str | None = None,
+    review_notes: str | None = None,
+    action_url: str | None = None,
+    tenant_key: str | None = None,
 ) -> NotificationResponse:
     """Helper function to send time off approved notification."""
     notification_data = TimeOffNotificationData(
@@ -688,13 +686,13 @@ async def notify_time_off_rejected(
     start_date: str,
     end_date: str,
     total_days: str,
-    total_hours: Optional[str] = None,
-    reason: Optional[str] = None,
-    reviewed_by_name: Optional[str] = None,
-    reviewed_by_email: Optional[str] = None,
-    review_notes: Optional[str] = None,
-    action_url: Optional[str] = None,
-    tenant_key: Optional[str] = None,
+    total_hours: str | None = None,
+    reason: str | None = None,
+    reviewed_by_name: str | None = None,
+    reviewed_by_email: str | None = None,
+    review_notes: str | None = None,
+    action_url: str | None = None,
+    tenant_key: str | None = None,
 ) -> NotificationResponse:
     """Helper function to send time off rejected notification."""
     notification_data = TimeOffNotificationData(
@@ -731,11 +729,11 @@ async def notify_time_off_submitted(
     end_date: str,
     total_days: str,
     to_email: str,
-    total_hours: Optional[str] = None,
-    reason: Optional[str] = None,
-    action_url: Optional[str] = None,
-    tenant_key: Optional[str] = None,
-    cc_email: Optional[str] = None,
+    total_hours: str | None = None,
+    reason: str | None = None,
+    action_url: str | None = None,
+    tenant_key: str | None = None,
+    cc_email: str | None = None,
 ) -> NotificationResponse:
     """Helper function to send time off submitted notification (to manager)."""
     notification_data = TimeOffNotificationData(
@@ -765,18 +763,18 @@ async def notify_time_off_submitted(
 async def notify_ticket_created(
     ticket_id: int,
     title: str,
-    description: Optional[str] = None,
+    description: str | None = None,
     status: str = "todo",
     priority: str = "normal",
     created_by_name: str = "",
     created_by_email: str = "",
-    assigned_to_name: Optional[str] = None,
-    assigned_to_email: Optional[str] = None,
-    action_url: Optional[str] = None,
+    assigned_to_name: str | None = None,
+    assigned_to_email: str | None = None,
+    action_url: str | None = None,
     notify_assignee: bool = True,
-) -> tuple[NotificationResponse, Optional[NotificationResponse]]:
+) -> tuple[NotificationResponse, NotificationResponse | None]:
     """Helper function to send ticket created notifications.
-    
+
     Returns:
         (creator_notification, assignee_notification)
     """
@@ -792,19 +790,19 @@ async def notify_ticket_created(
         assigned_to_email=assigned_to_email,
         action_url=action_url,
     )
-    
+
     creator_notification = await send_ticket_created_notification(
         notification_data=notification_data,
         to_email=created_by_email,
     )
-    
+
     assignee_notification = None
     if notify_assignee and assigned_to_email and assigned_to_email != created_by_email:
         assignee_notification = await send_ticket_created_notification(
             notification_data=notification_data,
             to_email=assigned_to_email,
         )
-    
+
     return creator_notification, assignee_notification
 
 
@@ -818,19 +816,19 @@ async def notify_ticket_message(
     commenter_email: str,
     ticket_creator_id: int,
     ticket_creator_email: str,
-    ticket_assigned_to_id: Optional[int] = None,
-    ticket_assigned_to_email: Optional[str] = None,
-    action_url: Optional[str] = None,
-) -> tuple[Optional[NotificationResponse], Optional[NotificationResponse]]:
+    ticket_assigned_to_id: int | None = None,
+    ticket_assigned_to_email: str | None = None,
+    action_url: str | None = None,
+) -> tuple[NotificationResponse | None, NotificationResponse | None]:
     """Helper function to send ticket message notifications.
-    
+
     Logic:
     - In LOCAL: Always notify both creator and assignee (skip validation)
-    - In PROD: 
+    - In PROD:
       - If commenter is creator, notify assignee
       - If commenter is assignee, notify creator
       - If commenter is neither, notify both creator and assignee
-    
+
     Returns:
         (creator_notification, assignee_notification)
     """
@@ -843,13 +841,13 @@ async def notify_ticket_message(
         commenter_email=commenter_email,
         action_url=action_url,
     )
-    
+
     creator_notification = None
     assignee_notification = None
-    
+
     environment = settings.ENVIRONMENT.value if hasattr(settings.ENVIRONMENT, "value") else str(settings.ENVIRONMENT)
     is_local = environment == "local"
-    
+
     if is_local:
         if ticket_creator_email:
             creator_notification = await send_ticket_message_notification(
@@ -864,7 +862,7 @@ async def notify_ticket_message(
     else:
         is_commenter_creator = commenter_id == ticket_creator_id
         is_commenter_assignee = ticket_assigned_to_id and commenter_id == ticket_assigned_to_id
-        
+
         if is_commenter_creator:
             if ticket_assigned_to_email and ticket_assigned_to_email != commenter_email:
                 assignee_notification = await send_ticket_message_notification(
@@ -888,7 +886,7 @@ async def notify_ticket_message(
                     notification_data=notification_data,
                     to_email=ticket_assigned_to_email,
                 )
-    
+
     return creator_notification, assignee_notification
 
 
@@ -896,9 +894,9 @@ async def notify_user_approved(
     user_id: int,
     user_name: str,
     user_email: str,
-    approved_by_name: Optional[str] = None,
-    approved_by_email: Optional[str] = None,
-    action_url: Optional[str] = None,
+    approved_by_name: str | None = None,
+    approved_by_email: str | None = None,
+    action_url: str | None = None,
 ) -> NotificationResponse:
     """Helper function to send user approval notification."""
     notification_data = UserApprovalNotificationData(
@@ -919,17 +917,17 @@ async def send_custom_notification(
     title: str,
     message_body: str,
     to_email: str,
-    cc_email: Optional[str] = None,
+    cc_email: str | None = None,
     action_type: str = "info",
-    sub_title: Optional[str] = None,
-    performed_by_name: Optional[str] = None,
-    performed_by_email: Optional[str] = None,
-    fields: Optional[list[NotificationField]] = None,
-    action_url: Optional[str] = None,
+    sub_title: str | None = None,
+    performed_by_name: str | None = None,
+    performed_by_email: str | None = None,
+    fields: list[NotificationField] | None = None,
+    action_url: str | None = None,
     action_text: str = "View Details",
 ) -> NotificationResponse:
     """Send custom notification with basic parameters.
-    
+
     Args:
         title: Email title/subject
         message_body: Main message content
@@ -942,7 +940,7 @@ async def send_custom_notification(
         fields: Optional list of fields to display
         action_url: Optional URL for action button
         action_text: Text for action button
-        
+
     Returns:
         NotificationResponse with success status
     """
@@ -980,13 +978,12 @@ async def send_custom_notification(
 
         if success:
             return NotificationResponse(success=True, message_id=message_id)
-        else:
-            return NotificationResponse(success=False, error_message=error_message)
+        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
-            error_message=f"Error sending custom notification: {str(e)}",
+            error_message=f"Error sending custom notification: {e!s}",
         )
 
 
@@ -994,7 +991,7 @@ async def notify_teams(
     recipient_email: str,
     title: str,
     message_body: str,
-    action_url: Optional[str] = None,
+    action_url: str | None = None,
     action_text: str = "View Details",
 ) -> NotificationResponse:
     """
@@ -1029,7 +1026,9 @@ async def send_timesheet_notification(
     try:
         if notification_data.notification_type == "regular_hours":
             title = "Regular Hours Completed"
-            message_body = "You have completed your regular hours of work. You may continue working or clock out when ready."
+            message_body = (
+                "You have completed your regular hours of work. You may continue working or clock out when ready."
+            )
             action_type = "info"
         elif notification_data.notification_type == "overtime":
             title = "Overtime Limit Reached"
@@ -1078,13 +1077,12 @@ async def send_timesheet_notification(
 
         if success:
             return NotificationResponse(success=True, message_id=message_id)
-        else:
-            return NotificationResponse(success=False, error_message=error_message)
+        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
-            error_message=f"Error sending timesheet notification: {str(e)}",
+            error_message=f"Error sending timesheet notification: {e!s}",
         )
 
 
@@ -1094,9 +1092,9 @@ async def notify_timesheet_hours(
     employee_email: str,
     notification_type: str,
     hours_worked: float,
-    customer_name: Optional[str] = None,
-    clock_in_time: Optional[str] = None,
-    action_url: Optional[str] = None,
+    customer_name: str | None = None,
+    clock_in_time: str | None = None,
+    action_url: str | None = None,
 ) -> NotificationResponse:
     """Helper function to send timesheet notification."""
     notification_data = TimeSheetNotificationData(
@@ -1113,4 +1111,3 @@ async def notify_timesheet_hours(
         notification_data=notification_data,
         to_email=employee_email,
     )
-

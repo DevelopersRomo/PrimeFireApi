@@ -1,9 +1,13 @@
-from sqlmodel import SQLModel, Field, Relationship, CheckConstraint
-from typing import Optional
-from datetime import datetime, date
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Optional
+
+from sqlmodel import CheckConstraint, Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from models.employees import Employees
 
 if __name__ == "models.hardware_inventory":
-    from models.employees import Employees
+    pass
 
 
 class HardwareInventory(SQLModel, table=True):
@@ -12,33 +16,30 @@ class HardwareInventory(SQLModel, table=True):
         CheckConstraint("DeviceType IN ('Laptop', 'Desktop', 'Workstation', 'Server')"),
         CheckConstraint("StorageType IN ('HDD', 'SSD', 'NVMe', 'Hybrid')"),
         CheckConstraint("Status IN ('Active', 'In Repair', 'Retired', 'Spare')"),
-        {'schema': 'dbo'},  # ✅ El diccionario siempre al final
+        {"schema": "dbo"},  # ✅ El diccionario siempre al final
     )
 
-    HardwareID: Optional[int] = Field(default=None, primary_key=True, index=True)
+    HardwareID: int | None = Field(default=None, primary_key=True, index=True)
     SerialNumber: str = Field(max_length=50, nullable=False, unique=True)
     Brand: str = Field(max_length=50, nullable=False)
-    Model: Optional[str] = Field(default=None, max_length=100)
-    DeviceType: Optional[str] = Field(default=None, max_length=20)
-    Processor: Optional[str] = Field(default=None, max_length=100)
-    RAM_GB: Optional[int] = Field(default=None)
-    StorageType: Optional[str] = Field(default=None, max_length=20)
-    StorageSize_GB: Optional[int] = Field(default=None)
-    GPU: Optional[str] = Field(default=None, max_length=100)
-    OperatingSystem: Optional[str] = Field(default=None, max_length=100)
-    WarrantyStartDate: Optional[date] = Field(default=None)
-    WarrantyEndDate: Optional[date] = Field(default=None)
-    PurchaseDate: Optional[date] = Field(default=None)
-    Location: Optional[str] = Field(default=None, max_length=100)
-    Status: Optional[str] = Field(default="Active", max_length=20)
-    Notes: Optional[str] = Field(default=None, max_length=255)
-    CreatedAt: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    UpdatedAt: Optional[datetime] = Field(default=None)
+    Model: str | None = Field(default=None, max_length=100)
+    DeviceType: str | None = Field(default=None, max_length=20)
+    Processor: str | None = Field(default=None, max_length=100)
+    RAM_GB: int | None = Field(default=None)
+    StorageType: str | None = Field(default=None, max_length=20)
+    StorageSize_GB: int | None = Field(default=None)
+    GPU: str | None = Field(default=None, max_length=100)
+    OperatingSystem: str | None = Field(default=None, max_length=100)
+    WarrantyStartDate: date | None = Field(default=None)
+    WarrantyEndDate: date | None = Field(default=None)
+    PurchaseDate: date | None = Field(default=None)
+    Location: str | None = Field(default=None, max_length=100)
+    Status: str | None = Field(default="Active", max_length=20)
+    Notes: str | None = Field(default=None, max_length=255)
+    CreatedAt: datetime | None = Field(default_factory=datetime.utcnow)
+    UpdatedAt: datetime | None = Field(default=None)
 
     # Relationships
-    EmployeeId: Optional[int] = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
-    
-    Employee: Optional["Employees"] = Relationship(
-    back_populates="hardware_inventories"
-    )
+    EmployeeId: int | None = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
 
+    Employee: Optional["Employees"] = Relationship(back_populates="hardware_inventories")

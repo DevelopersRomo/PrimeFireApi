@@ -138,6 +138,38 @@ pytest --cov=.
 
 See `tests/README.md` for detailed testing information.
 
+## 🔧 Linting & Formatting
+
+Commands for code formatting and linting:
+
+**Windows:**
+
+```cmd
+ruff format . & ruff check . --fix --unsafe-fixes & codespell --check-filenames --count & mypy .
+```
+
+**Mac/Linux:**
+
+```bash
+ruff format . && ruff check . --fix && codespell --check-filenames --count && mypy .
+```
+
+### Individual commands:
+
+```bash
+# Format code
+ruff format .
+
+# Lint and fix
+ruff check . --fix --unsafe-fixes
+
+# Check spelling in filenames
+codespell --check-filenames --count
+
+# Type checking
+mypy .
+```
+
 ## 📝 Development Notes
 
 - The project uses SQLModel (SQLAlchemy + Pydantic) with SQL Server
@@ -145,6 +177,146 @@ See `tests/README.md` for detailed testing information.
 - Database dependencies are handled with SQLModel sessions
 - The application includes standard HTTP error handling
 - Response schemas inherit directly from SQLModel
+
+## 🤖 AI Development Tools
+
+This project uses **Agent Teams Lite** and **Engram** for enhanced AI-assisted development.
+
+### Agent Teams Lite (SDD Workflow)
+
+[Agent Teams Lite](https://github.com/Gentleman-Programming/agent-teams-lite) implements **Spec-Driven Development (SDD)** - a workflow where a coordinator delegates work to 9 specialized sub-agents.
+
+#### Architecture
+
+| Agent | Function |
+|-------|----------|
+| Explorer | Investigates the codebase |
+| Proposer | Proposes changes |
+| Spec Writer | Writes specifications |
+| Designer | Designs solutions |
+| Task Planner | Plans implementation tasks |
+| Implementer | Writes the code |
+| Verifier | Validates results |
+| Archiver | Archives completed changes |
+| Skill Registry | Manages project skills |
+
+#### Commands
+
+```bash
+/sdd-init          # Initialize SDD context
+/sdd-new <name>   # Start a new feature/change
+/sdd-explore <topic>  # Explore ideas in the codebase
+/sdd-continue      # Run the next phase
+/sdd-apply         # Implement planned tasks
+/sdd-verify        # Validate changes
+/sdd-archive       # Complete and archive the change
+```
+
+#### Usage
+
+1. Open the project in **VS Code** or **Cursor** with Claude Code
+2. Type `/sdd-init` to initialize the context
+3. Use `/sdd-new <feature-name>` to start a new change
+4. Approve between phases as the orchestrator guides you through exploration, specification, design, and implementation
+
+---
+
+### Engram (Persistent Memory)
+
+[Engram](https://github.com/Gentleman-Programming/engram) provides **persistent memory** for AI coding agents using SQLite + FTS5. It works across all your AI coding tools.
+
+#### Features
+
+- **Persistent Memory**: Remembers decisions, patterns, and context between sessions
+- **Full-Text Search**: Search through all saved memories
+- **Cross-Session**: Works with Claude Code, VS Code, Cursor, OpenCode, and more
+- **Zero Dependencies**: Single binary, one SQLite file
+
+#### Available Tools
+
+When Engram is active, you have access to:
+
+| Tool | Description |
+|------|-------------|
+| `mem_save` | Save a memory with title, content, and tags |
+| `mem_search` | Search memories by query |
+| `mem_context` | Get relevant context for current task |
+| `mem_get_observation` | Retrieve a specific memory |
+| `mem_list` | List memories with filters |
+| `mem_update` | Update existing memory |
+| `mem_delete` | Delete a memory |
+
+#### Usage Example
+
+```python
+# Save a decision or pattern for future reference
+mem_save(
+    title="API Error Handling Pattern",
+    content="Always use ProblemDetails for API errors with proper RFC 7807 compliance",
+    tags=["api", "error-handling", "best-practices"]
+)
+
+# Search for relevant context before implementing
+mem_search(query="authentication azure ad oauth")
+```
+
+---
+
+### Setup
+
+#### Requirements
+
+- **VS Code** or **Cursor** with Claude Code extension
+- **Engram binary** (installed globally)
+
+#### Installation
+
+**1. Engram (if not installed):**
+
+```powershell
+# Download from GitHub Releases
+curl -L -o engram.zip "https://github.com/Gentleman-Programming/engram/releases/download/v1.10.0/engram_1.10.0_windows_amd64.zip"
+Expand-Archive -Force engram.zip -DestinationPath "$env:USERPROFILE\bin"
+# Add to PATH or use full path
+```
+
+**2. Configure MCP in Claude Code:**
+
+Add to `C:\Users\<you>\.claude\settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "engram": {
+      "command": "C:\\Users\\<you>\\bin\\engram.exe",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**3. Skills are already configured:**
+
+The skills are linked in `.claude/skills/` for Claude Code, `.cursor/skills/` for Cursor, and `.copilot/skills/` for VS Code.
+
+#### Restart Your Editor
+
+After installation, **restart VS Code/Cursor** to activate the MCP server and skills.
+
+---
+
+### Project Structure
+
+```
+.claude/                 # Claude Code configuration
+  ├── settings.json      # MCP servers & permissions
+  └── skills/            # AI agent skills (linked)
+    ├── sdd-*            # SDD workflow skills
+    └── mem-*            # Memory skills
+
+.skills/                 # Additional project skills
+openspec/                # SDD artifacts storage
+```
 
 ## 🤝 Contributing
 

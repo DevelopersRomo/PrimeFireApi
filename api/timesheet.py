@@ -1,49 +1,45 @@
 import asyncio
-import logging
-from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal
-from io import BytesIO, StringIO
-import csv
 import json
-from typing import Dict, List, Optional, Tuple
+import logging
+from datetime import UTC, date, datetime, time, timedelta, timezone
+from decimal import Decimal
+from io import BytesIO
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-from openpyxl import Workbook
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from openpyxl import Workbook
 from sqlmodel import Session, and_, select
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from api.dependencies import (
     get_current_employee,
     get_current_employee_with_permissions,
-    require_authentication,
 )
 from bd.dependencies import get_db
 from core.config import settings
-from core.date_helpers import format_hours_minutes, calculate_regular_overtime
+from helpers.date_helpers import calculate_regular_overtime, format_hours_minutes
 from models.customers import Customers
 from models.employees import Employees
+from models.time_off import Holiday, RequestStatusEnum, TimeOffRequest, TimeUnitEnum
 from models.timesheet import (
     TimeSheetLocationSnapshot,
     TimeSheetPunch,
     TimeSheetPunchStatusEnum,
     TimeSheetSettings,
 )
-from models.time_off import Holiday, RequestStatusEnum, TimeOffRequest, TimeUnitEnum
-from services.notifications.notifications import notify_timesheet_hours
 from schemas.timesheet import (
     TimeSheetClockInCreate,
     TimeSheetClockOutCreate,
     TimeSheetLocationRead,
+    TimeSheetNotificationCheckResponse,
+    TimeSheetOpenRead,
     TimeSheetPunchRead,
     TimeSheetPunchUpdate,
-    TimeSheetOpenRead,
     TimeSheetSummaryItem,
     TimeSheetSummaryResponse,
     TimeSheetSummaryTotals,
-    TimeSheetNotificationCheckResponse,
 )
-
+from services.notifications.notifications import notify_timesheet_hours
 
 router = APIRouter(prefix="/api/v1", tags=["timesheet"])
 logger = logging.getLogger(__name__)
@@ -54,11 +50,11 @@ DEFAULT_WORKDAY_HOURS = Decimal("8.00")
 
 
 def _now_str() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ003
 
 
 def _parse_dt(value: str) -> datetime:
-    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007
 
 
 def _calculate_minutes(start_str: str, end_str: str, daily_limit: int | None = None) -> int:
@@ -71,11 +67,10 @@ def _calculate_minutes(start_str: str, end_str: str, daily_limit: int | None = N
         daily_limit = int(DEFAULT_DAILY_OVERTIME * 60)
     start_dt = _parse_dt(start_str)
     end_dt = _parse_dt(end_str)
-    minutes = int((end_dt - start_dt).total_seconds() / 60)
-    return minutes
+    return int((end_dt - start_dt).total_seconds() / 60)
 
 
-def _get_client_ip(request: Request) -> Optional[str]:
+def _get_client_ip(request: Request) -> str | None:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
@@ -91,16 +86,14 @@ def _get_request_timezone(
     try:
         return ZoneInfo(tz_name), tz_name
     except ZoneInfoNotFoundError:
-        return timezone.utc, "UTC"
+        return UTC, "UTC"
 
 
-def _get_utc_range(
-    start_date: date, end_date: date, tzinfo: timezone | ZoneInfo
-) -> tuple[str, str]:
+def _get_utc_range(start_date: date, end_date: date, tzinfo: timezone | ZoneInfo) -> tuple[str, str]:
     local_start = datetime.combine(start_date, time.min).replace(tzinfo=tzinfo)
     local_end = datetime.combine(end_date, time.max).replace(tzinfo=tzinfo)
-    utc_start = local_start.astimezone(timezone.utc)
-    utc_end = local_end.astimezone(timezone.utc)
+    utc_start = local_start.astimezone(UTC)
+    utc_end = local_end.astimezone(UTC)
     return (
         utc_start.strftime("%Y-%m-%d %H:%M:%S"),
         utc_end.strftime("%Y-%m-%d %H:%M:%S"),
@@ -108,11 +101,11 @@ def _get_utc_range(
 
 
 def _to_local_date(clock_in_at: str, tzinfo: timezone | ZoneInfo) -> date:
-    utc_dt = _parse_dt(clock_in_at).replace(tzinfo=timezone.utc)
+    utc_dt = _parse_dt(clock_in_at).replace(tzinfo=UTC)
     return utc_dt.astimezone(tzinfo).date()
 
 
-def _fetch_ip_geolocation(ip_address: Optional[str]) -> Optional[dict]:
+def _fetch_ip_geolocation(ip_address: str | None) -> dict | None:
     api_key = settings.IPGEOLOCATION_API_KEY
     if not api_key:
         return None
@@ -132,7 +125,7 @@ def _fetch_ip_geolocation(ip_address: Optional[str]) -> Optional[dict]:
         return None
 
 
-def _extract_location(data: dict) -> Dict[str, Optional[str]]:
+def _extract_location(data: dict) -> dict[str, str | None]:
     if not data:
         return {}
     timezone_name = None
@@ -150,7 +143,7 @@ def _extract_location(data: dict) -> Dict[str, Optional[str]]:
     }
 
 
-def _apply_location_to_punch(punch: TimeSheetPunch, location: Dict[str, Optional[str]]):
+def _apply_location_to_punch(punch: TimeSheetPunch, location: dict[str, str | None]) -> None:
     if not location:
         return
     punch.IpAddress = location.get("IpAddress")
@@ -169,9 +162,9 @@ def _apply_location_to_punch(punch: TimeSheetPunch, location: Dict[str, Optional
 def _create_location_snapshot(
     db: Session,
     employee_id: int,
-    customer_id: Optional[int],
-    location: Dict[str, Optional[str]],
-) -> Optional[TimeSheetLocationSnapshot]:
+    customer_id: int | None,
+    location: dict[str, str | None],
+) -> TimeSheetLocationSnapshot | None:
     if not location:
         return None
     snapshot = TimeSheetLocationSnapshot(
@@ -185,9 +178,7 @@ def _create_location_snapshot(
         Region=location.get("Region"),
         Country=location.get("Country"),
         Timezone=location.get("Timezone"),
-        LocationRaw=location.get("LocationRaw")
-        if location.get("LocationRaw")
-        else None,
+        LocationRaw=location.get("LocationRaw") or None,
         CapturedAt=_now_str(),
     )
     db.add(snapshot)
@@ -196,7 +187,7 @@ def _create_location_snapshot(
     return snapshot
 
 
-def _get_open_punch(db: Session, employee_id: int) -> Optional[TimeSheetPunch]:
+def _get_open_punch(db: Session, employee_id: int) -> TimeSheetPunch | None:
     return db.exec(
         select(TimeSheetPunch).where(
             TimeSheetPunch.EmployeeId == employee_id,
@@ -231,32 +222,30 @@ def _get_settings(db: Session) -> TimeSheetSettings:
 
 def _get_time_off_maps(
     db: Session, employee_id: int, start_date: date, end_date: date
-) -> Tuple[Dict[date, Dict[str, Decimal]], Dict[date, List[TimeOffRequest]]]:
-    totals: Dict[date, Dict[str, Decimal]] = {}
-    daily_requests: Dict[date, List[TimeOffRequest]] = {}
+) -> tuple[dict[date, dict[str, Decimal]], dict[date, list[TimeOffRequest]]]:
+    totals: dict[date, dict[str, Decimal]] = {}
+    daily_requests: dict[date, list[TimeOffRequest]] = {}
 
     requests = db.exec(
         select(TimeOffRequest).where(
             TimeOffRequest.EmployeeId == employee_id,
-            TimeOffRequest.Status.in_(
-                [RequestStatusEnum.APPROVED.value, RequestStatusEnum.PENDING.value]
-            ),
+            TimeOffRequest.Status.in_([RequestStatusEnum.APPROVED.value, RequestStatusEnum.PENDING.value]),
             TimeOffRequest.StartDate <= end_date.strftime("%Y-%m-%d"),
             TimeOffRequest.EndDate >= start_date.strftime("%Y-%m-%d"),
         )
     ).all()
 
     for request in requests:
-        request_start = datetime.strptime(request.StartDate, "%Y-%m-%d").date()
-        request_end = datetime.strptime(request.EndDate, "%Y-%m-%d").date()
+        request_start = datetime.strptime(request.StartDate, "%Y-%m-%d").date()  # noqa: DTZ007
+        request_end = datetime.strptime(request.EndDate, "%Y-%m-%d").date()  # noqa: DTZ007
         current = max(request_start, start_date)
         last = min(request_end, end_date)
         while current <= last:
             if current not in totals:
                 totals[current] = {
-                    "vacation": Decimal("0"),
-                    "sick": Decimal("0"),
-                    "holiday": Decimal("0"),
+                    "vacation": Decimal(0),
+                    "sick": Decimal(0),
+                    "holiday": Decimal(0),
                 }
             if current not in daily_requests:
                 daily_requests[current] = []
@@ -272,7 +261,7 @@ def _get_time_off_maps(
                         span_days = (request_end - request_start).days + 1
                         hours = Decimal(request.TotalHours) / Decimal(span_days)
                 elif request.TimeUnit == TimeUnitEnum.HALF_DAY.value:
-                    hours = DEFAULT_WORKDAY_HOURS / Decimal("2")
+                    hours = DEFAULT_WORKDAY_HOURS / Decimal(2)
                 else:
                     hours = DEFAULT_WORKDAY_HOURS
                 totals[current][bucket] += hours
@@ -285,12 +274,12 @@ def _get_time_off_maps(
         )
     ).all()
     for holiday in holidays:
-        holiday_date = datetime.strptime(holiday.Date, "%Y-%m-%d").date()
+        holiday_date = datetime.strptime(holiday.Date, "%Y-%m-%d").date()  # noqa: DTZ007
         if holiday_date not in totals:
             totals[holiday_date] = {
-                "vacation": Decimal("0"),
-                "sick": Decimal("0"),
-                "holiday": Decimal("0"),
+                "vacation": Decimal(0),
+                "sick": Decimal(0),
+                "holiday": Decimal(0),
             }
         totals[holiday_date]["holiday"] += DEFAULT_WORKDAY_HOURS
 
@@ -304,10 +293,8 @@ def _has_admin_actions(user_permissions: dict) -> bool:
     return False
 
 
-def _resolve_range(
-    view: str, start_date: Optional[date], end_date: Optional[date]
-) -> Tuple[date, date]:
-    today = date.today()
+def _resolve_range(view: str, start_date: date | None, end_date: date | None) -> tuple[date, date]:
+    today = date.today()  # noqa: DTZ011
     if not start_date and not end_date:
         if view == "day":
             return today, today
@@ -329,7 +316,7 @@ def _resolve_range(
     return start_date, end_date
 
 
-def _format_period_start_end(view: str, current_date: date) -> Tuple[str, str]:
+def _format_period_start_end(view: str, current_date: date) -> tuple[str, str]:
     if view == "day":
         return current_date.strftime("%Y-%m-%d"), current_date.strftime("%Y-%m-%d")
     if view == "week":
@@ -354,26 +341,24 @@ def _build_summary_items(
     view: str,
     start_date: date,
     end_date: date,
-    punches: List[TimeSheetPunch],
-    time_off_map: Dict[date, Dict[str, Decimal]],
-    time_off_requests_map: Dict[date, List[TimeOffRequest]],
+    punches: list[TimeSheetPunch],
+    time_off_map: dict[date, dict[str, Decimal]],
+    time_off_requests_map: dict[date, list[TimeOffRequest]],
     overtime_daily: Decimal,
     tzinfo: ZoneInfo,
-) -> List[TimeSheetSummaryItem]:
-    daily_minutes: Dict[date, int] = {}
-    daily_punches: Dict[date, List[TimeSheetPunch]] = {}
+) -> list[TimeSheetSummaryItem]:
+    daily_minutes: dict[date, int] = {}
+    daily_punches: dict[date, list[TimeSheetPunch]] = {}
     for punch in punches:
         if not punch.ClockOutAt:
             continue
         punch_date = _to_local_date(punch.ClockInAt, tzinfo)
         if punch_date < start_date or punch_date > end_date:
             continue
-        daily_minutes[punch_date] = (
-            daily_minutes.get(punch_date, 0) + punch.WorkedMinutes
-        )
+        daily_minutes[punch_date] = daily_minutes.get(punch_date, 0) + punch.WorkedMinutes
         daily_punches.setdefault(punch_date, []).append(punch)
 
-    items_map: Dict[date, TimeSheetSummaryItem] = {}
+    items_map: dict[date, TimeSheetSummaryItem] = {}
     current = start_date
     while current <= end_date:
         group_key = _group_key(view, current)
@@ -384,13 +369,13 @@ def _build_summary_items(
                 PeriodEnd=period_end,
             )
         minutes = daily_minutes.get(current, 0)
-        hours = Decimal(minutes) / Decimal(60) if minutes else Decimal("0")
-        overtime_hours = max(hours - overtime_daily, Decimal("0"))
-        regular_hours = max(hours - overtime_hours, Decimal("0"))
+        hours = Decimal(minutes) / Decimal(60) if minutes else Decimal(0)
+        overtime_hours = max(hours - overtime_daily, Decimal(0))
+        regular_hours = max(hours - overtime_hours, Decimal(0))
 
         time_off = time_off_map.get(
             current,
-            {"vacation": Decimal("0"), "holiday": Decimal("0"), "sick": Decimal("0")},
+            {"vacation": Decimal(0), "holiday": Decimal(0), "sick": Decimal(0)},
         )
 
         item = items_map[group_key]
@@ -399,9 +384,7 @@ def _build_summary_items(
         item.VacationHours += float(time_off["vacation"])
         item.HolidayHours += float(time_off["holiday"])
         item.SickHours += float(time_off["sick"])
-        item.TotalHours += float(
-            hours + time_off["vacation"] + time_off["holiday"] + time_off["sick"]
-        )
+        item.TotalHours += float(hours + time_off["vacation"] + time_off["holiday"] + time_off["sick"])
         if item.Punches is None:
             item.Punches = []
         item.Punches.extend(daily_punches.get(current, []))
@@ -415,7 +398,7 @@ def _build_summary_items(
     return [items_map[key] for key in sorted(items_map.keys())]
 
 
-def _build_totals(items: List[TimeSheetSummaryItem]) -> TimeSheetSummaryTotals:
+def _build_totals(items: list[TimeSheetSummaryItem]) -> TimeSheetSummaryTotals:
     totals = TimeSheetSummaryTotals()
     for item in items:
         totals.RegularHours += item.RegularHours
@@ -438,13 +421,9 @@ def clock_in(
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
-    customer = db.exec(
-        select(Customers).where(Customers.CustomerId == payload.CustomerId)
-    ).first()
+    customer = db.exec(select(Customers).where(Customers.CustomerId == payload.CustomerId)).first()
     if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
 
     open_punch = _get_open_punch(db, current_employee.EmployeeId)
     if open_punch:
@@ -457,7 +436,7 @@ def clock_in(
     tzinfo, tz_name = _get_request_timezone(request)
 
     # Get current week start and end
-    today = date.today()
+    today = date.today()  # noqa: DTZ011
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
 
@@ -480,7 +459,7 @@ def clock_in(
     # Get settings
     settings_row = _get_settings(db)
     weekly_hours_limit = float(settings_row.OvertimeWeeklyHours) if settings_row.OvertimeWeeklyHours else 40.0
-    daily_hours_limit = float(settings_row.OvertimeDailyHours) if settings_row.OvertimeDailyHours else 8.0
+    float(settings_row.OvertimeDailyHours) if settings_row.OvertimeDailyHours else 8.0
 
     # Check if user is already in overtime (weekly)
     is_already_in_overtime = weekly_hours >= weekly_hours_limit
@@ -517,19 +496,11 @@ def clock_in(
 
     # If user is already in overtime, send notification after clock in
     if is_already_in_overtime:
-        employee = db.exec(
-            select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)
-        ).first()
+        employee = db.exec(select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)).first()
         employee_email = employee.Email if employee else None
-        employee_name = (
-            f"{employee.FirstName or ''} {employee.LastName or ''}".strip()
-            if employee
-            else "Employee"
-        )
+        employee_name = f"{employee.FirstName or ''} {employee.LastName or ''}".strip() if employee else "Employee"
 
-        customer_name = customer.CompanyName or (
-            f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
-        )
+        customer_name = customer.CompanyName or (f"{customer.FirstName or ''} {customer.LastName or ''}".strip())
 
         app_url = getattr(settings, "APP_URL", None)
         if employee_email:
@@ -565,9 +536,7 @@ def clock_out(
 ):
     open_punch = _get_open_punch(db, current_employee.EmployeeId)
     if not open_punch:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found")
 
     now_str = _now_str()
     _, tz_name = _get_request_timezone(request)
@@ -603,9 +572,9 @@ def clock_out(
 def list_timesheet(
     request: Request,
     view: str = Query("day", pattern="^(day|week|month)$"),
-    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
-    customer_id: Optional[int] = Query(None),
+    start_date: date | None = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: date | None = Query(None, description="End date (YYYY-MM-DD)"),
+    customer_id: int | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -627,14 +596,10 @@ def list_timesheet(
 
     settings_row = _get_settings(db)
     overtime_daily = (
-        Decimal(settings_row.OvertimeDailyHours)
-        if settings_row.OvertimeDailyHours
-        else DEFAULT_DAILY_OVERTIME
+        Decimal(settings_row.OvertimeDailyHours) if settings_row.OvertimeDailyHours else DEFAULT_DAILY_OVERTIME
     )
 
-    time_off_map, time_off_requests_map = _get_time_off_maps(
-        db, current_employee.EmployeeId, start_date, end_date
-    )
+    time_off_map, time_off_requests_map = _get_time_off_maps(db, current_employee.EmployeeId, start_date, end_date)
     items = _build_summary_items(
         view=view,
         start_date=start_date,
@@ -668,9 +633,7 @@ def get_open_punch(
         return TimeSheetOpenRead(Punch=None, ElapsedMinutes=0, ElapsedHours=0)
     now_str = _now_str()
     elapsed_minutes = _calculate_minutes(punch.ClockInAt, now_str)
-    elapsed_hours = (
-        float(Decimal(elapsed_minutes) / Decimal(60)) if elapsed_minutes else 0
-    )
+    elapsed_hours = float(Decimal(elapsed_minutes) / Decimal(60)) if elapsed_minutes else 0
     return TimeSheetOpenRead(
         Punch=punch,
         ElapsedMinutes=elapsed_minutes,
@@ -682,18 +645,16 @@ def get_open_punch(
 def export_timesheet(
     request: Request,
     view: str = Query("day", pattern="^(day|week|month)$"),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    customer_id: Optional[int] = Query(None),
-    employee_id: Optional[int] = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    customer_id: int | None = Query(None),
+    employee_id: int | None = Query(None),
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
     is_admin = _has_admin_actions(user_permissions)
-    target_employee_id = (
-        employee_id if (employee_id and is_admin) else current_employee.EmployeeId
-    )
+    target_employee_id = employee_id if (employee_id and is_admin) else current_employee.EmployeeId
 
     tzinfo, _ = _get_request_timezone(request)
     start_date, end_date = _resolve_range(view, start_date, end_date)
@@ -709,31 +670,32 @@ def export_timesheet(
     customer_ids = {punch.CustomerId for punch in punches}
     customer_map = {}
     if customer_ids:
-        customers = db.exec(
-            select(Customers).where(Customers.CustomerId.in_(list(customer_ids)))
-        ).all()
+        customers = db.exec(select(Customers).where(Customers.CustomerId.in_(list(customer_ids)))).all()
         customer_map = {customer.CustomerId: customer for customer in customers}
 
     # Get settings for overtime calculation
-    settings = db.exec(select(TimeSheetSettings).where(TimeSheetSettings.IsActive == True)).first()
+    settings = db.exec(select(TimeSheetSettings).where(TimeSheetSettings.IsActive)).first()
     overtime_daily_minutes = 480  # default 8 hours
     if settings and settings.OvertimeDailyHours:
         overtime_daily_minutes = int(float(settings.OvertimeDailyHours) * 60)
 
     # Get holidays for the date range
-    holidays = db.exec(select(Holiday).where(
-        Holiday.Date >= start_date.strftime("%Y-%m-%d"),
-        Holiday.Date <= end_date.strftime("%Y-%m-%d")
-    )).all()
+    holidays = db.exec(
+        select(Holiday).where(
+            Holiday.Date >= start_date.strftime("%Y-%m-%d"), Holiday.Date <= end_date.strftime("%Y-%m-%d")
+        )
+    ).all()
     holiday_dates = {h.Date for h in holidays}
 
     # Get time off requests for the employee in date range
-    time_off_requests = db.exec(select(TimeOffRequest).where(
-        TimeOffRequest.EmployeeId == target_employee_id,
-        TimeOffRequest.Status == "approved",
-        TimeOffRequest.StartDate >= start_date.strftime("%Y-%m-%d"),
-        TimeOffRequest.EndDate <= end_date.strftime("%Y-%m-%d")
-    )).all()
+    time_off_requests = db.exec(
+        select(TimeOffRequest).where(
+            TimeOffRequest.EmployeeId == target_employee_id,
+            TimeOffRequest.Status == "approved",
+            TimeOffRequest.StartDate >= start_date.strftime("%Y-%m-%d"),
+            TimeOffRequest.EndDate <= end_date.strftime("%Y-%m-%d"),
+        )
+    ).all()
 
     workbook = Workbook()
     sheet = workbook.active
@@ -757,9 +719,7 @@ def export_timesheet(
         local_day = _to_local_date(punch.ClockInAt, tzinfo).strftime("%Y-%m-%d")
 
         # Calculate regular and overtime
-        regular_minutes, overtime_minutes = calculate_regular_overtime(
-            punch.WorkedMinutes or 0, overtime_daily_minutes
-        )
+        regular_minutes, overtime_minutes = calculate_regular_overtime(punch.WorkedMinutes or 0, overtime_daily_minutes)
 
         # Check if it's a holiday
         is_holiday = local_day in holiday_dates
@@ -776,8 +736,7 @@ def export_timesheet(
 
         customer = customer_map.get(punch.CustomerId)
         customer_name = (
-            customer.CompanyName
-            or " ".join(filter(None, [customer.FirstName, customer.LastName]))
+            customer.CompanyName or " ".join(filter(None, [customer.FirstName, customer.LastName]))
             if customer
             else None
         )
@@ -809,24 +768,20 @@ def export_timesheet(
 @router.get("/timesheet/location", response_model=TimeSheetLocationRead)
 def get_current_location(
     request: Request,
-    customer_id: Optional[int] = Query(None),
-    latitude: Optional[str] = Query(None),
-    longitude: Optional[str] = Query(None),
-    gps_accuracy: Optional[str] = Query(None),
-    timezone_header: Optional[str] = Query(None, alias="timezone"),
+    customer_id: int | None = Query(None),
+    latitude: str | None = Query(None),
+    longitude: str | None = Query(None),
+    gps_accuracy: str | None = Query(None),
+    timezone_header: str | None = Query(None, alias="timezone"),
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
     if customer_id:
-        customer = db.exec(
-            select(Customers).where(Customers.CustomerId == customer_id)
-        ).first()
+        customer = db.exec(select(Customers).where(Customers.CustomerId == customer_id)).first()
         if not customer:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
 
-    location: Dict[str, Optional[str]] = {}
+    location: dict[str, str | None] = {}
     ip_address = _get_client_ip(request)
     if latitude or longitude:
         location = {
@@ -861,22 +816,20 @@ def get_current_location(
     )
 
 
-@router.get("/timesheet/admin", response_model=List[TimeSheetPunchRead])
+@router.get("/timesheet/admin", response_model=list[TimeSheetPunchRead])
 def list_punches_admin(
-    employee_id: Optional[List[int]] = Query(None),
-    customer_id: Optional[List[int]] = Query(None),
-    status_filter: Optional[str] = Query(None, alias="status"),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
+    employee_id: list[int] | None = Query(None),
+    customer_id: list[int] | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
     filters = []
     if employee_id:
@@ -886,13 +839,9 @@ def list_punches_admin(
     if status_filter:
         filters.append(TimeSheetPunch.Status == status_filter)
     if start_date:
-        filters.append(
-            TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00"
-        )
+        filters.append(TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00")
     if end_date:
-        filters.append(
-            TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59"
-        )
+        filters.append(TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59")
 
     query = select(TimeSheetPunch)
     if filters:
@@ -904,18 +853,16 @@ def list_punches_admin(
 @router.get("/timesheet/admin/export")
 def export_punches_admin(
     request: Request,
-    employee_id: Optional[List[int]] = Query(None),
-    customer_id: Optional[List[int]] = Query(None),
-    status_filter: Optional[str] = Query(None, alias="status"),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
+    employee_id: list[int] | None = Query(None),
+    customer_id: list[int] | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
     tzinfo, _ = _get_request_timezone(request)
     filters = []
@@ -926,13 +873,9 @@ def export_punches_admin(
     if status_filter:
         filters.append(TimeSheetPunch.Status == status_filter)
     if start_date:
-        filters.append(
-            TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00"
-        )
+        filters.append(TimeSheetPunch.ClockInAt >= f"{start_date.strftime('%Y-%m-%d')} 00:00:00")
     if end_date:
-        filters.append(
-            TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59"
-        )
+        filters.append(TimeSheetPunch.ClockInAt <= f"{end_date.strftime('%Y-%m-%d')} 23:59:59")
 
     query = select(TimeSheetPunch)
     if filters:
@@ -945,18 +888,14 @@ def export_punches_admin(
     customer_map = {}
     employee_map = {}
     if customer_ids:
-        customers = db.exec(
-            select(Customers).where(Customers.CustomerId.in_(list(customer_ids)))
-        ).all()
+        customers = db.exec(select(Customers).where(Customers.CustomerId.in_(list(customer_ids)))).all()
         customer_map = {customer.CustomerId: customer for customer in customers}
     if employee_ids:
-        employees = db.exec(
-            select(Employees).where(Employees.EmployeeId.in_(list(employee_ids)))
-        ).all()
+        employees = db.exec(select(Employees).where(Employees.EmployeeId.in_(list(employee_ids)))).all()
         employee_map = {employee.EmployeeId: employee for employee in employees}
 
     # Get settings for overtime calculation
-    settings = db.exec(select(TimeSheetSettings).where(TimeSheetSettings.IsActive == True)).first()
+    settings = db.exec(select(TimeSheetSettings).where(TimeSheetSettings.IsActive)).first()
     overtime_daily_minutes = 480  # default 8 hours
     if settings and settings.OvertimeDailyHours:
         overtime_daily_minutes = int(float(settings.OvertimeDailyHours) * 60)
@@ -966,10 +905,7 @@ def export_punches_admin(
     query_end = end_date.strftime("%Y-%m-%d") if end_date else "2100-12-31"
 
     # Get holidays for the date range
-    holidays = db.exec(select(Holiday).where(
-        Holiday.Date >= query_start,
-        Holiday.Date <= query_end
-    )).all()
+    holidays = db.exec(select(Holiday).where(Holiday.Date >= query_start, Holiday.Date <= query_end)).all()
     holiday_dates = {h.Date for h in holidays}
 
     # Get time off requests for all employees in date range
@@ -983,8 +919,10 @@ def export_punches_admin(
     for req in time_off_requests:
         if req.EmployeeId not in time_off_by_employee:
             time_off_by_employee[req.EmployeeId] = {}
-        for d in range((datetime.strptime(req.EndDate, "%Y-%m-%d") - datetime.strptime(req.StartDate, "%Y-%m-%d")).days + 1):
-            current_date = (datetime.strptime(req.StartDate, "%Y-%m-%d") + timedelta(days=d)).strftime("%Y-%m-%d")
+        for d in range(
+            (datetime.strptime(req.EndDate, "%Y-%m-%d") - datetime.strptime(req.StartDate, "%Y-%m-%d")).days + 1  # noqa: DTZ007
+        ):
+            current_date = (datetime.strptime(req.StartDate, "%Y-%m-%d") + timedelta(days=d)).strftime("%Y-%m-%d")  # noqa: DTZ007
             time_off_by_employee[req.EmployeeId][current_date] = req.AbsenceType
 
     workbook = Workbook()
@@ -1010,9 +948,7 @@ def export_punches_admin(
         local_day = _to_local_date(punch.ClockInAt, tzinfo).strftime("%Y-%m-%d")
 
         # Calculate regular and overtime
-        regular_minutes, overtime_minutes = calculate_regular_overtime(
-            punch.WorkedMinutes or 0, overtime_daily_minutes
-        )
+        regular_minutes, overtime_minutes = calculate_regular_overtime(punch.WorkedMinutes or 0, overtime_daily_minutes)
 
         # Check if it's a holiday
         is_holiday = local_day in holiday_dates
@@ -1026,16 +962,11 @@ def export_punches_admin(
         customer = customer_map.get(punch.CustomerId)
         employee = employee_map.get(punch.EmployeeId)
         customer_name = (
-            customer.CompanyName
-            or " ".join(filter(None, [customer.FirstName, customer.LastName]))
+            customer.CompanyName or " ".join(filter(None, [customer.FirstName, customer.LastName]))
             if customer
             else None
         )
-        employee_name = (
-            " ".join(filter(None, [employee.FirstName, employee.LastName]))
-            if employee
-            else None
-        )
+        employee_name = " ".join(filter(None, [employee.FirstName, employee.LastName])) if employee else None
         sheet.append(
             [
                 employee_name,
@@ -1070,26 +1001,16 @@ def update_punch(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
-    punch = db.exec(
-        select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)
-    ).first()
+    punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)).first()
     if not punch:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
 
     if payload.CustomerId is not None:
-        customer = db.exec(
-            select(Customers).where(Customers.CustomerId == payload.CustomerId)
-        ).first()
+        customer = db.exec(select(Customers).where(Customers.CustomerId == payload.CustomerId)).first()
         if not customer:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
         punch.CustomerId = payload.CustomerId
 
     if payload.ClockInAt is not None:
@@ -1104,13 +1025,9 @@ def update_punch(
     if punch.ClockOutAt:
         ts_settings = _get_settings(db)
         daily_limit = (
-            int(float(ts_settings.OvertimeDailyHours) * 60)
-            if ts_settings and ts_settings.OvertimeDailyHours
-            else 480
+            int(float(ts_settings.OvertimeDailyHours) * 60) if ts_settings and ts_settings.OvertimeDailyHours else 480
         )
-        punch.WorkedMinutes = _calculate_minutes(
-            punch.ClockInAt, punch.ClockOutAt, daily_limit
-        )
+        punch.WorkedMinutes = _calculate_minutes(punch.ClockInAt, punch.ClockOutAt, daily_limit)
 
     punch.UpdatedAt = _now_str()
     db.add(punch)
@@ -1126,17 +1043,11 @@ def approve_punch(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
-    punch = db.exec(
-        select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)
-    ).first()
+    punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)).first()
     if not punch:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
 
     punch.Status = TimeSheetPunchStatusEnum.APPROVED.value
     punch.ApprovedBy = user_permissions["employee"]["EmployeeId"]
@@ -1155,17 +1066,11 @@ def reject_punch(
     db: Session = Depends(get_db),
 ):
     if not _has_admin_actions(user_permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
-    punch = db.exec(
-        select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)
-    ).first()
+    punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.PunchId == punch_id)).first()
     if not punch:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
 
     punch.Status = TimeSheetPunchStatusEnum.REJECTED.value
     punch.ApprovedBy = user_permissions["employee"]["EmployeeId"]
@@ -1216,7 +1121,7 @@ def check_notifications(
 
     # Calculate weekly hours (including current punch)
     tzinfo, _ = _get_request_timezone(request)
-    today = date.today()
+    today = date.today()  # noqa: DTZ011
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     utc_start, utc_end = _get_utc_range(week_start, week_end, tzinfo)
@@ -1238,13 +1143,9 @@ def check_notifications(
     # Get customer name
     customer_name = None
     if open_punch.CustomerId:
-        customer = db.exec(
-            select(Customers).where(Customers.CustomerId == open_punch.CustomerId)
-        ).first()
+        customer = db.exec(select(Customers).where(Customers.CustomerId == open_punch.CustomerId)).first()
         if customer:
-            customer_name = customer.CompanyName or (
-                f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
-            )
+            customer_name = customer.CompanyName or (f"{customer.FirstName or ''} {customer.LastName or ''}".strip())
 
     # Determine if should notify
     # Notify regular when elapsed >= regular_hours
@@ -1288,9 +1189,7 @@ def clock_out_auto(
     """Automatic clock out when overtime limit is reached."""
     open_punch = _get_open_punch(db, current_employee.EmployeeId)
     if not open_punch:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found")
 
     now_str = _now_str()
     _, tz_name = _get_request_timezone(request)
@@ -1303,30 +1202,16 @@ def clock_out_auto(
     # Get customer name
     customer_name = None
     if open_punch.CustomerId:
-        customer = db.exec(
-            select(Customers).where(Customers.CustomerId == open_punch.CustomerId)
-        ).first()
+        customer = db.exec(select(Customers).where(Customers.CustomerId == open_punch.CustomerId)).first()
         if customer:
-            customer_name = customer.CompanyName or (
-                f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
-            )
+            customer_name = customer.CompanyName or (f"{customer.FirstName or ''} {customer.LastName or ''}".strip())
 
     # Get employee's email
-    employee = db.exec(
-        select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)
-    ).first()
+    employee = db.exec(select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)).first()
     employee_email = employee.Email if employee else None
-    employee_name = (
-        f"{employee.FirstName or ''} {employee.LastName or ''}".strip()
-        if employee
-        else "Employee"
-    )
+    employee_name = f"{employee.FirstName or ''} {employee.LastName or ''}".strip() if employee else "Employee"
 
-    elapsed_hours = (
-        float(Decimal(open_punch.WorkedMinutes) / Decimal(60))
-        if open_punch.WorkedMinutes
-        else 0
-    )
+    elapsed_hours = float(Decimal(open_punch.WorkedMinutes) / Decimal(60)) if open_punch.WorkedMinutes else 0
 
     # Send notification email
     app_url = getattr(settings, "APP_URL", None)
@@ -1368,9 +1253,7 @@ def notify_hours(
     open_punch = _get_open_punch(db, current_employee.EmployeeId)
 
     if not open_punch:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Open punch not found")
 
     # Calculate elapsed time
     now_str = _now_str()
@@ -1380,24 +1263,14 @@ def notify_hours(
     # Get customer name
     customer_name = None
     if open_punch.CustomerId:
-        customer = db.exec(
-            select(Customers).where(Customers.CustomerId == open_punch.CustomerId)
-        ).first()
+        customer = db.exec(select(Customers).where(Customers.CustomerId == open_punch.CustomerId)).first()
         if customer:
-            customer_name = customer.CompanyName or (
-                f"{customer.FirstName or ''} {customer.LastName or ''}".strip()
-            )
+            customer_name = customer.CompanyName or (f"{customer.FirstName or ''} {customer.LastName or ''}".strip())
 
     # Get employee's email
-    employee = db.exec(
-        select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)
-    ).first()
+    employee = db.exec(select(Employees).where(Employees.EmployeeId == current_employee.EmployeeId)).first()
     employee_email = employee.Email if employee else None
-    employee_name = (
-        f"{employee.FirstName or ''} {employee.LastName or ''}".strip()
-        if employee
-        else "Employee"
-    )
+    employee_name = f"{employee.FirstName or ''} {employee.LastName or ''}".strip() if employee else "Employee"
 
     # Send notification email
     app_url = getattr(settings, "APP_URL", None)

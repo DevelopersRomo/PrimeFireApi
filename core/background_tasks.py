@@ -1,21 +1,21 @@
 import asyncio
-from datetime import datetime, timedelta
-from typing import Optional
+import contextlib
 import logging
+from datetime import datetime, timedelta
 
-from sqlmodel import Session, select
 from sqlalchemy import or_
-from core.microsoft_graph import graph_client
-from models.employees import Employees
-from models.countries import Countries
+from sqlmodel import Session, select
+
 from bd.connection import sync_engine as engine
+from core.microsoft_graph import graph_client
+from models.countries import Countries
+from models.employees import Employees
 
 logger = logging.getLogger(__name__)
 
-def normalize_country_to_code(country_name: str) -> Optional[str]:
-    """
-    Convert country names or codes to standard ISO 3166-1 alpha-2 codes.
-    """
+
+def normalize_country_to_code(country_name: str) -> str | None:
+    """Convert country names or codes to standard ISO 3166-1 alpha-2 codes."""
     if not country_name or not country_name.strip():
         return None
 
@@ -24,40 +24,37 @@ def normalize_country_to_code(country_name: str) -> Optional[str]:
     # Direct mapping for common countries
     country_map = {
         # United States variations
-        'UNITED STATES': 'US',
-        'USA': 'US',
-        'UNITED STATES OF AMERICA': 'US',
-        'US': 'US',
-        'AMERICA': 'US',
-
+        "UNITED STATES": "US",
+        "USA": "US",
+        "UNITED STATES OF AMERICA": "US",
+        "US": "US",
+        "AMERICA": "US",
         # Puerto Rico
-        'PUERTO RICO': 'PR',
-        'PR': 'PR',
-
+        "PUERTO RICO": "PR",
+        "PR": "PR",
         # Dominican Republic variations
-        'REPÚBLICA DOMINICANA': 'DO',
-        'DOMINICAN REPUBLIC': 'DO',
-        'REPUBLICA DOMINICANA': 'DO',
-        'DO': 'DO',
-
+        "REPÚBLICA DOMINICANA": "DO",
+        "DOMINICAN REPUBLIC": "DO",
+        "REPUBLICA DOMINICANA": "DO",
+        "DO": "DO",
         # Mexico
-        'MEXICO': 'MX',
-        'MÉXICO': 'MX',
-        'MX': 'MX',
-
+        "MEXICO": "MX",
+        "MÉXICO": "MX",
+        "MX": "MX",
         # Add more countries as needed
-        'CANADA': 'CA',
-        'SPAIN': 'ES',
-        'FRANCE': 'FR',
-        'GERMANY': 'DE',
-        'ITALY': 'IT',
-        'UNITED KINGDOM': 'GB',
-        'UK': 'GB',
+        "CANADA": "CA",
+        "SPAIN": "ES",
+        "FRANCE": "FR",
+        "GERMANY": "DE",
+        "ITALY": "IT",
+        "UNITED KINGDOM": "GB",
+        "UK": "GB",
     }
 
     return country_map.get(country_name)
 
-def get_or_create_country_id(db: Session, country_input: str) -> tuple[Optional[int], bool]:
+
+def get_or_create_country_id(db: Session, country_input: str) -> tuple[int | None, bool]:
     """
     Get CountryId for a country name/code, creating it if it doesn't exist.
     Always stores standardized ISO codes.
@@ -73,9 +70,7 @@ def get_or_create_country_id(db: Session, country_input: str) -> tuple[Optional[
         return None, False
 
     # Try to find existing country by code
-    existing_country = db.exec(
-        select(Countries).filter(Countries.Name == country_code)
-    ).first()
+    existing_country = db.exec(select(Countries).filter(Countries.Name == country_code)).first()
 
     if existing_country:
         return existing_country.CountryId, False
@@ -87,6 +82,7 @@ def get_or_create_country_id(db: Session, country_input: str) -> tuple[Optional[
     db.refresh(new_country)
     return new_country.CountryId, True
 
+
 def is_primefire_domain(email: str) -> bool:
     """
     Check if email belongs to PrimeFire domains
@@ -97,29 +93,31 @@ def is_primefire_domain(email: str) -> bool:
         return False
 
     # Extract domain from email (part after @)
-    domain = email.lower().split('@')[-1] if '@' in email else ''
+    domain = email.lower().split("@")[-1] if "@" in email else ""
 
     # Check if domain contains primefire as a separate segment
     # This avoids false positives like "notprimefire.com"
-    domain_parts = domain.split('.')
-    return any('primefire' == part for part in domain_parts)
+    domain_parts = domain.split(".")
+    return any(part == "primefire" for part in domain_parts)
 
-def get_country_id_from_domain(email: str) -> Optional[int]:
+
+def get_country_id_from_domain(email: str) -> int | None:
     """
     LEGACY: Determine CountryId based on email domain
-    Now we filter by PrimeFire domains and get country from Graph
+    Now we filter by PrimeFire domains and get country from Graph.
     """
     if not email:
         return None
 
-    domain = email.lower().split('@')[-1] if '@' in email else ''
+    domain = email.lower().split("@")[-1] if "@" in email else ""
 
-    if domain.endswith('.us'):
+    if domain.endswith(".us"):
         return 1  # Puerto Rico
-    elif domain.endswith('.do'):
+    if domain.endswith(".do"):
         return 2  # República Dominicana
 
     return None  # Skip other domains
+
 
 def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees:
     """Create or update an employee in SQL from a Microsoft Graph user and return the SQL employee."""
@@ -128,7 +126,7 @@ def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees
     graph_country = employee_data.pop("Country", None)
     country_id, _ = get_or_create_country_id(db, graph_country) if graph_country else (None, False)
     employee_data["CountryId"] = country_id
-    employee_data["LastSyncedAt"] = datetime.now()
+    employee_data["LastSyncedAt"] = datetime.now()  # noqa: DTZ005
 
     azure_oid = employee_data.get("AzureOid")
     email = employee_data.get("Email")
@@ -145,7 +143,7 @@ def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees
                     Employees.Email == email,
                     Employees.AzureUpn == azure_upn,
                     Employees.Email == azure_upn,
-                    Employees.AzureUpn == email
+                    Employees.AzureUpn == email,
                 )
             )
         ).first()
@@ -164,23 +162,17 @@ def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees
     db.refresh(new_employee)
     return new_employee
 
+
 async def resolve_manager_employee_id(
-    db: Session,
-    manager_email: Optional[str] = None,
-    manager_name: Optional[str] = None
-) -> Optional[int]:
+    db: Session, manager_email: str | None = None, manager_name: str | None = None
+) -> int | None:
     """Resolve manager to SQL EmployeeId, creating manager in SQL from Microsoft if needed."""
     manager_email = manager_email.strip() if isinstance(manager_email, str) else manager_email
     manager_name = manager_name.strip() if isinstance(manager_name, str) else manager_name
 
     if manager_email:
         sql_manager = db.exec(
-            select(Employees).where(
-                or_(
-                    Employees.Email == manager_email,
-                    Employees.AzureUpn == manager_email
-                )
-            )
+            select(Employees).where(or_(Employees.Email == manager_email, Employees.AzureUpn == manager_email))
         ).first()
         if sql_manager:
             return sql_manager.EmployeeId
@@ -190,9 +182,7 @@ async def resolve_manager_employee_id(
         return sql_manager.EmployeeId
 
     if manager_name:
-        sql_manager = db.exec(
-            select(Employees).where(Employees.DisplayName == manager_name)
-        ).first()
+        sql_manager = db.exec(select(Employees).where(Employees.DisplayName == manager_name)).first()
         if sql_manager:
             return sql_manager.EmployeeId
 
@@ -210,25 +200,26 @@ async def resolve_manager_employee_id(
 
     return None
 
+
 class EmployeeSyncScheduler:
-    """Background task scheduler for Microsoft 365 employee synchronization"""
-    
-    def __init__(self):
+    """Background task scheduler for Microsoft 365 employee synchronization."""
+
+    def __init__(self) -> None:
         self.is_running = False
-        self.last_sync: Optional[datetime] = None
+        self.last_sync: datetime | None = None
         self.sync_interval_hours = 24  # Sync every 24 hours by default
-        self._task: Optional[asyncio.Task] = None
-    
+        self._task: asyncio.Task | None = None
+
     async def sync_employees_from_microsoft(self) -> dict:
         """
         Sync all employees from Microsoft 365 to local database
-        Returns sync statistics
+        Returns sync statistics.
         """
         try:
             logger.info("Starting automatic sync from Microsoft 365...")
-            
+
             ms_users = await graph_client.get_all_users()
-            
+
             stats = {
                 "total_ms_users": len(ms_users),  # Total users from Microsoft Graph
                 "primefire_users": 0,  # Users with PrimeFire domains
@@ -237,9 +228,9 @@ class EmployeeSyncScheduler:
                 "updated": 0,
                 "errors": 0,
                 "countries_created": 0,
-                "timestamp": datetime.now()
+                "timestamp": datetime.now(),  # noqa: DTZ005
             }
-            
+
             with Session(engine) as db:
                 for ms_user in ms_users:
                     try:
@@ -255,18 +246,20 @@ class EmployeeSyncScheduler:
 
                         # Get country from Graph user data
                         graph_country = ms_user.get("country")
-                        country_id, country_created = get_or_create_country_id(db, graph_country) if graph_country else (None, False)
+                        country_id, country_created = (
+                            get_or_create_country_id(db, graph_country) if graph_country else (None, False)
+                        )
 
                         if country_created:
                             stats["countries_created"] += 1
 
                         employee_data = graph_client.map_graph_user_to_employee(ms_user)
-                        employee_data["LastSyncedAt"] = datetime.now()
+                        employee_data["LastSyncedAt"] = datetime.now()  # noqa: DTZ005
                         employee_data["CountryId"] = country_id
                         employee_data["ManagerEmployeeId"] = await resolve_manager_employee_id(
                             db,
                             manager_email=employee_data.get("ManagerEmail"),
-                            manager_name=employee_data.get("Manager")
+                            manager_name=employee_data.get("Manager"),
                         )
 
                         stats["processed"] += 1
@@ -290,89 +283,86 @@ class EmployeeSyncScheduler:
 
                         db.commit()
 
-                    except Exception as e:
+                    except Exception:
                         stats["errors"] += 1
                         continue
-            
-            self.last_sync = datetime.now()
-            
+
+            self.last_sync = datetime.now()  # noqa: DTZ005
+
             return stats
-        
+
         except Exception as e:
-            logger.error(f"❌ Failed to sync from Microsoft 365: {e}")
+            logger.exception(f"❌ Failed to sync from Microsoft 365: {e}")
             raise
-    
-    async def _periodic_sync_loop(self):
-        """Background loop that runs periodic syncs"""
+
+    async def _periodic_sync_loop(self) -> None:
+        """Background loop that runs periodic syncs."""
         while self.is_running:
             try:
                 # Check if it's time to sync
-                should_sync = (
-                    self.last_sync is None or 
-                    datetime.now() - self.last_sync >= timedelta(hours=self.sync_interval_hours)
+                should_sync = self.last_sync is None or datetime.now() - self.last_sync >= timedelta(  # noqa: DTZ005
+                    hours=self.sync_interval_hours
                 )
-                
+
                 if should_sync:
                     await self.sync_employees_from_microsoft()
-                
+
                 # Wait 1 hour before checking again
                 await asyncio.sleep(3600)
-            
+
             except asyncio.CancelledError:
                 logger.info("Sync scheduler cancelled")
                 break
             except Exception as e:
-                logger.error(f"❌ Error in sync loop: {e}")
+                logger.exception(f"❌ Error in sync loop: {e}")
                 await asyncio.sleep(3600)  # Wait before retrying
-    
-    async def start_periodic_sync(self, interval_hours: int = 24):
+
+    async def start_periodic_sync(self, interval_hours: int = 24) -> None:
         """
-        Start periodic background sync
-        
+        Start periodic background sync.
+
         Args:
             interval_hours: Hours between syncs (default: 24)
         """
         if self.is_running:
             logger.warning("Sync scheduler already running")
             return
-        
+
         self.sync_interval_hours = interval_hours
         self.is_running = True
-        
+
         logger.info(f"Starting periodic sync (every {interval_hours} hours)")
-        
+
         # Run initial sync immediately
         try:
             await self.sync_employees_from_microsoft()
         except Exception as e:
-            logger.error(f"❌ Initial sync failed: {e}")
-        
+            logger.exception(f"❌ Initial sync failed: {e}")
+
         # Start background loop
         self._task = asyncio.create_task(self._periodic_sync_loop())
-    
-    async def stop_periodic_sync(self):
-        """Stop periodic background sync"""
+
+    async def stop_periodic_sync(self) -> None:
+        """Stop periodic background sync."""
         if not self.is_running:
             return
-        
+
         self.is_running = False
-        
+
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
-        
+
         logger.info("Sync scheduler stopped")
-    
+
     async def sync_on_startup(self):
         """
         Run a one-time sync on application startup
-        Recommended for simpler use cases
+        Recommended for simpler use cases.
         """
         logger.info("Running startup sync from Microsoft 365...")
-        
+
         try:
             stats = await self.sync_employees_from_microsoft()
             logger.info(f"✅ Startup sync completed: {stats}")
@@ -381,10 +371,10 @@ class EmployeeSyncScheduler:
             logger.info("Startup sync cancelled")
             raise  # Re-raise to properly handle cancellation
         except Exception as e:
-            logger.error(f"❌ Startup sync failed: {e}")
+            logger.exception(f"❌ Startup sync failed: {e}")
             # Don't fail the application if sync fails
             return None
 
+
 # Singleton instance
 sync_scheduler = EmployeeSyncScheduler()
-

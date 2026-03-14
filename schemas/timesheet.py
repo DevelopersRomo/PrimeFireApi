@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List, Optional
 
 from sqlmodel import SQLModel
 
@@ -9,27 +8,27 @@ from schemas.time_off import TimeOffRequestRead
 
 class TimeSheetClockInCreate(SQLModel):
     CustomerId: int
-    Note: Optional[str] = None
+    Note: str | None = None
     UseLocation: bool = True
-    Latitude: Optional[str] = None
-    Longitude: Optional[str] = None
-    GpsAccuracy: Optional[str] = None
+    Latitude: str | None = None
+    Longitude: str | None = None
+    GpsAccuracy: str | None = None
 
 
 class TimeSheetClockOutCreate(SQLModel):
-    Note: Optional[str] = None
+    Note: str | None = None
     UseLocation: bool = True
-    Latitude: Optional[str] = None
-    Longitude: Optional[str] = None
-    GpsAccuracy: Optional[str] = None
+    Latitude: str | None = None
+    Longitude: str | None = None
+    GpsAccuracy: str | None = None
 
 
 class TimeSheetCustomerRead(SQLModel):
     CustomerId: int
     CustomerType: str
-    CompanyName: Optional[str] = None
-    FirstName: Optional[str] = None
-    LastName: Optional[str] = None
+    CompanyName: str | None = None
+    FirstName: str | None = None
+    LastName: str | None = None
 
     class Config:
         from_attributes = True
@@ -39,22 +38,22 @@ class TimeSheetPunchRead(SQLModel):
     PunchId: int
     EmployeeId: int
     CustomerId: int
-    Customer: Optional[TimeSheetCustomerRead] = None
+    Customer: TimeSheetCustomerRead | None = None
     ClockInAt: str
-    ClockOutAt: Optional[str] = None
+    ClockOutAt: str | None = None
     WorkedMinutes: int
     Status: TimeSheetPunchStatusEnum
-    Note: Optional[str] = None
-    Timezone: Optional[str] = None
-    IpAddress: Optional[str] = None
-    Latitude: Optional[str] = None
-    Longitude: Optional[str] = None
-    GpsAccuracy: Optional[str] = None
-    City: Optional[str] = None
-    Region: Optional[str] = None
-    Country: Optional[str] = None
-    ApprovedBy: Optional[int] = None
-    ApprovedAt: Optional[str] = None
+    Note: str | None = None
+    Timezone: str | None = None
+    IpAddress: str | None = None
+    Latitude: str | None = None
+    Longitude: str | None = None
+    GpsAccuracy: str | None = None
+    City: str | None = None
+    Region: str | None = None
+    Country: str | None = None
+    ApprovedBy: int | None = None
+    ApprovedAt: str | None = None
     CreatedAt: str
     UpdatedAt: str
 
@@ -63,11 +62,11 @@ class TimeSheetPunchRead(SQLModel):
 
 
 class TimeSheetPunchUpdate(SQLModel):
-    CustomerId: Optional[int] = None
-    ClockInAt: Optional[datetime] = None
-    ClockOutAt: Optional[datetime] = None
-    Note: Optional[str] = None
-    Status: Optional[TimeSheetPunchStatusEnum] = None
+    CustomerId: int | None = None
+    ClockInAt: datetime | None = None
+    ClockOutAt: datetime | None = None
+    Note: str | None = None
+    Status: TimeSheetPunchStatusEnum | None = None
 
 
 class TimeSheetSummaryItem(SQLModel):
@@ -79,8 +78,8 @@ class TimeSheetSummaryItem(SQLModel):
     HolidayHours: float = 0
     SickHours: float = 0
     TotalHours: float = 0
-    Punches: Optional[List["TimeSheetPunchRead"]] = None
-    TimeOffRequests: Optional[List[TimeOffRequestRead]] = None
+    Punches: list["TimeSheetPunchRead"] | None = None
+    TimeOffRequests: list[TimeOffRequestRead] | None = None
 
 
 class TimeSheetSummaryTotals(SQLModel):
@@ -93,7 +92,7 @@ class TimeSheetSummaryTotals(SQLModel):
 
 
 class TimeSheetSummaryResponse(SQLModel):
-    Items: List[TimeSheetSummaryItem]
+    Items: list[TimeSheetSummaryItem]
     Totals: TimeSheetSummaryTotals
     Skip: int
     Limit: int
@@ -101,19 +100,19 @@ class TimeSheetSummaryResponse(SQLModel):
 
 
 class TimeSheetLocationRead(SQLModel):
-    IpAddress: Optional[str] = None
-    Latitude: Optional[str] = None
-    Longitude: Optional[str] = None
-    GpsAccuracy: Optional[str] = None
-    City: Optional[str] = None
-    Region: Optional[str] = None
-    Country: Optional[str] = None
-    Timezone: Optional[str] = None
+    IpAddress: str | None = None
+    Latitude: str | None = None
+    Longitude: str | None = None
+    GpsAccuracy: str | None = None
+    City: str | None = None
+    Region: str | None = None
+    Country: str | None = None
+    Timezone: str | None = None
     CapturedAt: str
 
 
 class TimeSheetOpenRead(SQLModel):
-    Punch: Optional[TimeSheetPunchRead] = None
+    Punch: TimeSheetPunchRead | None = None
     ElapsedMinutes: int = 0
     ElapsedHours: float = 0
 
@@ -121,9 +120,9 @@ class TimeSheetOpenRead(SQLModel):
 class TimeSheetSettingsRead(SQLModel):
     SettingId: int
     OvertimeDailyHours: str
-    OvertimeWeeklyHours: Optional[str] = None
-    MaxOvertimeDailyHours: Optional[str] = None
-    RoundToMinutes: Optional[int] = None
+    OvertimeWeeklyHours: str | None = None
+    MaxOvertimeDailyHours: str | None = None
+    RoundToMinutes: int | None = None
     IsActive: bool
     CreatedAt: str
     UpdatedAt: str
@@ -133,11 +132,11 @@ class TimeSheetSettingsRead(SQLModel):
 
 
 class TimeSheetSettingsUpdate(SQLModel):
-    OvertimeDailyHours: Optional[float] = None
-    OvertimeWeeklyHours: Optional[float] = None
-    MaxOvertimeDailyHours: Optional[float] = None
-    RoundToMinutes: Optional[int] = None
-    IsActive: Optional[bool] = None
+    OvertimeDailyHours: float | None = None
+    OvertimeWeeklyHours: float | None = None
+    MaxOvertimeDailyHours: float | None = None
+    RoundToMinutes: int | None = None
+    IsActive: bool | None = None
 
 
 class TimeSheetNotificationCheckResponse(SQLModel):
@@ -154,5 +153,5 @@ class TimeSheetNotificationCheckResponse(SQLModel):
     should_notify_regular: bool = False
     should_notify_overtime: bool = False
     should_auto_clock_out: bool = False
-    customer_name: Optional[str] = None
-    clock_in_time: Optional[str] = None
+    customer_name: str | None = None
+    clock_in_time: str | None = None

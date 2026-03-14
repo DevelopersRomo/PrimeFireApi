@@ -1,7 +1,6 @@
 """Schemas for notification system."""
 
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+from pydantic import BaseModel
 
 
 class EmailAttachment(BaseModel):
@@ -39,14 +38,14 @@ class NotificationRequest(BaseModel):
     recipients: list[str]
     subject: str
     body: str
-    cc_recipients: Optional[list[str]] = None
-    bcc_recipients: Optional[list[str]] = None
-    sender_email: Optional[str] = None
-    team_id: Optional[str] = None
-    channel_id: Optional[str] = None
-    mentions: Optional[list[TeamsMention]] = None
-    attachments: Optional[list[EmailAttachment]] = None
-    url: Optional[str] = None
+    cc_recipients: list[str] | None = None
+    bcc_recipients: list[str] | None = None
+    sender_email: str | None = None
+    team_id: str | None = None
+    channel_id: str | None = None
+    mentions: list[TeamsMention] | None = None
+    attachments: list[EmailAttachment] | None = None
+    url: str | None = None
 
 
 class UserProfile(BaseModel):
@@ -71,20 +70,20 @@ class FormNotificationRequest(BaseModel):
 
     performed_by: UserProfile
     to: str
-    cc: Optional[str] = None
+    cc: str | None = None
     action_type: str
-    company_id: Optional[str] = None
+    company_id: str | None = None
     subject: str
     title: str
-    sub_title: Optional[str] = None
+    sub_title: str | None = None
     message_body: str
-    submission_url: Optional[str] = None
-    url: Optional[str] = None
+    submission_url: str | None = None
+    url: str | None = None
     attach_pdf: bool = False
     upload_pdf_to_ifs: bool = False
-    pdf_file_name: Optional[str] = None
-    form_data: Optional[FormData] = None
-    notification_fields: Optional[list[dict]] = None
+    pdf_file_name: str | None = None
+    form_data: FormData | None = None
+    notification_fields: list[dict] | None = None
 
 
 class DocumentUpload(BaseModel):
@@ -99,16 +98,16 @@ class FormNotificationResponse(BaseModel):
     """Form notification response schema."""
 
     success: bool
-    message_id: Optional[str] = None
-    error_message: Optional[str] = None
+    message_id: str | None = None
+    error_message: str | None = None
 
 
 class NotificationResponse(BaseModel):
     """Generic notification response schema."""
 
     success: bool
-    message_id: Optional[str] = None
-    error_message: Optional[str] = None
+    message_id: str | None = None
+    error_message: str | None = None
 
 
 class NotificationField(BaseModel):
@@ -129,12 +128,12 @@ class TimeOffNotificationData(BaseModel):
     start_date: str
     end_date: str
     total_days: str
-    total_hours: Optional[str] = None
-    reason: Optional[str] = None
-    reviewed_by_name: Optional[str] = None
-    reviewed_by_email: Optional[str] = None
-    review_notes: Optional[str] = None
-    action_url: Optional[str] = None
+    total_hours: str | None = None
+    reason: str | None = None
+    reviewed_by_name: str | None = None
+    reviewed_by_email: str | None = None
+    review_notes: str | None = None
+    action_url: str | None = None
 
 
 class TicketNotificationData(BaseModel):
@@ -142,14 +141,14 @@ class TicketNotificationData(BaseModel):
 
     ticket_id: int
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
     priority: str
     created_by_name: str
     created_by_email: str
-    assigned_to_name: Optional[str] = None
-    assigned_to_email: Optional[str] = None
-    action_url: Optional[str] = None
+    assigned_to_name: str | None = None
+    assigned_to_email: str | None = None
+    action_url: str | None = None
 
 
 class TicketMessageNotificationData(BaseModel):
@@ -161,7 +160,7 @@ class TicketMessageNotificationData(BaseModel):
     message_text: str
     commenter_name: str
     commenter_email: str
-    action_url: Optional[str] = None
+    action_url: str | None = None
 
 
 class UserApprovalNotificationData(BaseModel):
@@ -170,9 +169,9 @@ class UserApprovalNotificationData(BaseModel):
     user_id: int
     user_name: str
     user_email: str
-    approved_by_name: Optional[str] = None
-    approved_by_email: Optional[str] = None
-    action_url: Optional[str] = None
+    approved_by_name: str | None = None
+    approved_by_email: str | None = None
+    action_url: str | None = None
 
 
 class TimeSheetNotificationData(BaseModel):
@@ -183,6 +182,6 @@ class TimeSheetNotificationData(BaseModel):
     employee_email: str
     notification_type: str  # "regular_hours" o "overtime"
     hours_worked: float
-    customer_name: Optional[str] = None
-    clock_in_time: Optional[str] = None
-    action_url: Optional[str] = None
+    customer_name: str | None = None
+    clock_in_time: str | None = None
+    action_url: str | None = None

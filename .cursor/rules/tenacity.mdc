@@ -1,0 +1,36 @@
+---
+description: Tenacity Retry Pattern Preference
+globs:
+  - "**/*.py"
+alwaysApply: true
+---
+# Tenacity Retry Pattern Preference
+When implementing retry logic with Tenacity, use the AsyncRetrying pattern instead of decorators:
+
+PREFERRED:
+```python
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    stop_after_attempt,
+    wait_exponential,
+)
+import logging
+async for attempt in AsyncRetrying(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=5, max=60),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+):
+    with attempt:
+        # your code here
+```
+
+AVOID:
+```python
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(...))
+async def my_function():
+    # your code here
+```
+
+This pattern provides more explicit control over retry logic and maintains consistency with existing codebase patterns.

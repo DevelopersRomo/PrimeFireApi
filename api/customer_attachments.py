@@ -1,18 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlmodel import Session, select
-from sqlalchemy.orm import selectinload
-from typing import List, Optional
-from datetime import datetime, timezone
-from fastapi.responses import FileResponse
-from uuid import uuid4
-from pathlib import Path
 import os
-from dotenv import load_dotenv
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import uuid4
 
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
+
+from api.dependencies import get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
-from api.dependencies import require_authentication, get_current_employee_with_permissions
-from models.customers import Customers, CustomerAttachments
-from models.employees import Employees
+from models.customers import CustomerAttachments, Customers
 from schemas.customers import CustomerAttachment, CustomerEmployee
 
 # Load .env
@@ -30,6 +29,7 @@ if IS_PRODUCTION:
 else:
     # Local: uploads/customers
     from core.config import settings
+
     BASE_DIR = Path(__file__).resolve().parents[1]
     UPLOAD_DIR = BASE_DIR / settings.UPLOAD_DIR / "customers"
 
@@ -41,6 +41,7 @@ router = APIRouter()
 def resolve_upload_root() -> Path:
     """Resolve uploads directory path."""
     return UPLOAD_DIR
+
 
 def attachment_to_schema(db_att: CustomerAttachments) -> CustomerAttachment:
     """Convert CustomerAttachments model to CustomerAttachment schema."""
@@ -56,15 +57,16 @@ def attachment_to_schema(db_att: CustomerAttachments) -> CustomerAttachment:
             EmployeeId=db_att.creator.EmployeeId,
             DisplayName=db_att.creator.DisplayName,
             Email=db_att.creator.Email,
-            Title=db_att.creator.Title
-        ) if db_att.creator else None
+            Title=db_att.creator.Title,
+        )
+        if db_att.creator
+        else None,
     )
 
-@router.get("/customers/{customer_id}/attachments", response_model=List[CustomerAttachment])
+
+@router.get("/customers/{customer_id}/attachments", response_model=list[CustomerAttachment])
 def list_attachments_for_customer(
-    customer_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
 ):
     """List all attachments for a customer."""
     customer = db.get(Customers, customer_id)
@@ -80,12 +82,9 @@ def list_attachments_for_customer(
 
     return [attachment_to_schema(a) for a in atts]
 
+
 @router.get("/customers/attachments/{attachment_id}")
-def get_attachment(
-    attachment_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     """Get attachment metadata or download file."""
     db_att = db.get(CustomerAttachments, attachment_id)
     if not db_att:
@@ -99,20 +98,21 @@ def get_attachment(
             return FileResponse(
                 path=str(storage_path),
                 filename=db_att.FileName or storage_path.name,
-                media_type=db_att.FileType or "application/octet-stream"
+                media_type=db_att.FileType or "application/octet-stream",
             )
 
     return attachment_to_schema(db_att)
 
+
 @router.post("/customers/{customer_id}/attachments", response_model=CustomerAttachment)
 def create_attachment(
     customer_id: int,
-    file: Optional[UploadFile] = File(None),
-    file_name: Optional[str] = Form(None),
-    file_type: Optional[str] = Form(None),
-    file_path: Optional[str] = Form(None),
+    file: UploadFile | None = File(None),
+    file_name: str | None = Form(None),
+    file_type: str | None = Form(None),
+    file_path: str | None = Form(None),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Create a new attachment for a customer."""
     customer = db.get(Customers, customer_id)
@@ -132,7 +132,7 @@ def create_attachment(
         unique = f"{uuid4().hex}{ext}"
         storage_path = base_dir / unique
 
-        with open(storage_path, "wb") as out:
+        with Path(storage_path).open("wb") as out:  # noqa: FURB103
             content = file.file.read()
             out.write(content)
 
@@ -152,7 +152,7 @@ def create_attachment(
         FileType=final_file_type,
         FilePath=rel_path,
         CreatedBy=current_employee_id,
-        CreatedAt=datetime.now(timezone.utc)
+        CreatedAt=datetime.now(UTC),
     )
 
     db.add(db_att)
@@ -167,11 +167,12 @@ def create_attachment(
 
     return attachment_to_schema(db_att)
 
+
 @router.delete("/customers/attachments/{attachment_id}")
 def delete_attachment(
     attachment_id: int,
     user_permissions: dict = Depends(get_current_employee_with_permissions),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Delete a customer attachment."""
     db_att = db.get(CustomerAttachments, attachment_id)

@@ -1,18 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse
-from sqlmodel import Session, select
-from typing import List, Optional
 import os
 import uuid
 from pathlib import Path
+
 from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
+from core.config import settings
 from models.curriculums import Curriculums
 from models.jobs import Jobs
 from schemas.curriculums import Curriculum, CurriculumCreate, CurriculumUpdate
-from core.config import settings
 
 # Load .env
 load_dotenv()
@@ -34,8 +34,9 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
 
+
 def save_upload_file(upload_file: UploadFile) -> str:
-    """Save uploaded file and return relative path"""
+    """Save uploaded file and return relative path."""
     # Generate unique filename
     file_extension = Path(upload_file.filename).suffix
     unique_filename = f"{uuid.uuid4()}{file_extension}"
@@ -44,12 +45,13 @@ def save_upload_file(upload_file: UploadFile) -> str:
     file_path = UPLOAD_DIR / unique_filename
 
     # Save the file
-    with open(file_path, "wb") as buffer:
+    with Path(file_path).open("wb") as buffer:  # noqa: FURB103
         content = upload_file.file.read()
         buffer.write(content)
 
     # Return path to store in DB
     return str(file_path).replace("\\", "/")
+
 
 # ----------------------------
 # 📌 CREATE (with file)
@@ -59,13 +61,13 @@ def create_curriculum_with_file(
     job_id: int = Form(...),
     name: str = Form(...),
     email: str = Form(...),
-    phone: Optional[str] = Form(None),
-    cover_letter: Optional[str] = Form(None),
+    phone: str | None = Form(None),
+    cover_letter: str | None = Form(None),
     status: str = Form("pending"),
-    employee_id: Optional[int] = Form(None),
+    employee_id: int | None = Form(None),
     resume_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    _auth=Depends(require_authentication),
 ):
     # Validate job exists
     job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
@@ -73,12 +75,11 @@ def create_curriculum_with_file(
         raise HTTPException(status_code=404, detail="Job not found")
 
     # Validate file type
-    allowed_extensions = {'.pdf', '.doc', '.docx', '.txt'}
+    allowed_extensions = {".pdf", ".doc", ".docx", ".txt"}
     file_extension = Path(resume_file.filename).suffix.lower()
     if file_extension not in allowed_extensions:
         raise HTTPException(
-            status_code=400,
-            detail="Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed."
+            status_code=400, detail="Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed."
         )
 
     # Save the file
@@ -92,7 +93,7 @@ def create_curriculum_with_file(
         Phone=phone,
         CoverLetter=cover_letter,
         Status=status,
-        EmployeeId=employee_id
+        EmployeeId=employee_id,
     )
 
     db_curriculum = Curriculums(**curriculum_data.model_dump(), CurriculumPath=resume_path)
@@ -101,14 +102,13 @@ def create_curriculum_with_file(
     db.refresh(db_curriculum)
     return db_curriculum
 
+
 # ----------------------------
 # 📌 CREATE (without file)
 # ----------------------------
 @router.post("", response_model=Curriculum)
 def create_curriculum(
-    curriculum: CurriculumCreate,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    curriculum: CurriculumCreate, db: Session = Depends(get_db), _auth=Depends(require_authentication)
 ):
     # Validate job exists
     job = db.exec(select(Jobs).filter(Jobs.JobId == curriculum.JobId)).first()
@@ -121,51 +121,41 @@ def create_curriculum(
     db.refresh(db_curriculum)
     return db_curriculum
 
+
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("", response_model=List[Curriculum])
-def get_curriculums(
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+@router.get("", response_model=list[Curriculum])
+def get_curriculums(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     return db.exec(select(Curriculums)).all()
+
 
 # ----------------------------
 # 📌 READ ONE
 # ----------------------------
 @router.get("/{curriculum_id}", response_model=Curriculum)
-def get_curriculum(
-    curriculum_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+def get_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
     return db_curriculum
 
+
 # ----------------------------
 # 📌 READ BY JOB
 # ----------------------------
-@router.get("/job/{job_id}", response_model=List[Curriculum])
-def get_curriculums_by_job(
-    job_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+@router.get("/job/{job_id}", response_model=list[Curriculum])
+def get_curriculums_by_job(job_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     return db.exec(select(Curriculums).filter(Curriculums.JobId == job_id)).all()
+
 
 # ----------------------------
 # 📌 READ BY STATUS
 # ----------------------------
-@router.get("/status/{status}", response_model=List[Curriculum])
-def get_curriculums_by_status(
-    status: str,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+@router.get("/status/{status}", response_model=list[Curriculum])
+def get_curriculums_by_status(status: str, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     return db.exec(select(Curriculums).filter(Curriculums.Status == status)).all()
+
 
 # ----------------------------
 # 📌 UPDATE
@@ -175,7 +165,7 @@ def update_curriculum(
     curriculum_id: int,
     curriculum: CurriculumUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    _auth=Depends(require_authentication),
 ):
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
     if not db_curriculum:
@@ -186,16 +176,13 @@ def update_curriculum(
     db.refresh(db_curriculum)
     return db_curriculum
 
+
 # ----------------------------
 # 📌 DOWNLOAD CURRICULUM FILE
 # ----------------------------
 @router.get("/{curriculum_id}/download")
-def download_curriculum_file(
-    curriculum_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
-    """Download the curriculum file"""
+def download_curriculum_file(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+    """Download the curriculum file."""
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
@@ -206,18 +193,15 @@ def download_curriculum_file(
     return FileResponse(
         path=db_curriculum.CurriculumPath,
         filename=f"{db_curriculum.Name.replace(' ', '_')}_Curriculum{Path(db_curriculum.CurriculumPath).suffix}",
-        media_type='application/octet-stream'
+        media_type="application/octet-stream",
     )
+
 
 # ----------------------------
 # 📌 DELETE
 # ----------------------------
 @router.delete("/{curriculum_id}")
-def delete_curriculum(
-    curriculum_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+def delete_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
@@ -229,4 +213,3 @@ def delete_curriculum(
     db.delete(db_curriculum)
     db.commit()
     return {"detail": "Curriculum deleted successfully"}
-

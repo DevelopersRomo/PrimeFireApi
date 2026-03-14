@@ -1,10 +1,12 @@
-from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional
-from datetime import datetime, timezone
-from sqlalchemy import Enum as SAEnum
 import enum
+from datetime import UTC, datetime
+from typing import Optional
 
-class TicketStatus(str, enum.Enum):
+from sqlalchemy import Enum as SAEnum
+from sqlmodel import Field, Relationship, SQLModel
+
+
+class TicketStatus(enum.StrEnum):
     TODO = "todo"
     ACTIVE = "active"
     INACTIVE = "inactive"
@@ -13,14 +15,16 @@ class TicketStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
     ON_HOLD = "on_hold"
 
-class TicketPriority(str, enum.Enum):
+
+class TicketPriority(enum.StrEnum):
     LOW = "low"
     NORMAL = "normal"
     MEDIUM = "medium"
     HIGH = "high"
     URGENT = "urgent"
 
-class TicketSLA(str, enum.Enum):
+
+class TicketSLA(enum.StrEnum):
     HOURS_1 = "1h"
     HOURS_4 = "4h"
     HOURS_8 = "8h"
@@ -31,53 +35,42 @@ class TicketSLA(str, enum.Enum):
     WEEKS_2 = "2w"
     WEEKS_4 = "4w"
     MONTH_1 = "1m"
-    
-    def __str__(self):
+
+    def __str__(self) -> str:
         return self.value
+
 
 class Tickets(SQLModel, table=True):
     __tablename__ = "Tickets"
-    __table_args__ = {'schema': 'dbo'}
+    __table_args__ = {"schema": "dbo"}
 
-    TicketId: Optional[int] = Field(default=None, primary_key=True, index=True)
+    TicketId: int | None = Field(default=None, primary_key=True, index=True)
     Title: str = Field(max_length=200)
-    Description: Optional[str] = Field(default=None, max_length=2000)
+    Description: str | None = Field(default=None, max_length=2000)
 
     # Status enum
-    Status: TicketStatus = Field(
-        default=TicketStatus.TODO,
-        sa_column=Field(sa_type=SAEnum(TicketStatus))
-    )
+    Status: TicketStatus = Field(default=TicketStatus.TODO, sa_column=Field(sa_type=SAEnum(TicketStatus)))
 
     # Priority enum
-    Priority: TicketPriority = Field(
-        default=TicketPriority.NORMAL,
-        sa_column=Field(sa_type=SAEnum(TicketPriority))
-    )
+    Priority: TicketPriority = Field(default=TicketPriority.NORMAL, sa_column=Field(sa_type=SAEnum(TicketPriority)))
 
     # SLA enum (optional)
-    SLA: Optional[TicketSLA] = Field(
-        default=None,
-        sa_type=SAEnum(TicketSLA, values_callable=lambda x: [e.value for e in x])
+    SLA: TicketSLA | None = Field(
+        default=None, sa_type=SAEnum(TicketSLA, values_callable=lambda x: [e.value for e in x])
     )
 
     # Foreign keys
     CreatedBy: int = Field(foreign_key="dbo.Employees.EmployeeId")  # Required
-    AssignedTo: Optional[int] = Field(default=None, foreign_key="dbo.Employees.EmployeeId")  # Optional
+    AssignedTo: int | None = Field(default=None, foreign_key="dbo.Employees.EmployeeId")  # Optional
 
     # Timestamps
-    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    UpdatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    UpdatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Relationships
-    creator: Optional["Employees"] = Relationship(
-        back_populates="created_tickets",
-        sa_relationship_kwargs={"foreign_keys": "Tickets.CreatedBy"}
+    creator: Optional["Employees"] = Relationship(  # noqa: F821
+        back_populates="created_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.CreatedBy"}
     )
-    assignee: Optional["Employees"] = Relationship(
-        back_populates="assigned_tickets",
-        sa_relationship_kwargs={"foreign_keys": "Tickets.AssignedTo"}
+    assignee: Optional["Employees"] = Relationship(  # noqa: F821
+        back_populates="assigned_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.AssignedTo"}
     )
-
-
-

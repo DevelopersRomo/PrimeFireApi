@@ -1,28 +1,26 @@
-from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional, TYPE_CHECKING
 from datetime import date
+from typing import TYPE_CHECKING, Optional
+
+from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from models.employees import Employees
+
 
 class Licenses(SQLModel, table=True):
     __tablename__ = "Licenses"
     __table_args__ = {"schema": "dbo"}
 
-    LicenseId: Optional[int] = Field(default=None, primary_key=True)
-    Software: Optional[str] = None
-    Version: Optional[str] = None
-    CreatedAt: Optional[date] = None
-    ExpiryDate: Optional[date] = None
-    Key: Optional[str] = None
-    Account: Optional[str] = None
-    Password: Optional[str] = None
-    Notes: Optional[str] = None
+    LicenseId: int | None = Field(default=None, primary_key=True)
+    Software: str | None = None
+    Version: str | None = None
+    CreatedAt: date | None = None
+    ExpiryDate: date | None = None
+    Key: str | None = None
+    Account: str | None = None
+    Password: str | None = None
+    Notes: str | None = None
 
-    EmployeeId: Optional[int] = Field(
-        foreign_key="dbo.Employees.EmployeeId"
-    )
-    
-    Employee: Optional["Employees"] = Relationship(
-        back_populates="Licenses"
-    )
+    EmployeeId: int | None = Field(foreign_key="dbo.Employees.EmployeeId")
+
+    Employee: Optional["Employees"] = Relationship(back_populates="Licenses")

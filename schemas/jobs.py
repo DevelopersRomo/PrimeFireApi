@@ -1,45 +1,46 @@
-from sqlmodel import SQLModel
-from models.jobs import Jobs
-from typing import Optional
 from datetime import datetime
+
+from sqlmodel import SQLModel
+
 
 # Schema for creating jobs
 class JobCreate(SQLModel):
     Title: str
-    Description: Optional[str] = None
-    Requirements: Optional[str] = None
-    Location: Optional[str] = None
-    SalaryMin: Optional[float] = None
-    SalaryMax: Optional[float] = None
+    Description: str | None = None
+    Requirements: str | None = None
+    Location: str | None = None
+    SalaryMin: float | None = None
+    SalaryMax: float | None = None
     Status: str = "active"
-    EmployeeId: Optional[int] = None
-    Country: Optional[str] = None  # ISO2 code like "US", "PR", "DO"
+    EmployeeId: int | None = None
+    Country: str | None = None  # ISO2 code like "US", "PR", "DO"
+
 
 # Schema for updating jobs
 class JobUpdate(SQLModel):
-    Title: Optional[str] = None
-    Description: Optional[str] = None
-    Requirements: Optional[str] = None
-    Location: Optional[str] = None
-    SalaryMin: Optional[float] = None
-    SalaryMax: Optional[float] = None
-    Status: Optional[str] = None
-    Country: Optional[str] = None  # ISO2 code like "US", "PR", "DO"
+    Title: str | None = None
+    Description: str | None = None
+    Requirements: str | None = None
+    Location: str | None = None
+    SalaryMin: float | None = None
+    SalaryMax: float | None = None
+    Status: str | None = None
+    Country: str | None = None  # ISO2 code like "US", "PR", "DO"
+
 
 # Schema for response (all fields with Country ISO2 instead of CountryId)
 class Job(SQLModel):
-    JobId: Optional[int] = None
+    JobId: int | None = None
     Title: str
-    Description: Optional[str] = None
-    Requirements: Optional[str] = None
-    Location: Optional[str] = None
-    SalaryMin: Optional[float] = None
-    SalaryMax: Optional[float] = None
+    Description: str | None = None
+    Requirements: str | None = None
+    Location: str | None = None
+    SalaryMin: float | None = None
+    SalaryMax: float | None = None
     Status: str
     PostedAt: datetime
-    EmployeeId: Optional[int] = None
-    Country: Optional[str] = None  # ISO2 code instead of CountryId
-    
+    EmployeeId: int | None = None
+    Country: str | None = None  # ISO2 code instead of CountryId
+
     class Config:
         from_attributes = True
-

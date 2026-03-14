@@ -2,37 +2,36 @@
 
 from secrets import compare_digest
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlmodel import Session
-from typing import Optional
 
-from api.dependencies import get_current_employee, require_authentication
-from core.config import settings
+from api.dependencies import get_current_employee
 from bd.dependencies import get_db
+from core.config import settings
 from schemas.notifications import (
     ContactPrimeFireRequest,
     ContactPrimeFireResponse,
     NotificationRequestWrapper,
 )
 from services.notifications.contact_primefire import send_contact_primefire_notification
+from services.notifications.forms import send_form_notification
 from services.notifications.notifications import (
-    send_custom_notification,
-    notify_time_off_approved,
-    notify_time_off_rejected,
     notify_ticket_created,
     notify_ticket_message,
+    notify_time_off_approved,
+    notify_time_off_rejected,
     notify_user_approved,
+    send_custom_notification,
 )
-from services.notifications.forms import send_form_notification
-from services.notifications.schemas import NotificationResponse, NotificationField
+from services.notifications.schemas import NotificationField, NotificationResponse
 
 router = APIRouter()
 
 
 def _extract_contact_token(
-    authorization: Optional[str],
-    x_contact_token: Optional[str],
-) -> Optional[str]:
+    authorization: str | None,
+    x_contact_token: str | None,
+) -> str | None:
     if authorization:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() == "bearer" and token:
@@ -52,7 +51,7 @@ async def send_notification(
 ) -> NotificationResponse:
     """
     Send a notification email.
-    
+
     Supports multiple notification types:
     - custom: Generic notification with custom fields
     - time_off_approved: Time off request approved
@@ -61,7 +60,7 @@ async def send_notification(
     - ticket_message: New comment on ticket
     - user_approved: User account approved
     - form: Form notification (backward compatibility)
-    
+
     Requires authentication.
     """
     try:
@@ -71,14 +70,13 @@ async def send_notification(
                     status_code=400,
                     detail="custom notification data is required",
                 )
-            
+
             custom_fields = None
             if request.custom.fields:
                 custom_fields = [
-                    NotificationField(label=field["label"], value=field["value"])
-                    for field in request.custom.fields
+                    NotificationField(label=field["label"], value=field["value"]) for field in request.custom.fields
                 ]
-            
+
             return await send_custom_notification(
                 title=request.custom.title,
                 message_body=request.custom.message_body,
@@ -93,13 +91,13 @@ async def send_notification(
                 action_text=request.custom.action_text,
             )
 
-        elif request.notification_type == "time_off_approved":
+        if request.notification_type == "time_off_approved":
             if not request.time_off_approved:
                 raise HTTPException(
                     status_code=400,
                     detail="time_off_approved notification data is required",
                 )
-            
+
             return await notify_time_off_approved(
                 request_id=request.time_off_approved.request_id,
                 employee_id=request.time_off_approved.employee_id,
@@ -117,13 +115,13 @@ async def send_notification(
                 action_url=request.time_off_approved.action_url,
             )
 
-        elif request.notification_type == "time_off_rejected":
+        if request.notification_type == "time_off_rejected":
             if not request.time_off_rejected:
                 raise HTTPException(
                     status_code=400,
                     detail="time_off_rejected notification data is required",
                 )
-            
+
             return await notify_time_off_rejected(
                 request_id=request.time_off_rejected.request_id,
                 employee_id=request.time_off_rejected.employee_id,
@@ -141,13 +139,13 @@ async def send_notification(
                 action_url=request.time_off_rejected.action_url,
             )
 
-        elif request.notification_type == "ticket_created":
+        if request.notification_type == "ticket_created":
             if not request.ticket_created:
                 raise HTTPException(
                     status_code=400,
                     detail="ticket_created notification data is required",
                 )
-            
+
             creator_notification, assignee_notification = await notify_ticket_created(
                 ticket_id=request.ticket_created.ticket_id,
                 title=request.ticket_created.title,
@@ -161,28 +159,28 @@ async def send_notification(
                 action_url=request.ticket_created.action_url,
                 notify_assignee=request.notify_assignee,
             )
-            
+
             return creator_notification
 
-        elif request.notification_type == "ticket_message":
+        if request.notification_type == "ticket_message":
             if not request.ticket_message:
                 raise HTTPException(
                     status_code=400,
                     detail="ticket_message notification data is required",
                 )
-            
+
             if not request.commenter_id:
                 raise HTTPException(
                     status_code=400,
                     detail="commenter_id is required for ticket_message notifications",
                 )
-            
+
             if not request.ticket_creator_id or not request.ticket_creator_email:
                 raise HTTPException(
                     status_code=400,
                     detail="ticket_creator_id and ticket_creator_email are required for ticket_message notifications",
                 )
-            
+
             creator_notification, assignee_notification = await notify_ticket_message(
                 ticket_id=request.ticket_message.ticket_id,
                 ticket_title=request.ticket_message.ticket_title,
@@ -197,19 +195,23 @@ async def send_notification(
                 ticket_assigned_to_email=request.ticket_assigned_to_email,
                 action_url=request.ticket_message.action_url,
             )
-            
-            return creator_notification or assignee_notification or NotificationResponse(
-                success=True,
-                message_id=None,
+
+            return (
+                creator_notification
+                or assignee_notification
+                or NotificationResponse(
+                    success=True,
+                    message_id=None,
+                )
             )
 
-        elif request.notification_type == "user_approved":
+        if request.notification_type == "user_approved":
             if not request.user_approved:
                 raise HTTPException(
                     status_code=400,
                     detail="user_approved notification data is required",
                 )
-            
+
             return await notify_user_approved(
                 user_id=request.user_approved.user_id,
                 user_name=request.user_approved.user_name,
@@ -219,35 +221,34 @@ async def send_notification(
                 action_url=request.user_approved.action_url,
             )
 
-        elif request.notification_type == "form":
+        if request.notification_type == "form":
             if not request.form:
                 raise HTTPException(
                     status_code=400,
                     detail="form notification data is required",
                 )
-            
+
             return await send_form_notification(notification_data=request.form)
 
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown notification type: {request.notification_type}",
-            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown notification type: {request.notification_type}",
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error sending notification: {str(e)}",
+            detail=f"Error sending notification: {e!s}",
         )
 
 
 @router.post("/send/contact-primefire", response_model=ContactPrimeFireResponse)
 async def send_contact_primefire(
     request: ContactPrimeFireRequest,
-    authorization: Optional[str] = Header(default=None),
-    x_contact_token: Optional[str] = Header(default=None),
+    authorization: str | None = Header(default=None),
+    x_contact_token: str | None = Header(default=None),
 ) -> ContactPrimeFireResponse:
     """Send PrimeFire contact template email with dedicated static token auth."""
     received_token = _extract_contact_token(authorization, x_contact_token)
@@ -262,8 +263,7 @@ async def send_contact_primefire(
             status_code=503,
             detail={
                 "status": "delivery_failed",
-                "message": notification_result.error_message
-                or "Unable to send contact-primefire notification",
+                "message": notification_result.error_message or "Unable to send contact-primefire notification",
             },
         )
 
@@ -273,4 +273,3 @@ async def send_contact_primefire(
         message="Contact PrimeFire notification sent successfully",
         message_id=notification_result.message_id,
     )
-

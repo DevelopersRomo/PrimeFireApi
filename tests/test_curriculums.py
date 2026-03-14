@@ -4,29 +4,29 @@ Tests for Curriculums API endpoints.
 Note: All tests that create files automatically clean up after themselves
 to avoid leaving test artifacts in the uploads/curriculums directory.
 """
-import pytest
+
 import io
 from pathlib import Path
-from sqlmodel import Session, select
+
+from sqlmodel import Session
 
 from models.curriculums import Curriculums
 from models.jobs import Jobs
-from schemas.curriculums import CurriculumCreate
 
 
 class TestCurriculumsAPI:
-    """Test cases for Curriculums API endpoints"""
+    """Test cases for Curriculums API endpoints."""
 
-    def test_get_curriculums_empty(self, client):
-        """Test GET /curriculums/ returns empty list when no curriculums exist"""
-        response = client.get("/curriculums/")
+    def test_get_curriculums_empty(self, client, auth_headers: dict) -> None:
+        """Test GET /curriculums/ returns empty list when no curriculums exist."""
+        response = client.get("/curriculums/", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         assert len(data) == 0
 
-    def test_create_curriculum_with_file(self, client, db_session: Session):
-        """Test POST /curriculums/upload creates a new curriculum with file upload"""
+    def test_create_curriculum_with_file(self, client, db_session: Session, auth_headers: dict) -> None:
+        """Test POST /curriculums/upload creates a new curriculum with file upload."""
         # Create a test job first
         job = self._create_test_job(db_session)
 
@@ -42,13 +42,13 @@ class TestCurriculumsAPI:
             "email": "john.doe@example.com",
             "phone": "+1234567890",
             "cover_letter": "I am very interested in this position...",
-            "status": "pending"
+            "status": "pending",
         }
 
         # Create files dict for the test
         files = {"resume_file": ("test_resume.pdf", pdf_file, "application/pdf")}
 
-        response = client.post("/curriculums/upload", data=form_data, files=files)
+        response = client.post("/curriculums/upload", data=form_data, files=files, headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -60,14 +60,14 @@ class TestCurriculumsAPI:
         assert data["JobId"] == job.JobId
         assert data["CurriculumId"] is not None
         assert data["CurriculumPath"] is not None
-        assert "uploads/curriculums/" in data["CurriculumPath"]
+        assert "curriculums" in data["CurriculumPath"]
 
         # Cleanup: delete the uploaded file to avoid leaving test artifacts
         if data["CurriculumPath"] and Path(data["CurriculumPath"]).exists():
             Path(data["CurriculumPath"]).unlink()
 
-    def test_create_curriculum_simple(self, client, db_session: Session):
-        """Test POST /curriculums/ creates a new curriculum without file"""
+    def test_create_curriculum_simple(self, client, db_session: Session, auth_headers: dict) -> None:
+        """Test POST /curriculums/ creates a new curriculum without file."""
         # Create a test job first
         job = self._create_test_job(db_session)
 
@@ -78,10 +78,10 @@ class TestCurriculumsAPI:
             "Phone": "+0987654321",
             "CoverLetter": "I am very interested in this position...",
             "Status": "pending",
-            "EmployeeId": None
+            "EmployeeId": None,
         }
 
-        response = client.post("/curriculums/", json=curriculum_data)
+        response = client.post("/curriculums/", json=curriculum_data, headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -93,12 +93,12 @@ class TestCurriculumsAPI:
         assert data["JobId"] == job.JobId
         assert data["CurriculumId"] is not None
 
-    def test_get_curriculum_by_id(self, client, db_session: Session):
-        """Test GET /curriculums/{curriculum_id} returns specific curriculum"""
+    def test_get_curriculum_by_id(self, client, db_session: Session, auth_headers: dict) -> None:
+        """Test GET /curriculums/{curriculum_id} returns specific curriculum."""
         # Create test data
         curriculum = self._create_test_curriculum(db_session)
 
-        response = client.get(f"/curriculums/{curriculum.CurriculumId}")
+        response = client.get(f"/curriculums/{curriculum.CurriculumId}", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -106,15 +106,15 @@ class TestCurriculumsAPI:
         assert data["Name"] == curriculum.Name
         assert data["Email"] == curriculum.Email
 
-    def test_get_curriculum_not_found(self, client):
-        """Test GET /curriculums/{curriculum_id} returns 404 for non-existent curriculum"""
-        response = client.get("/curriculums/999")
+    def test_get_curriculum_not_found(self, client, auth_headers: dict) -> None:
+        """Test GET /curriculums/{curriculum_id} returns 404 for non-existent curriculum."""
+        response = client.get("/curriculums/999", headers=auth_headers)
         assert response.status_code == 404
         data = response.json()
         assert "Curriculum not found" in data["detail"]
 
-    def test_get_curriculums_by_job(self, client, db_session: Session):
-        """Test GET /curriculums/job/{job_id} returns curriculums for specific job"""
+    def test_get_curriculums_by_job(self, client, db_session: Session, auth_headers: dict) -> None:
+        """Test GET /curriculums/job/{job_id} returns curriculums for specific job."""
         # Create test job and curriculums
         job1 = self._create_test_job(db_session, "Job 1")
         job2 = self._create_test_job(db_session, "Job 2")
@@ -123,7 +123,7 @@ class TestCurriculumsAPI:
         self._create_test_curriculum(db_session, job1.JobId, "Jane Smith")
         self._create_test_curriculum(db_session, job2.JobId, "Bob Johnson")
 
-        response = client.get(f"/curriculums/job/{job1.JobId}")
+        response = client.get(f"/curriculums/job/{job1.JobId}", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -135,14 +135,14 @@ class TestCurriculumsAPI:
         assert "John Doe" in names
         assert "Jane Smith" in names
 
-    def test_get_curriculums_by_status(self, client, db_session: Session):
-        """Test GET /curriculums/status/{status} returns curriculums by status"""
+    def test_get_curriculums_by_status(self, client, db_session: Session, auth_headers: dict) -> None:
+        """Test GET /curriculums/status/{status} returns curriculums by status."""
         # Create test data
         job = self._create_test_job(db_session)
         self._create_test_curriculum(db_session, job.JobId, "Pending Curriculum", "pending")
         self._create_test_curriculum(db_session, job.JobId, "Reviewed Curriculum", "reviewed")
 
-        response = client.get("/curriculums/status/pending")
+        response = client.get("/curriculums/status/pending", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -150,8 +150,8 @@ class TestCurriculumsAPI:
         assert len(data) >= 1
         assert all(c["Status"] == "pending" for c in data)
 
-    def test_update_curriculum(self, client, db_session: Session):
-        """Test PUT /curriculums/{curriculum_id} updates curriculum"""
+    def test_update_curriculum(self, client, db_session: Session, auth_headers: dict) -> None:
+        """Test PUT /curriculums/{curriculum_id} updates curriculum."""
         # Create test data
         curriculum = self._create_test_curriculum(db_session)
 
@@ -159,10 +159,10 @@ class TestCurriculumsAPI:
             "Name": "Updated Name",
             "Email": "updated@example.com",
             "Status": "reviewed",
-            "CoverLetter": "Updated cover letter"
+            "CoverLetter": "Updated cover letter",
         }
 
-        response = client.put(f"/curriculums/{curriculum.CurriculumId}", json=update_data)
+        response = client.put(f"/curriculums/{curriculum.CurriculumId}", json=update_data, headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -171,27 +171,27 @@ class TestCurriculumsAPI:
         assert data["Status"] == "reviewed"
         assert data["CoverLetter"] == "Updated cover letter"
 
-    def test_delete_curriculum(self, client, db_session: Session):
-        """Test DELETE /curriculums/{curriculum_id} deletes curriculum"""
+    def test_delete_curriculum(self, client, db_session: Session, auth_headers: dict) -> None:
+        """Test DELETE /curriculums/{curriculum_id} deletes curriculum."""
         # Create test data
         curriculum = self._create_test_curriculum(db_session)
 
         # Verify curriculum exists
-        response = client.get(f"/curriculums/{curriculum.CurriculumId}")
+        response = client.get(f"/curriculums/{curriculum.CurriculumId}", headers=auth_headers)
         assert response.status_code == 200
 
         # Delete curriculum
-        response = client.delete(f"/curriculums/{curriculum.CurriculumId}")
+        response = client.delete(f"/curriculums/{curriculum.CurriculumId}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "Curriculum deleted successfully" in data["detail"]
 
         # Verify curriculum is deleted
-        response = client.get(f"/curriculums/{curriculum.CurriculumId}")
+        response = client.get(f"/curriculums/{curriculum.CurriculumId}", headers=auth_headers)
         assert response.status_code == 404
 
     def _create_test_job(self, db_session: Session, title: str = "Test Job") -> Jobs:
-        """Helper method to create a test job"""
+        """Helper method to create a test job."""
         job = Jobs(
             Title=title,
             Description="Test description",
@@ -200,15 +200,17 @@ class TestCurriculumsAPI:
             SalaryMin=40000.0,
             SalaryMax=60000.0,
             Status="active",
-            EmployeeId=2
+            EmployeeId=2,
         )
         db_session.add(job)
         db_session.commit()
         db_session.refresh(job)
         return job
 
-    def _create_test_curriculum(self, db_session: Session, job_id: int = None, name: str = "Test Applicant", status: str = "pending") -> Curriculums:
-        """Helper method to create a test curriculum"""
+    def _create_test_curriculum(
+        self, db_session: Session, job_id: int | None = None, name: str = "Test Applicant", status: str = "pending"
+    ) -> Curriculums:
+        """Helper method to create a test curriculum."""
         if job_id is None:
             job = self._create_test_job(db_session)
             job_id = job.JobId
@@ -221,10 +223,9 @@ class TestCurriculumsAPI:
             CurriculumPath="/uploads/curriculums/test.pdf",
             CoverLetter="Test cover letter",
             Status=status,
-            EmployeeId=None
+            EmployeeId=None,
         )
         db_session.add(curriculum)
         db_session.commit()
         db_session.refresh(curriculum)
         return curriculum
-

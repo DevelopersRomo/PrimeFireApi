@@ -1,30 +1,37 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session, select, or_, and_
 from sqlalchemy.orm import selectinload
-from typing import List, Optional
-from datetime import datetime, timezone
+from sqlmodel import Session, and_, or_, select
 
 from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
-from models.customers import (
-    Customers,
-    CustomerNotes,
-    CustomerAlternateContacts,
-    CustomerAttachments,
-    CustomerTypeEnum,
-    MarketEnum,
-    DtdPotentialEnum
-)
 from models.addresses import Addresses
+from models.customers import (
+    CustomerAttachments,
+    CustomerNotes,
+    CustomerTypeEnum,
+    Customers,
+    DtdPotentialEnum,
+    MarketEnum,
+)
 from models.employees import Employees
 from schemas.customers import (
-    CustomerCreate, CustomerUpdate, Customer, CustomerMerged,
-    CustomerNote, CustomerAlternateContact, CustomerAttachment,
-    Address as AddressSchema, AddressCreate, AddressUpdate,
-    CustomerEmployee
+    Address as AddressSchema,
+)
+from schemas.customers import (
+    Customer,
+    CustomerAlternateContact,
+    CustomerAttachment,
+    CustomerCreate,
+    CustomerEmployee,
+    CustomerMerged,
+    CustomerNote,
+    CustomerUpdate,
 )
 
 router = APIRouter()
+
 
 def customer_to_schema(db_customer: Customers) -> Customer:
     """Convert Customers model to Customer schema with related data."""
@@ -52,7 +59,9 @@ def customer_to_schema(db_customer: Customers) -> Customer:
             IsValidated=db_customer.primary_address.IsValidated,
             ValidatedAt=db_customer.primary_address.ValidatedAt,
             CreatedAt=db_customer.primary_address.CreatedAt,
-        ) if db_customer.primary_address else None,
+        )
+        if db_customer.primary_address
+        else None,
         CreatedAt=db_customer.CreatedAt,
         UpdatedAt=db_customer.UpdatedAt,
         CreatedBy=db_customer.CreatedBy,
@@ -60,26 +69,26 @@ def customer_to_schema(db_customer: Customers) -> Customer:
             EmployeeId=db_customer.creator.EmployeeId,
             DisplayName=db_customer.creator.DisplayName,
             Email=db_customer.creator.Email,
-            Title=db_customer.creator.Title
-        ) if db_customer.creator else None
+            Title=db_customer.creator.Title,
+        )
+        if db_customer.creator
+        else None,
     )
 
-@router.get("", response_model=List[Customer])
+
+@router.get("", response_model=list[Customer])
 def get_customers(
-    customer_type: Optional[CustomerTypeEnum] = Query(None, description="Filter by customer type"),
-    market: Optional[MarketEnum] = Query(None, description="Filter by market"),
-    dtd_potential: Optional[DtdPotentialEnum] = Query(None, description="Filter by DTD potential"),
-    search: Optional[str] = Query(None, description="Search in name, company, email"),
+    customer_type: CustomerTypeEnum | None = Query(None, description="Filter by customer type"),
+    market: MarketEnum | None = Query(None, description="Filter by market"),
+    dtd_potential: DtdPotentialEnum | None = Query(None, description="Filter by DTD potential"),
+    search: str | None = Query(None, description="Search in name, company, email"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    _auth=Depends(require_authentication),
 ):
     """Get customers with optional filters and pagination."""
-    query = select(Customers).options(
-        selectinload(Customers.primary_address),
-        selectinload(Customers.creator)
-    )
+    query = select(Customers).options(selectinload(Customers.primary_address), selectinload(Customers.creator))
 
     filters = []
     if customer_type:
@@ -95,7 +104,7 @@ def get_customers(
                 Customers.CompanyName.ilike(search_filter),
                 Customers.FirstName.ilike(search_filter),
                 Customers.LastName.ilike(search_filter),
-                Customers.PrimaryEmail.ilike(search_filter)
+                Customers.PrimaryEmail.ilike(search_filter),
             )
         )
 
@@ -107,19 +116,13 @@ def get_customers(
     customers = db.exec(query).all()
     return [customer_to_schema(customer) for customer in customers]
 
+
 @router.get("/{customer_id}", response_model=Customer)
-def get_customer(
-    customer_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+def get_customer(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     """Get a single customer by ID."""
     db_customer = db.exec(
         select(Customers)
-        .options(
-            selectinload(Customers.primary_address),
-            selectinload(Customers.creator)
-        )
+        .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
         .filter(Customers.CustomerId == customer_id)
     ).first()
 
@@ -128,12 +131,9 @@ def get_customer(
 
     return customer_to_schema(db_customer)
 
+
 @router.get("/{customer_id}/merged", response_model=CustomerMerged)
-def get_customer_merged(
-    customer_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     """Get a customer with notes, contacts, and attachments."""
     db_customer = db.exec(
         select(Customers)
@@ -142,7 +142,7 @@ def get_customer_merged(
             selectinload(Customers.creator),
             selectinload(Customers.notes).selectinload(CustomerNotes.creator),
             selectinload(Customers.alternate_contacts),
-            selectinload(Customers.attachments).selectinload(CustomerAttachments.creator)
+            selectinload(Customers.attachments).selectinload(CustomerAttachments.creator),
         )
         .filter(Customers.CustomerId == customer_id)
     ).first()
@@ -162,8 +162,10 @@ def get_customer_merged(
                 EmployeeId=note.creator.EmployeeId,
                 DisplayName=note.creator.DisplayName,
                 Email=note.creator.Email,
-                Title=note.creator.Title
-            ) if note.creator else None
+                Title=note.creator.Title,
+            )
+            if note.creator
+            else None,
         )
         for note in db_customer.notes
     ]
@@ -176,7 +178,7 @@ def get_customer_merged(
             Email=contact.Email,
             Phone=contact.Phone,
             CreatedAt=contact.CreatedAt,
-            UpdatedAt=contact.UpdatedAt
+            UpdatedAt=contact.UpdatedAt,
         )
         for contact in db_customer.alternate_contacts
     ]
@@ -194,24 +196,22 @@ def get_customer_merged(
                 EmployeeId=att.creator.EmployeeId,
                 DisplayName=att.creator.DisplayName,
                 Email=att.creator.Email,
-                Title=att.creator.Title
-            ) if att.creator else None
+                Title=att.creator.Title,
+            )
+            if att.creator
+            else None,
         )
         for att in db_customer.attachments
     ]
 
     return CustomerMerged(
-        Customer=customer_to_schema(db_customer),
-        Notes=notes,
-        Contacts=contacts,
-        Attachments=attachments
+        Customer=customer_to_schema(db_customer), Notes=notes, Contacts=contacts, Attachments=attachments
     )
+
 
 @router.post("", response_model=Customer)
 def create_customer(
-    customer: CustomerCreate,
-    current_employee: Employees = Depends(get_current_employee),
-    db: Session = Depends(get_db)
+    customer: CustomerCreate, current_employee: Employees = Depends(get_current_employee), db: Session = Depends(get_db)
 ):
     """Create a new customer."""
     primary_address_id = None
@@ -224,7 +224,7 @@ def create_customer(
             State=customer.PrimaryAddress.State,
             ZipCode=customer.PrimaryAddress.ZipCode,
             CountryId=customer.PrimaryAddress.CountryId,
-            GooglePlaceId=customer.PrimaryAddress.GooglePlaceId
+            GooglePlaceId=customer.PrimaryAddress.GooglePlaceId,
         )
         db.add(db_address)
         db.flush()
@@ -247,7 +247,7 @@ def create_customer(
         PrimaryPhone=customer.PrimaryPhone,
         PrimaryAddressId=primary_address_id,
         CreatedBy=current_employee.EmployeeId,
-        CreatedAt=datetime.now(timezone.utc)
+        CreatedAt=datetime.now(UTC),
     )
 
     db.add(db_customer)
@@ -256,37 +256,32 @@ def create_customer(
 
     db_customer = db.exec(
         select(Customers)
-        .options(
-            selectinload(Customers.primary_address),
-            selectinload(Customers.creator)
-        )
+        .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
         .filter(Customers.CustomerId == db_customer.CustomerId)
     ).first()
 
     return customer_to_schema(db_customer)
+
 
 @router.patch("/{customer_id}", response_model=Customer)
 def update_customer(
     customer_id: int,
     customer_update: CustomerUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    _auth=Depends(require_authentication),
 ):
     """Update a customer."""
     db_customer = db.exec(
         select(Customers)
-        .options(
-            selectinload(Customers.primary_address),
-            selectinload(Customers.creator)
-        )
+        .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
         .filter(Customers.CustomerId == customer_id)
     ).first()
 
     if not db_customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    update_data = customer_update.model_dump(exclude_unset=True, exclude={'PrimaryAddress'})
-    
+    update_data = customer_update.model_dump(exclude_unset=True, exclude={"PrimaryAddress"})
+
     if customer_update.PrimaryAddress:
         if db_customer.PrimaryAddressId:
             db_address = db.get(Addresses, db_customer.PrimaryAddressId)
@@ -301,36 +296,30 @@ def update_customer(
                 City=customer_update.PrimaryAddress.City or "",
                 State=customer_update.PrimaryAddress.State or "",
                 ZipCode=customer_update.PrimaryAddress.ZipCode or "",
-                CountryId=customer_update.PrimaryAddress.CountryId or 0
+                CountryId=customer_update.PrimaryAddress.CountryId or 0,
             )
             db.add(db_address)
             db.flush()
-            update_data['PrimaryAddressId'] = db_address.AddressId
+            update_data["PrimaryAddressId"] = db_address.AddressId
 
     for key, value in update_data.items():
         setattr(db_customer, key, value)
 
-    db_customer.UpdatedAt = datetime.now(timezone.utc)
+    db_customer.UpdatedAt = datetime.now(UTC)
     db.commit()
     db.refresh(db_customer)
 
     db_customer = db.exec(
         select(Customers)
-        .options(
-            selectinload(Customers.primary_address),
-            selectinload(Customers.creator)
-        )
+        .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
         .filter(Customers.CustomerId == customer_id)
     ).first()
 
     return customer_to_schema(db_customer)
 
+
 @router.delete("/{customer_id}")
-def delete_customer(
-    customer_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+def delete_customer(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     """Delete a customer."""
     db_customer = db.get(Customers, customer_id)
     if not db_customer:

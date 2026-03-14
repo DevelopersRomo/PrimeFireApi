@@ -1,6 +1,4 @@
-from datetime import date, datetime, time
-from decimal import Decimal
-from typing import Dict, Optional
+from datetime import date, time
 
 from pydantic import field_validator
 from sqlmodel import SQLModel
@@ -9,14 +7,14 @@ from models.time_off import AbsenceTypeEnum, RequestStatusEnum, TimeUnitEnum
 
 
 class TimeOffRequestCreate(SQLModel):
-    EmployeeId: Optional[int] = None
+    EmployeeId: int | None = None
     AbsenceType: AbsenceTypeEnum
     TimeUnit: TimeUnitEnum
     StartDate: date
     EndDate: date
-    StartTime: Optional[time] = None
-    EndTime: Optional[time] = None
-    Reason: Optional[str] = None
+    StartTime: time | None = None
+    EndTime: time | None = None
+    Reason: str | None = None
 
 
 class TimeOffRequestRead(SQLModel):
@@ -27,27 +25,29 @@ class TimeOffRequestRead(SQLModel):
     TimeUnit: TimeUnitEnum
     StartDate: str
     EndDate: str
-    StartTime: Optional[str] = None
-    EndTime: Optional[str] = None
-    TotalHours: Optional[str] = None
+    StartTime: str | None = None
+    EndTime: str | None = None
+    TotalHours: str | None = None
     TotalDays: str
-    Reason: Optional[str] = None
-    ReviewedBy: Optional[int] = None
-    ReviewedAt: Optional[str] = None
-    ReviewNotes: Optional[str] = None
+    Reason: str | None = None
+    ReviewedBy: int | None = None
+    ReviewedAt: str | None = None
+    ReviewNotes: str | None = None
     CreatedAt: str
     UpdatedAt: str
 
+    @classmethod
     @field_validator("StartTime", "EndTime", mode="before")
     @classmethod
-    def append_z_to_time(cls, v: Optional[str]) -> Optional[str]:
+    def append_z_to_time(cls, v: str | None) -> str | None:
         if v and isinstance(v, str) and not v.endswith("Z"):
             return f"{v}Z"
         return v
 
+    @classmethod
     @field_validator("ReviewedAt", "CreatedAt", "UpdatedAt", mode="before")
     @classmethod
-    def format_datetime_utc(cls, v: Optional[str]) -> Optional[str]:
+    def format_datetime_utc(cls, v: str | None) -> str | None:
         if v and isinstance(v, str):
             if len(v) == 19 and v[10] == " ":
                 return v.replace(" ", "T") + "Z"
@@ -60,7 +60,7 @@ class TimeOffRequestRead(SQLModel):
 
 
 class RequestReview(SQLModel):
-    ReviewNotes: Optional[str] = None
+    ReviewNotes: str | None = None
 
 
 class TimeOffBalanceRead(SQLModel):
@@ -90,7 +90,7 @@ class HolidayRead(SQLModel):
 class DepartmentRead(SQLModel):
     DepartmentId: int
     Name: str
-    Code: Optional[str] = None
+    Code: str | None = None
 
     class Config:
         from_attributes = True
@@ -102,15 +102,16 @@ class CalendarEvent(SQLModel):
     Title: str
     StartDate: str
     EndDate: str
-    Status: Optional[RequestStatusEnum] = None
-    TimeUnit: Optional[TimeUnitEnum] = None
-    EmployeeId: Optional[int] = None
-    StartTime: Optional[str] = None
-    EndTime: Optional[str] = None
+    Status: RequestStatusEnum | None = None
+    TimeUnit: TimeUnitEnum | None = None
+    EmployeeId: int | None = None
+    StartTime: str | None = None
+    EndTime: str | None = None
 
+    @classmethod
     @field_validator("StartTime", "EndTime", mode="before")
     @classmethod
-    def append_z_to_time(cls, v: Optional[str]) -> Optional[str]:
+    def append_z_to_time(cls, v: str | None) -> str | None:
         if v and isinstance(v, str) and not v.endswith("Z"):
             return f"{v}Z"
         return v
@@ -140,4 +141,4 @@ class ReportSummary(SQLModel):
     total_requests: int
     status: StatusSummary
     totals_by_absence: AbsenceTotals
-    balances: Dict[str, BalanceTotals]
+    balances: dict[str, BalanceTotals]

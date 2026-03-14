@@ -9,15 +9,14 @@ from bd.dependencies import get_db
 from models.timesheet import TimeSheetSettings
 from schemas.timesheet import TimeSheetSettingsRead, TimeSheetSettingsUpdate
 
-
 router = APIRouter(prefix="/api/v1", tags=["catalogs"])
 
 DECIMAL_PLACES = Decimal("0.01")
 
 
-def _quantize(value: Decimal | float | int | None) -> str:
+def _quantize(value: Decimal | float | None) -> str:
     if value is None:
-        value = Decimal("0")
+        value = Decimal(0)
     if not isinstance(value, Decimal):
         value = Decimal(value)
     return str(value.quantize(DECIMAL_PLACES))
@@ -38,7 +37,7 @@ def _get_or_create_settings(db: Session) -> TimeSheetSettings:
     ).first()
     if settings_row:
         return settings_row
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ003
     settings_row = TimeSheetSettings(
         OvertimeDailyHours="8.00",
         OvertimeWeeklyHours="40.00",
@@ -82,7 +81,7 @@ def upsert_timesheet_settings(
         settings_row.RoundToMinutes = payload.RoundToMinutes
     if payload.IsActive is not None:
         settings_row.IsActive = payload.IsActive
-    settings_row.UpdatedAt = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    settings_row.UpdatedAt = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ003
 
     db.add(settings_row)
     db.commit()

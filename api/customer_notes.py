@@ -1,16 +1,17 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
-from typing import List
-from datetime import datetime, timezone
+from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
-from models.customers import Customers, CustomerNotes
+from models.customers import CustomerNotes, Customers
 from models.employees import Employees
-from schemas.customers import CustomerNoteCreate, CustomerNoteUpdate, CustomerNote, CustomerEmployee
+from schemas.customers import CustomerEmployee, CustomerNote, CustomerNoteCreate, CustomerNoteUpdate
 
 router = APIRouter()
+
 
 def note_to_schema(db_note: CustomerNotes) -> CustomerNote:
     """Convert CustomerNotes model to CustomerNote schema."""
@@ -25,16 +26,15 @@ def note_to_schema(db_note: CustomerNotes) -> CustomerNote:
             EmployeeId=db_note.creator.EmployeeId,
             DisplayName=db_note.creator.DisplayName,
             Email=db_note.creator.Email,
-            Title=db_note.creator.Title
-        ) if db_note.creator else None
+            Title=db_note.creator.Title,
+        )
+        if db_note.creator
+        else None,
     )
 
-@router.get("/customers/{customer_id}/notes", response_model=List[CustomerNote])
-def get_customer_notes(
-    customer_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
-):
+
+@router.get("/customers/{customer_id}/notes", response_model=list[CustomerNote])
+def get_customer_notes(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     """Get all notes for a customer."""
     customer = db.get(Customers, customer_id)
     if not customer:
@@ -49,12 +49,13 @@ def get_customer_notes(
 
     return [note_to_schema(note) for note in notes]
 
+
 @router.post("/customers/{customer_id}/notes", response_model=CustomerNote)
 def create_customer_note(
     customer_id: int,
     note: CustomerNoteCreate,
     current_employee: Employees = Depends(get_current_employee),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Create a new note for a customer."""
     customer = db.get(Customers, customer_id)
@@ -65,7 +66,7 @@ def create_customer_note(
         CustomerId=customer_id,
         NoteText=note.NoteText,
         CreatedBy=current_employee.EmployeeId,
-        CreatedAt=datetime.now(timezone.utc)
+        CreatedAt=datetime.now(UTC),
     )
 
     db.add(db_note)
@@ -80,22 +81,20 @@ def create_customer_note(
 
     return note_to_schema(db_note)
 
+
 @router.patch("/customers/{customer_id}/notes/{note_id}", response_model=CustomerNote)
 def update_customer_note(
     customer_id: int,
     note_id: int,
     note_update: CustomerNoteUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    _auth=Depends(require_authentication),
 ):
     """Update a customer note."""
     db_note = db.exec(
         select(CustomerNotes)
         .options(selectinload(CustomerNotes.creator))
-        .filter(
-            CustomerNotes.CustomerNoteId == note_id,
-            CustomerNotes.CustomerId == customer_id
-        )
+        .filter(CustomerNotes.CustomerNoteId == note_id, CustomerNotes.CustomerId == customer_id)
     ).first()
 
     if not db_note:
@@ -105,7 +104,7 @@ def update_customer_note(
     for key, value in update_data.items():
         setattr(db_note, key, value)
 
-    db_note.UpdatedAt = datetime.now(timezone.utc)
+    db_note.UpdatedAt = datetime.now(UTC)
     db.commit()
     db.refresh(db_note)
 
@@ -117,19 +116,14 @@ def update_customer_note(
 
     return note_to_schema(db_note)
 
+
 @router.delete("/customers/{customer_id}/notes/{note_id}")
 def delete_customer_note(
-    customer_id: int,
-    note_id: int,
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication)
+    customer_id: int, note_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
 ):
     """Delete a customer note."""
     db_note = db.exec(
-        select(CustomerNotes).filter(
-            CustomerNotes.CustomerNoteId == note_id,
-            CustomerNotes.CustomerId == customer_id
-        )
+        select(CustomerNotes).filter(CustomerNotes.CustomerNoteId == note_id, CustomerNotes.CustomerId == customer_id)
     ).first()
 
     if not db_note:

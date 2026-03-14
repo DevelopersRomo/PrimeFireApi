@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from typing import List
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
-
 from models.products import Products
 from schemas.products import (
     Product,
@@ -35,7 +33,7 @@ def create_product(
 # ----------------------------
 # READ ALL
 # ----------------------------
-@router.get("", response_model=List[ProductRead])
+@router.get("", response_model=list[ProductRead])
 def get_products(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),

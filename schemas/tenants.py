@@ -1,93 +1,104 @@
-from sqlmodel import SQLModel
 from datetime import datetime
-from typing import Optional, List
+
+from sqlmodel import SQLModel
+
 
 class TenantCreate(SQLModel):
     Name: str
     DbConnectionKey: str
-    Description: Optional[str] = None
+    Description: str | None = None
+
 
 class TenantUpdate(SQLModel):
-    Name: Optional[str] = None
-    DbConnectionKey: Optional[str] = None
-    Description: Optional[str] = None
-    IsActive: Optional[bool] = None
+    Name: str | None = None
+    DbConnectionKey: str | None = None
+    Description: str | None = None
+    IsActive: bool | None = None
+
 
 class TenantRead(SQLModel):
     TenantId: int
     Name: str
     DbConnectionKey: str
-    Description: Optional[str]
+    Description: str | None
     IsActive: bool
     CreatedAt: datetime
+
 
 class TenantEmployeeRegister(SQLModel):
     # Information to complete profile and request access
     FirstName: str
     LastName: str
-    Phone: Optional[str] = None
-    CompanyName: str # To suggest tenant name or identify organization
-    Country: Optional[str] = None
+    Phone: str | None = None
+    CompanyName: str  # To suggest tenant name or identify organization
+    Country: str | None = None
+
 
 class TenantEmployeeRead(SQLModel):
     Id: int
     Email: str
-    TenantId: Optional[int] = None
-    TenantName: Optional[str] = None
+    TenantId: int | None = None
+    TenantName: str | None = None
     CreatedAt: datetime
+
 
 class ApprovalRequest(SQLModel):
     TenantEmployeeId: int  # ID del TenantEmployee en BD Principal
     TenantId: int  # ID del Tenant a asignar
 
+
 class TenantApprovalRequest(SQLModel):
     TenantId: int
     Status: str = "Active"
 
+
 class TenantEmployeePendingRead(SQLModel):
     Id: int
     Email: str
-    TenantId: Optional[int] = None
-    TenantName: Optional[str] = None
+    TenantId: int | None = None
+    TenantName: str | None = None
     CreatedAt: datetime
+
 
 class TenantLogoCreate(SQLModel):
     TenantId: int
     Title: str
-    Description: Optional[str] = None
+    Description: str | None = None
     Path: str
     Url: str
-    Email: Optional[str] = None
-    PathBackground: Optional[str] = None
-    PrimaryColor: Optional[str] = None
-    SecondaryColor: Optional[str] = None
-    TertiaryColor: Optional[str] = None
-    FavIcon: Optional[str] = None
+    Email: str | None = None
+    PathBackground: str | None = None
+    PrimaryColor: str | None = None
+    SecondaryColor: str | None = None
+    TertiaryColor: str | None = None
+    FavIcon: str | None = None
+
 
 class TenantLogoUpdate(SQLModel):
-    Title: Optional[str] = None
-    Description: Optional[str] = None
-    Path: Optional[str] = None
-    Url: Optional[str] = None
-    Email: Optional[str] = None
-    PathBackground: Optional[str] = None
-    PrimaryColor: Optional[str] = None
-    SecondaryColor: Optional[str] = None
-    TertiaryColor: Optional[str] = None
-    FavIcon: Optional[str] = None
+    Title: str | None = None
+    Description: str | None = None
+    Path: str | None = None
+    Url: str | None = None
+    Email: str | None = None
+    PathBackground: str | None = None
+    PrimaryColor: str | None = None
+    SecondaryColor: str | None = None
+    TertiaryColor: str | None = None
+    FavIcon: str | None = None
+
 
 class TenantLogoRead(SQLModel):
     LogoId: int
     TenantId: int
     Title: str
-    Description: Optional[str] = None
+    Description: str | None = None
     Path: str
     Url: str
-    Email: Optional[str] = None
-    PathBackground: Optional[str] = None
-    PrimaryColor: Optional[str] = None
-    SecondaryColor: Optional[str] = None
-    TertiaryColor: Optional[str] = None
-    FavIcon: Optional[str] = None
+    Email: str | None = None
+    PathBackground: str | None = None
+    PrimaryColor: str | None = None
+    SecondaryColor: str | None = None
+    TertiaryColor: str | None = None
+    FavIcon: str | None = None
     CreatedAt: datetime
-    UpdatedAt: Optional[datetime] = None
+    UpdatedAt: datetime | None = None

@@ -1,7 +1,6 @@
 """Contact PrimeFire notification service."""
 
 from html import escape
-from typing import Optional
 from urllib.parse import urlparse
 
 from core.config import settings
@@ -12,7 +11,7 @@ from services.notifications.schemas import NotificationResponse
 DEFAULT_LOGO_URL = "https://primefire.do/assets/images/logoRDF.png"
 
 
-def sanitize_logo_url(raw_url: Optional[str]) -> str:
+def sanitize_logo_url(raw_url: str | None) -> str:
     """Normalize logo URL and fallback to default if invalid."""
     if not raw_url:
         return DEFAULT_LOGO_URL
@@ -25,7 +24,7 @@ def sanitize_logo_url(raw_url: Optional[str]) -> str:
     return candidate
 
 
-def _safe_text(value: Optional[str]) -> str:
+def _safe_text(value: str | None) -> str:
     if not value:
         return ""
     return escape(str(value).strip())
@@ -53,14 +52,14 @@ def _build_field_rows(notification_data: ContactPrimeFireRequest) -> str:
 
     rows = []
     for label, value in fields:
-        if value is None or str(value).strip() == "":
+        if value is None or str(value).strip() == "":  # noqa: PLC1901
             continue
         rows.append(
-            """
+            f"""
             <p style=\"margin-bottom:10px\">\
-                <strong>{label}:</strong> {value}\
+                <strong>{_safe_text(label)}:</strong> {_safe_text(str(value))}\
             </p>
-            """.format(label=_safe_text(label), value=_safe_text(str(value)))
+            """
         )
 
     return "".join(rows)
@@ -68,9 +67,7 @@ def _build_field_rows(notification_data: ContactPrimeFireRequest) -> str:
 
 def generate_contact_primefire_html(notification_data: ContactPrimeFireRequest) -> str:
     """Generate contact-primefire HTML with base template aesthetics."""
-    logo_url = sanitize_logo_url(
-        str(notification_data.logo_url) if notification_data.logo_url else None
-    )
+    logo_url = sanitize_logo_url(str(notification_data.logo_url) if notification_data.logo_url else None)
     title = _safe_text(notification_data.title)
     subtitle = _safe_text(notification_data.subtitle) or "A new contact request was received."
     field_rows = _build_field_rows(notification_data)
@@ -146,7 +143,7 @@ def generate_contact_primefire_html(notification_data: ContactPrimeFireRequest) 
 
 
 def generate_confirmation_html(
-    logo_url: Optional[str] = None,
+    logo_url: str | None = None,
 ) -> str:
     """Generate confirmation HTML for the user who submitted the contact form."""
     url = sanitize_logo_url(logo_url)
@@ -248,7 +245,7 @@ async def send_contact_primefire_notification(
     cc_emails = None
     if notification_data.cc_email:
         parsed_cc = parse_email_list(str(notification_data.cc_email))
-        cc_emails = parsed_cc if parsed_cc else None
+        cc_emails = parsed_cc or None
 
     sender_email = getattr(settings, "BOT_EMAIL", "")
     if not sender_email:

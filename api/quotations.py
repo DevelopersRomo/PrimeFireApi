@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from typing import List
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
-
 from models.quotations import Quotations
 from schemas.quotations import (
     QuotationCreate,
@@ -45,15 +43,13 @@ def create_quotation(
 # READ ALL
 # GET /quotations/
 # ----------------------------
-@router.get("/", response_model=List[QuotationRead])
+@router.get("/", response_model=list[QuotationRead])
 def get_quotations(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
     statement = select(Quotations)
-    quotations = db.exec(statement).all()
-
-    return quotations
+    return db.exec(statement).all()
 
 
 # ----------------------------

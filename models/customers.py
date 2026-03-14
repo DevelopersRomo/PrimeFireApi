@@ -1,24 +1,28 @@
-from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional, List, TYPE_CHECKING
-from datetime import datetime, timezone
-from sqlalchemy import Enum as SAEnum
 import enum
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy import Enum as SAEnum
+from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from models.employees import Employees
     from models.addresses import Addresses
+    from models.employees import Employees
 
-class CustomerTypeEnum(str, enum.Enum):
+
+class CustomerTypeEnum(enum.StrEnum):
     RESIDENTIAL = "residential"
     COMMERCIAL = "commercial"
 
-class MarketEnum(str, enum.Enum):
+
+class MarketEnum(enum.StrEnum):
     COMMERCIAL = "commercial"
     INDIVIDUAL = "individual"
     ENVIRONMENTAL = "environmental"
     ENGINEERING = "engineering"
 
-class DtdPotentialEnum(str, enum.Enum):
+
+class DtdPotentialEnum(enum.StrEnum):
     VERY_HIGH = "very_high"
     HIGH = "high"
     MEDIUM = "medium"
@@ -27,81 +31,85 @@ class DtdPotentialEnum(str, enum.Enum):
     ONE_OFF = "one_off"
     PROSPECT = "prospect"
 
+
 class Customers(SQLModel, table=True):
     __tablename__ = "Customers"
-    __table_args__ = {'schema': 'dbo'}
+    __table_args__ = {"schema": "dbo"}
 
-    CustomerId: Optional[int] = Field(default=None, primary_key=True, index=True)
+    CustomerId: int | None = Field(default=None, primary_key=True, index=True)
     CustomerType: CustomerTypeEnum = Field(
         sa_type=SAEnum(CustomerTypeEnum, values_callable=lambda x: [e.value for e in x])
     )
-    CompanyName: Optional[str] = Field(default=None, max_length=200)
-    FirstName: Optional[str] = Field(default=None, max_length=100)
-    LastName: Optional[str] = Field(default=None, max_length=100)
-    AdditionalName: Optional[str] = Field(default=None, max_length=100)
-    Market: Optional[MarketEnum] = Field(
-        default=None,
-        sa_type=SAEnum(MarketEnum, values_callable=lambda x: [e.value for e in x])
+    CompanyName: str | None = Field(default=None, max_length=200)
+    FirstName: str | None = Field(default=None, max_length=100)
+    LastName: str | None = Field(default=None, max_length=100)
+    AdditionalName: str | None = Field(default=None, max_length=100)
+    Market: MarketEnum | None = Field(
+        default=None, sa_type=SAEnum(MarketEnum, values_callable=lambda x: [e.value for e in x])
     )
-    DtdPotential: Optional[DtdPotentialEnum] = Field(
-        default=None,
-        sa_type=SAEnum(DtdPotentialEnum, values_callable=lambda x: [e.value for e in x])
+    DtdPotential: DtdPotentialEnum | None = Field(
+        default=None, sa_type=SAEnum(DtdPotentialEnum, values_callable=lambda x: [e.value for e in x])
     )
-    PrimaryEmail: Optional[str] = Field(default=None, max_length=255)
-    PrimaryPhone: Optional[str] = Field(default=None, max_length=20)
-    PrimaryAddressId: Optional[int] = Field(default=None, foreign_key="dbo.Addresses.AddressId")
-    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    UpdatedAt: Optional[datetime] = None
+    PrimaryEmail: str | None = Field(default=None, max_length=255)
+    PrimaryPhone: str | None = Field(default=None, max_length=20)
+    PrimaryAddressId: int | None = Field(default=None, foreign_key="dbo.Addresses.AddressId")
+    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    UpdatedAt: datetime | None = None
     CreatedBy: int = Field(foreign_key="dbo.Employees.EmployeeId")
 
     primary_address: Optional["Addresses"] = Relationship()
-    creator: Optional["Employees"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "Customers.CreatedBy"}
+    creator: Optional["Employees"] = Relationship(sa_relationship_kwargs={"foreign_keys": "Customers.CreatedBy"})
+    notes: list["CustomerNotes"] = Relationship(
+        back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    notes: List["CustomerNotes"] = Relationship(back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    alternate_contacts: List["CustomerAlternateContacts"] = Relationship(back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    attachments: List["CustomerAttachments"] = Relationship(back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    alternate_contacts: list["CustomerAlternateContacts"] = Relationship(
+        back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    attachments: list["CustomerAttachments"] = Relationship(
+        back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
 
 class CustomerNotes(SQLModel, table=True):
     __tablename__ = "CustomerNotes"
-    __table_args__ = {'schema': 'dbo'}
+    __table_args__ = {"schema": "dbo"}
 
-    CustomerNoteId: Optional[int] = Field(default=None, primary_key=True, index=True)
+    CustomerNoteId: int | None = Field(default=None, primary_key=True, index=True)
     CustomerId: int = Field(foreign_key="dbo.Customers.CustomerId")
     NoteText: str
-    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    UpdatedAt: Optional[datetime] = None
+    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    UpdatedAt: datetime | None = None
     CreatedBy: int = Field(foreign_key="dbo.Employees.EmployeeId")
 
     customer: "Customers" = Relationship(back_populates="notes")
-    creator: Optional["Employees"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "CustomerNotes.CreatedBy"}
-    )
+    creator: Optional["Employees"] = Relationship(sa_relationship_kwargs={"foreign_keys": "CustomerNotes.CreatedBy"})
+
 
 class CustomerAlternateContacts(SQLModel, table=True):
     __tablename__ = "CustomerAlternateContacts"
-    __table_args__ = {'schema': 'dbo'}
+    __table_args__ = {"schema": "dbo"}
 
-    CustomerAlternateContactId: Optional[int] = Field(default=None, primary_key=True, index=True)
+    CustomerAlternateContactId: int | None = Field(default=None, primary_key=True, index=True)
     CustomerId: int = Field(foreign_key="dbo.Customers.CustomerId")
     Name: str = Field(max_length=200)
-    Email: Optional[str] = Field(default=None, max_length=255)
-    Phone: Optional[str] = Field(default=None, max_length=20)
-    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    UpdatedAt: Optional[datetime] = None
+    Email: str | None = Field(default=None, max_length=255)
+    Phone: str | None = Field(default=None, max_length=20)
+    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    UpdatedAt: datetime | None = None
 
     customer: "Customers" = Relationship(back_populates="alternate_contacts")
 
+
 class CustomerAttachments(SQLModel, table=True):
     __tablename__ = "CustomerAttachments"
-    __table_args__ = {'schema': 'dbo'}
+    __table_args__ = {"schema": "dbo"}
 
-    CustomerAttachmentId: Optional[int] = Field(default=None, primary_key=True, index=True)
+    CustomerAttachmentId: int | None = Field(default=None, primary_key=True, index=True)
     CustomerId: int = Field(foreign_key="dbo.Customers.CustomerId")
     FileName: str = Field(max_length=255)
-    FileType: Optional[str] = Field(default=None, max_length=100)
-    FilePath: Optional[str] = Field(default=None, max_length=500)
-    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    FileType: str | None = Field(default=None, max_length=100)
+    FilePath: str | None = Field(default=None, max_length=500)
+    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
     CreatedBy: int = Field(foreign_key="dbo.Employees.EmployeeId")
 
     customer: "Customers" = Relationship(back_populates="attachments")

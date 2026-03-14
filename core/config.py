@@ -1,13 +1,13 @@
 """Configuration."""
 
-from enum import Enum
+from enum import StrEnum
 
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class EnvironmentMode(str, Enum):
+class EnvironmentMode(StrEnum):
     """Environment type."""
 
     LOCAL = "local"
@@ -43,97 +43,77 @@ class Settings(BaseSettings):
     ]
 
     # Azure AD Authentication
-    TENANT_ID: str = Field(
-        default="",
-        validation_alias="TENANT_ID",
-        description="Azure AD Tenant ID"
-    )
+    TENANT_ID: str = Field(default="", validation_alias="TENANT_ID", description="Azure AD Tenant ID")
     BACKEND_CLIENT_ID: str = Field(
-        default="",
-        validation_alias="BACKEND_CLIENT_ID",
-        description="Azure AD Application (client) ID for backend"
+        default="", validation_alias="BACKEND_CLIENT_ID", description="Azure AD Application (client) ID for backend"
     )
     BACKEND_CLIENT_SECRET: str = Field(
-        default="",
-        validation_alias="BACKEND_CLIENT_SECRET",
-        description="Azure AD Client Secret for backend"
+        default="", validation_alias="BACKEND_CLIENT_SECRET", description="Azure AD Client Secret for backend"
     )
     FRONTEND_CLIENT_ID: str = Field(
-        default="",
-        validation_alias="FRONTEND_CLIENT_ID",
-        description="Azure AD Application (client) ID for frontend"
+        default="", validation_alias="FRONTEND_CLIENT_ID", description="Azure AD Application (client) ID for frontend"
     )
 
     SCOPE_DESCRIPTION: str = "user_impersonation"
 
     # Microsoft Graph API credentials (for service-to-service)
     MICROSOFT_TENANT_ID: str = Field(
-        default="",
-        validation_alias="MICROSOFT_TENANT_ID",
-        description="Microsoft tenant ID for Graph API"
+        default="", validation_alias="MICROSOFT_TENANT_ID", description="Microsoft tenant ID for Graph API"
     )
     MICROSOFT_CLIENT_ID: str = Field(
-        default="",
-        validation_alias="MICROSOFT_CLIENT_ID",
-        description="Microsoft client ID for Graph API"
+        default="", validation_alias="MICROSOFT_CLIENT_ID", description="Microsoft client ID for Graph API"
     )
     MICROSOFT_CLIENT_SECRET: str = Field(
-        default="",
-        validation_alias="MICROSOFT_CLIENT_SECRET",
-        description="Microsoft client secret for Graph API"
+        default="", validation_alias="MICROSOFT_CLIENT_SECRET", description="Microsoft client secret for Graph API"
     )
-    
+
     # Employee sync settings
     SYNC_EMPLOYEES_PRIMEFIRE: bool = Field(
         default=True,
         validation_alias="SYNC_EMPLOYEES_PRIMEFIRE",
-        description="Enable initial employee sync from Microsoft 365 in background"
+        description="Enable initial employee sync from Microsoft 365 in background",
     )
     ENABLE_AUTO_SYNC: bool = Field(
         default=True,
         validation_alias="ENABLE_AUTO_SYNC",
-        description="Enable automatic employee sync on startup (Legacy)"
+        description="Enable automatic employee sync on startup (Legacy)",
     )
     SYNC_INTERVAL_HOURS: int = Field(
         default=24,
         validation_alias="SYNC_INTERVAL_HOURS",
-        description="Hours between automatic syncs (if periodic sync enabled)"
+        description="Hours between automatic syncs (if periodic sync enabled)",
     )
 
     # Notification settings
     BOT_EMAIL: str = Field(
-        default="",
-        validation_alias="BOT_EMAIL",
-        description="Email address for bot to send notifications"
+        default="", validation_alias="BOT_EMAIL", description="Email address for bot to send notifications"
     )
     SUPPORT_EMAIL: str = Field(
         default="info@primefire.us",
         validation_alias="SUPPORT_EMAIL",
-        description="Support email address for notifications"
+        description="Support email address for notifications",
     )
     APP_URL: str = Field(
         default="https://primefireapp-cgh0c9ace5haapcc.mexicocentral-01.azurewebsites.net",
         validation_alias="APP_URL",
-        description="Application URL for notification links"
+        description="Application URL for notification links",
     )
     CONTACT_PRIMEFIRE_API_TOKEN: str = Field(
         default="7dd8430e-2c2b-4239-9ddf-b299dea05bc4",
         validation_alias="CONTACT_PRIMEFIRE_API_TOKEN",
-        description="Static API token for /notifications/send/contact-primefire endpoint"
+        description="Static API token for /notifications/send/contact-primefire endpoint",
     )
-    
+
     # File upload settings
     UPLOAD_DIR: str = Field(
         default="uploads",
         validation_alias="UPLOAD_DIR",
-        description="Directory for uploaded files (use /home/uploads in Azure Linux)"
+        description="Directory for uploaded files (use /home/uploads in Azure Linux)",
     )
 
     # IP Geolocation
     IPGEOLOCATION_API_KEY: str = Field(
-        default="",
-        validation_alias="IPGEOLOCATION_API_KEY",
-        description="API key for ipgeolocation.io"
+        default="", validation_alias="IPGEOLOCATION_API_KEY", description="API key for ipgeolocation.io"
     )
 
     @property
@@ -159,4 +139,3 @@ AZURE_AUTH_SCHEME = SingleTenantAzureAuthorizationCodeBearer(
     leeway=60,  # Add 60 seconds leeway for token validation
     allow_guest_users=True,  # Allow guest users temporarily for debugging
 )
-

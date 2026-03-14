@@ -1,0 +1,69 @@
+# Performance Standards
+
+## JSON Operations: Use orjson
+
+### Key Differences
+- `orjson.dumps()` returns `bytes` instead of `str` (use `.decode()` when string is needed)
+- `orjson` doesn't have direct file I/O methods like `json.load()` and `json.dump()`
+
+### Required Patterns
+
+#### Imports
+```python
+import orjson  # Not json
+```
+
+#### Basic Serialization
+```python
+# From string to object
+data = orjson.loads(json_string)
+
+# From object to string
+result = orjson.dumps(data).decode()  # Add .decode() when string is needed
+```
+
+#### File I/O
+```python
+# Reading
+with open("file.json", "rb") as f:
+    data = orjson.loads(f.read())
+
+# Writing
+with open("file.json", "wb") as f:
+    f.write(orjson.dumps(data))
+```
+
+#### Pretty Printing
+```python
+orjson.dumps(data, option=orjson.OPT_INDENT_2).decode()
+```
+
+## Other Performance Best Practices
+
+### Use Polars Instead of Pandas
+```python
+import polars as pl
+df = pl.read_csv("data.csv")
+```
+
+### Prefer Async I/O
+```python
+import aiofiles
+async with aiofiles.open("file.txt", "r") as f:
+    content = await f.read()
+```
+
+### Implement Caching
+```python
+# Cache expensive operations
+cached = await cache_get(key)
+if not cached:
+    result = await expensive_operation()
+    await cache_set(key, result, ttl=3600)
+```
+
+### Optimize Database Queries
+- Use specific columns instead of SELECT *
+- Add appropriate indexes
+- Use batch operations for multiple inserts/updates
+

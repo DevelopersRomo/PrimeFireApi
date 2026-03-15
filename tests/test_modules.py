@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from models.modules import Modules
 from models.employees import Roles
+from models.modules import Modules
 
 
 @pytest.fixture
@@ -237,7 +237,9 @@ class TestPermissions:
         assert "permissions" in data
         assert isinstance(data["permissions"], list)
 
-    def test_get_module_permissions(self, client: TestClient, auth_headers: dict, db_session: Session, test_module) -> None:
+    def test_get_module_permissions(
+        self, client: TestClient, auth_headers: dict, db_session: Session, test_module
+    ) -> None:
         """Test getting permissions for a specific module."""
         module_id = 1  # Dashboard module
         response = client.get(f"/permissions/module/{module_id}", headers=auth_headers)
@@ -245,7 +247,15 @@ class TestPermissions:
         data = response.json()
         assert isinstance(data, list)
 
-    def test_get_specific_permission(self, client: TestClient, auth_headers: dict, db_session: Session, test_role, test_module, sample_permission_data) -> None:
+    def test_get_specific_permission(
+        self,
+        client: TestClient,
+        auth_headers: dict,
+        db_session: Session,
+        test_role,
+        test_module,
+        sample_permission_data,
+    ) -> None:
         """Test getting a specific permission."""
         # First create the permission
         client.post("/permissions", json=sample_permission_data, headers=auth_headers)
@@ -258,7 +268,15 @@ class TestPermissions:
         assert data["RoleId"] == role_id
         assert data["ModuleId"] == module_id
 
-    def test_update_permission(self, client: TestClient, auth_headers: dict, db_session: Session, test_role, test_module, sample_permission_data) -> None:
+    def test_update_permission(
+        self,
+        client: TestClient,
+        auth_headers: dict,
+        db_session: Session,
+        test_role,
+        test_module,
+        sample_permission_data,
+    ) -> None:
         """Test updating a permission."""
         # First create the permission
         client.post("/permissions", json=sample_permission_data, headers=auth_headers)
@@ -272,7 +290,15 @@ class TestPermissions:
         data = response.json()
         assert not data["CanDelete"]
 
-    def test_delete_permission(self, client: TestClient, auth_headers: dict, sample_permission_data: dict, db_session: Session, test_role, test_module) -> None:
+    def test_delete_permission(
+        self,
+        client: TestClient,
+        auth_headers: dict,
+        sample_permission_data: dict,
+        db_session: Session,
+        test_role,
+        test_module,
+    ) -> None:
         """Test deleting a permission."""
         # Create permission
         create_response = client.post("/permissions", json=sample_permission_data, headers=auth_headers)
@@ -287,7 +313,9 @@ class TestPermissions:
         get_response = client.get(f"/permissions/{role_id}/{module_id}", headers=auth_headers)
         assert get_response.status_code == 404
 
-    def test_bulk_update_permissions(self, client: TestClient, auth_headers: dict, db_session: Session, test_role_user, test_module) -> None:
+    def test_bulk_update_permissions(
+        self, client: TestClient, auth_headers: dict, db_session: Session, test_role_user, test_module
+    ) -> None:
         """Test bulk updating permissions for a role."""
         # Create second module for bulk test
         module2 = Modules(
@@ -337,7 +365,15 @@ class TestPermissions:
         assert data["RoleId"] == 3
         assert len(data["permissions"]) == 2
 
-    def test_check_user_permission(self, client: TestClient, auth_headers: dict, db_session: Session, test_role, test_module, sample_permission_data) -> None:
+    def test_check_user_permission(
+        self,
+        client: TestClient,
+        auth_headers: dict,
+        db_session: Session,
+        test_role,
+        test_module,
+        sample_permission_data,
+    ) -> None:
         """Test checking user permission."""
         # First create the permission
         client.post("/permissions", json=sample_permission_data, headers=auth_headers)

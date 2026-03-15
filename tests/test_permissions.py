@@ -1,6 +1,5 @@
 """Tests for Permissions API endpoints."""
 
-
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 

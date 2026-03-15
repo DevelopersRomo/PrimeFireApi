@@ -228,7 +228,7 @@ async def send_notification(
                     detail="form notification data is required",
                 )
 
-            return await send_form_notification(notification_data=request.form)
+            return await send_form_notification(notification_data=request.form)  # type: ignore[return-value]
 
         raise HTTPException(
             status_code=400,

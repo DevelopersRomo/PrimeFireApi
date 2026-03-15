@@ -42,15 +42,14 @@ class BackupResponse(BaseModel):
 
 def run_backup(db_prefix: str) -> dict:
     """Ejecuta el script de backup para una base de datos específica."""
-    script_path = os.path.join(
-        pathlib.Path(pathlib.Path(__file__).parent).parent, "scripts", "generate_complete_backup.py"
-    )
+    script_path = pathlib.Path(__file__).parent.parent / "scripts" / "generate_complete_backup.py"
 
     try:
-        result = subprocess.run(  # noqa: PLW1510
-            [sys.executable, script_path, "--db", db_prefix, "--backup-dir", BACKUP_DIR],
+        result = subprocess.run(
+            [sys.executable, str(script_path), "--db", db_prefix, "--backup-dir", BACKUP_DIR],
             capture_output=True,
             text=True,
+            check=False,
             cwd=pathlib.Path(pathlib.Path(__file__).parent).parent,
         )
 

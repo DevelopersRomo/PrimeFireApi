@@ -224,7 +224,16 @@ def main():
     # Output as JSON with both the new description and updated history
     {
         "description": new_description,
-        "history": [*history, {"description": current_description, "passed": eval_results["summary"]["passed"], "failed": eval_results["summary"]["failed"], "total": eval_results["summary"]["total"], "results": eval_results["results"]}],
+        "history": [
+            *history,
+            {
+                "description": current_description,
+                "passed": eval_results["summary"]["passed"],
+                "failed": eval_results["summary"]["failed"],
+                "total": eval_results["summary"]["total"],
+                "results": eval_results["results"],
+            },
+        ],
     }
 
 

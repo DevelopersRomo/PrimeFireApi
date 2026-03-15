@@ -1,7 +1,3 @@
-import pytest
-from sqlalchemy import func
-from sqlmodel import select
-
 from models.countries import Countries
 
 

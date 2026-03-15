@@ -1,9 +1,13 @@
 import enum
 from datetime import UTC, datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
+from sqlalchemy import Column
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from models.employees import Employees
 
 
 class TicketStatus(enum.StrEnum):
@@ -49,14 +53,27 @@ class Tickets(SQLModel, table=True):
     Description: str | None = Field(default=None, max_length=2000)
 
     # Status enum
-    Status: TicketStatus = Field(default=TicketStatus.TODO, sa_column=Field(sa_type=SAEnum(TicketStatus)))
+    Status: TicketStatus = Field(
+        default=TicketStatus.TODO,
+        sa_column=Column(
+            SAEnum(TicketStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=False
+        ),
+    )
 
     # Priority enum
-    Priority: TicketPriority = Field(default=TicketPriority.NORMAL, sa_column=Field(sa_type=SAEnum(TicketPriority)))
+    Priority: TicketPriority = Field(
+        default=TicketPriority.NORMAL,
+        sa_column=Column(
+            SAEnum(TicketPriority, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=False
+        ),
+    )
 
     # SLA enum (optional)
     SLA: TicketSLA | None = Field(
-        default=None, sa_type=SAEnum(TicketSLA, values_callable=lambda x: [e.value for e in x])
+        default=None,
+        sa_column=Column(
+            SAEnum(TicketSLA, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=True
+        ),
     )
 
     # Foreign keys
@@ -68,9 +85,9 @@ class Tickets(SQLModel, table=True):
     UpdatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Relationships
-    creator: Optional["Employees"] = Relationship(  # noqa: F821
+    creator: Optional["Employees"] = Relationship(
         back_populates="created_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.CreatedBy"}
     )
-    assignee: Optional["Employees"] = Relationship(  # noqa: F821
+    assignee: Optional["Employees"] = Relationship(
         back_populates="assigned_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.AssignedTo"}
     )

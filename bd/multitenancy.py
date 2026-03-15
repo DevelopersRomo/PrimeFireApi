@@ -2,13 +2,14 @@ import os
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
 from bd.connection import engine as main_engine
 
 
 class ConnectionManager:
-    _engines = {}
+    _engines: dict[str, Engine] = {}
     _main_engine = main_engine
 
     @classmethod
@@ -38,8 +39,8 @@ class ConnectionManager:
 
             if server and database:
                 # Construct URL similar to main connection (simplified for brevity)
-                username = os.getenv(f"DB_USERNAME_{tenant_key.upper()}", os.getenv("DB_USERNAME"))
-                password = os.getenv(f"DB_PASSWORD_{tenant_key.upper()}", os.getenv("DB_PASSWORD"))
+                username: str = os.getenv(f"DB_USERNAME_{tenant_key.upper()}", os.getenv("DB_USERNAME", "")) or ""
+                password: str = os.getenv(f"DB_PASSWORD_{tenant_key.upper()}", os.getenv("DB_PASSWORD", "")) or ""
                 driver = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
 
                 quoted_driver = quote_plus(driver)

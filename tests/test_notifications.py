@@ -122,7 +122,7 @@ def test_send_contact_primefire(client):
         "email": "johndoe@example.com",
         "phone": "1234567890",
         "subject": "Inquiry",
-        "message": "Hello PrimeFire"
+        "message": "Hello PrimeFire",
     }
 
     # Patch settings token
@@ -149,7 +149,7 @@ def test_send_contact_primefire_unauthorized(client):
         "email": "johndoe@example.com",
         "phone": "1234567890",
         "subject": "Inquiry",
-        "message": "Hello PrimeFire"
+        "message": "Hello PrimeFire",
     }
 
     # Without valid token

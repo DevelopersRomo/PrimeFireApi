@@ -1,7 +1,7 @@
 import os
 from urllib.parse import quote_plus
 
-import pyodbc
+import pyodbc  # type: ignore[import-not-found]
 from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
@@ -140,7 +140,7 @@ def test_connection() -> None:
     """Test database connection."""
     try:
         with SessionLocal() as session:
-            session.exec(text("SELECT GETDATE()"))
+            session.exec(text("SELECT GETDATE()"))  # type: ignore[call-overload]
     except Exception:
         pass
 

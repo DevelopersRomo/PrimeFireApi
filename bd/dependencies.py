@@ -1,7 +1,9 @@
-import jwt
+from collections.abc import Generator
+
+import jwt  # type: ignore[import-untyped]
 from fastapi import HTTPException, Request
-from jose import JWTError
-from jose import jwt as jose_jwt
+from jose import JWTError  # type: ignore[import-untyped]
+from jose import jwt as jose_jwt  # type: ignore[import-untyped]
 from sqlmodel import Session
 
 from bd.connection import SessionLocal, SessionSync
@@ -14,7 +16,7 @@ ALGORITHM = "HS256"
 
 
 # Dependency function to get DB session
-def get_db(request: Request = None) -> Session:
+def get_db(request: Request = None) -> Generator[Session, None, None]:
     """
     Get DB session.
     1. Checks X-Tenant-ID header.
@@ -99,7 +101,7 @@ def get_db(request: Request = None) -> Session:
 
 
 # Dependency function to always get MAIN DB session (ignores tenant headers)
-def get_main_db() -> Session:
+def get_main_db() -> Generator[Session, None, None]:
     """
     Get MAIN database session. Always connects to main DB, ignoring X-Tenant-ID header.
     Use this for operations that must always run on the main database (e.g., TenantLogos).

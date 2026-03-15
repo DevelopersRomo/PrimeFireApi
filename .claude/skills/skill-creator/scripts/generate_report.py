@@ -23,9 +23,15 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
     train_queries: list[dict] = []
     test_queries: list[dict] = []
     if history:
-        train_queries.extend({"query": r["query"], "should_trigger": r.get("should_trigger", True)} for r in history[0].get("train_results", history[0].get("results", [])))
+        train_queries.extend(
+            {"query": r["query"], "should_trigger": r.get("should_trigger", True)}
+            for r in history[0].get("train_results", history[0].get("results", []))
+        )
         if history[0].get("test_results"):
-            test_queries.extend({"query": r["query"], "should_trigger": r.get("should_trigger", True)} for r in history[0].get("test_results", []))
+            test_queries.extend(
+                {"query": r["query"], "should_trigger": r.get("should_trigger", True)}
+                for r in history[0].get("test_results", [])
+            )
 
     refresh_tag = '    <meta http-equiv="refresh" content="5">\n' if auto_refresh else ""
 

@@ -229,23 +229,26 @@ def generate_benchmark(benchmark_dir: Path, skill_name: str = "", skill_path: st
     # Build runs array for benchmark.json
     runs = []
     for config in results:
-        runs.extend({
-                    "eval_id": result["eval_id"],
-                    "configuration": config,
-                    "run_number": result["run_number"],
-                    "result": {
-                        "pass_rate": result["pass_rate"],
-                        "passed": result["passed"],
-                        "failed": result["failed"],
-                        "total": result["total"],
-                        "time_seconds": result["time_seconds"],
-                        "tokens": result.get("tokens", 0),
-                        "tool_calls": result.get("tool_calls", 0),
-                        "errors": result.get("errors", 0),
-                    },
-                    "expectations": result["expectations"],
-                    "notes": result["notes"],
-                } for result in results[config])
+        runs.extend(
+            {
+                "eval_id": result["eval_id"],
+                "configuration": config,
+                "run_number": result["run_number"],
+                "result": {
+                    "pass_rate": result["pass_rate"],
+                    "passed": result["passed"],
+                    "failed": result["failed"],
+                    "total": result["total"],
+                    "time_seconds": result["time_seconds"],
+                    "tokens": result.get("tokens", 0),
+                    "tool_calls": result.get("tool_calls", 0),
+                    "errors": result.get("errors", 0),
+                },
+                "expectations": result["expectations"],
+                "notes": result["notes"],
+            }
+            for result in results[config]
+        )
 
     # Determine eval IDs from results
     eval_ids = sorted({r["eval_id"] for config in results.values() for r in config})

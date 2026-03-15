@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import or_
 from sqlmodel import Session, select
@@ -70,7 +71,7 @@ def get_or_create_country_id(db: Session, country_input: str) -> tuple[int | Non
         return None, False
 
     # Try to find existing country by code
-    existing_country = db.exec(select(Countries).filter(Countries.Name == country_code)).first()
+    existing_country = db.exec(select(Countries).filter(Countries.Name == country_code)).first()  # type: ignore[arg-type]
 
     if existing_country:
         return existing_country.CountryId, False
@@ -140,10 +141,10 @@ def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees
         existing = db.exec(
             select(Employees).where(
                 or_(
-                    Employees.Email == email,
-                    Employees.AzureUpn == azure_upn,
-                    Employees.Email == azure_upn,
-                    Employees.AzureUpn == email,
+                    Employees.Email == email,  # type: ignore[arg-type]
+                    Employees.AzureUpn == azure_upn,  # type: ignore[arg-type]
+                    Employees.Email == azure_upn,  # type: ignore[arg-type]
+                    Employees.AzureUpn == email,  # type: ignore[arg-type]
                 )
             )
         ).first()
@@ -172,13 +173,13 @@ async def resolve_manager_employee_id(
 
     if manager_email:
         sql_manager = db.exec(
-            select(Employees).where(or_(Employees.Email == manager_email, Employees.AzureUpn == manager_email))
+            select(Employees).where(or_(Employees.Email == manager_email, Employees.AzureUpn == manager_email))  # type: ignore[arg-type]
         ).first()
         if sql_manager:
             return sql_manager.EmployeeId
 
-        ms_manager = await graph_client.get_user(manager_email)
-        sql_manager = upsert_employee_from_microsoft_user(db, ms_manager)
+        ms_manager: dict[str, Any] | None = await graph_client.get_user(manager_email)
+        sql_manager = upsert_employee_from_microsoft_user(db, ms_manager)  # type: ignore[arg-type]
         return sql_manager.EmployeeId
 
     if manager_name:
@@ -220,7 +221,7 @@ class EmployeeSyncScheduler:
 
             ms_users = await graph_client.get_all_users()
 
-            stats = {
+            stats: dict[str, int] = {
                 "total_ms_users": len(ms_users),  # Total users from Microsoft Graph
                 "primefire_users": 0,  # Users with PrimeFire domains
                 "processed": 0,  # Successfully processed PrimeFire users
@@ -228,8 +229,8 @@ class EmployeeSyncScheduler:
                 "updated": 0,
                 "errors": 0,
                 "countries_created": 0,
-                "timestamp": datetime.now(),  # noqa: DTZ005
             }
+            sync_timestamp: datetime = datetime.now()  # noqa: DTZ005
 
             with Session(engine) as db:
                 for ms_user in ms_users:
@@ -289,7 +290,7 @@ class EmployeeSyncScheduler:
 
             self.last_sync = datetime.now()  # noqa: DTZ005
 
-            return stats
+            return {**stats, "timestamp": sync_timestamp}
 
         except Exception as e:
             logger.exception(f"❌ Failed to sync from Microsoft 365: {e}")

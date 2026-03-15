@@ -293,7 +293,7 @@ def _has_admin_actions(user_permissions: dict) -> bool:
     return False
 
 
-def _resolve_range(view: str, start_date: date | None, end_date: date | None) -> tuple[date, date]:
+def _resolve_range(view: str, start_date: date | None, end_date: date | None) -> tuple[date | None, date | None]:
     today = date.today()  # noqa: DTZ011
     if not start_date and not end_date:
         if view == "day":

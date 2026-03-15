@@ -19,7 +19,7 @@ def test_create_product(client, auth_headers, db_session: Session):
     }
 
     response = client.post("/products", json=payload, headers=auth_headers)
-    assert response.status_code in (200, 201)
+    assert response.status_code in {200, 201}
 
     data = response.json()
     assert data["Name"] == "Test Product"
@@ -118,7 +118,7 @@ def test_delete_product(client, auth_headers, db_session: Session):
     product_id = product.Id
 
     response = client.delete(f"/products/{product_id}", headers=auth_headers)
-    assert response.status_code in (200, 204)
+    assert response.status_code in {200, 204}
 
     # Verify it's deleted
     response = client.get(f"/products/{product_id}", headers=auth_headers)

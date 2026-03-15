@@ -1,10 +1,12 @@
 """Dependencies."""
 
-import jwt
+from typing import Any
+
+import jwt  # type: ignore[import-untyped]
 from fastapi import Depends, HTTPException, Request, status
 from fastapi import Request as FastAPIRequest
-from jose import JWTError
-from jose import jwt as jose_jwt
+from jose import JWTError  # type: ignore[import-untyped]
+from jose import jwt as jose_jwt  # type: ignore[import-untyped]
 from sqlmodel import Session, select
 
 from bd.dependencies import get_db
@@ -20,7 +22,7 @@ ALGORITHM = "HS256"
 
 async def extract_token_from_azure_scheme(request: Request) -> str:
     """Extract token from Authorization header."""
-    authorization: str = request.headers.get("Authorization")
+    authorization: str | None = request.headers.get("Authorization")
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,7 +50,7 @@ async def extract_token_from_azure_scheme(request: Request) -> str:
 
 async def simple_token_validator(
     request: Request,
-) -> dict:
+) -> dict[str, Any] | None:
     """Validate token (Azure AD OR Internal JWT)."""
     authorization = request.headers.get("Authorization")
     if not authorization:
@@ -87,7 +89,7 @@ async def simple_token_validator(
 
 
 async def get_current_employee(
-    token_data: dict = Depends(simple_token_validator),
+    token_data: dict[str, Any] | None = Depends(simple_token_validator),
     request: FastAPIRequest = None,
     db: Session = Depends(get_db),
 ) -> Employees:
@@ -214,7 +216,7 @@ async def get_current_employee_with_permissions(
         # Get employee's roles
         employee_roles_query = (
             select(EmployeeRoles, Roles)
-            .join(Roles, EmployeeRoles.RoleId == Roles.RoleId)
+            .join(Roles, EmployeeRoles.RoleId == Roles.RoleId)  # type: ignore[arg-type]
             .where(EmployeeRoles.EmployeeId == current_employee.EmployeeId)
         )
 
@@ -228,13 +230,13 @@ async def get_current_employee_with_permissions(
             role_ids.append(role.RoleId)
 
         # Get permissions for all roles (combine with OR logic)
-        permissions_by_module = {}
+        permissions_by_module: dict[str, dict[str, Any]] = {}
 
         if role_ids:
             permissions_query = (
                 select(RoleModules, Modules)
-                .join(Modules, RoleModules.ModuleId == Modules.ModuleId)
-                .where(RoleModules.RoleId.in_(role_ids))
+                .join(Modules, RoleModules.ModuleId == Modules.ModuleId)  # type: ignore[arg-type]
+                .where(RoleModules.RoleId.in_(role_ids))  # type: ignore[attr-defined]
             )
 
             permissions_data = session.exec(permissions_query).all()

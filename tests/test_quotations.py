@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session
 
-from models.customers import Customers, CustomerTypeEnum
+from models.customers import CustomerTypeEnum, Customers
 from models.quotations import Quotations
 
 
@@ -39,7 +39,7 @@ def test_create_quotation(client, auth_headers, db_session: Session, test_custom
     }
 
     response = client.post("/quotations/", json=payload, headers=auth_headers)
-    assert response.status_code in (200, 201)
+    assert response.status_code in {200, 201}
 
     data = response.json()
     assert data["customerid"] == test_customer_for_quotation.CustomerId

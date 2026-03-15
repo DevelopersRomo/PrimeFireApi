@@ -23,10 +23,10 @@ IS_PRODUCTION = ENV == "prod"
 if IS_PRODUCTION:
     # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home
     uploads_base = os.getenv("UPLOADS_DIR", "/home/home")
-    BACKUP_DIR = os.path.join(uploads_base, "sql_backups")
+    BACKUP_DIR = pathlib.Path(uploads_base) / "sql_backups"
 else:
     # En local: bd/sql/backups
-    BACKUP_DIR = os.path.join(pathlib.Path(__file__).parent, "bd", "sql", "backups")
+    BACKUP_DIR = pathlib.Path(__file__).parent / "bd" / "sql" / "backups"
 
 pathlib.Path(BACKUP_DIR).mkdir(exist_ok=True, parents=True)
 
@@ -34,22 +34,23 @@ pathlib.Path(BACKUP_DIR).mkdir(exist_ok=True, parents=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(os.path.join(BACKUP_DIR, "scheduler.log")), logging.StreamHandler()],
+    handlers=[logging.FileHandler(BACKUP_DIR / "scheduler.log"), logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 
 
 def run_backup(db_prefix="DB") -> None:
     """Ejecuta el script de backup."""
-    script_path = os.path.join(pathlib.Path(__file__).parent, "scripts", "generate_complete_backup.py")
+    script_path = pathlib.Path(__file__).parent / "scripts" / "generate_complete_backup.py"
 
     logger.info(f"[START] Iniciando backup para {db_prefix}")
 
     try:
         result = subprocess.run(
-            [sys.executable, script_path, "--db", db_prefix, "--backup-dir", BACKUP_DIR],
+            [sys.executable, script_path, "--db", db_prefix, "--backup-dir", str(BACKUP_DIR)],
             capture_output=True,
             text=True,
+            check=False,
             cwd=pathlib.Path(pathlib.Path(__file__).parent).parent,
         )
 
@@ -87,7 +88,7 @@ def main() -> None:
     # Programar ejecución a las 00:00 UTC todos los días
     schedule.every().day.at("00:00").do(run_all_backups)
 
-    logger.info("Próximo backup: " + str(schedule.next_run()))
+    logger.info(f"Próximo backup: {schedule.next_run()}")
 
     # Loop infinito del scheduler
     while True:

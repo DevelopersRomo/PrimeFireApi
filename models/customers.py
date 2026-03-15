@@ -2,6 +2,7 @@ import enum
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 
+from sqlalchemy import Column
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -38,17 +39,25 @@ class Customers(SQLModel, table=True):
 
     CustomerId: int | None = Field(default=None, primary_key=True, index=True)
     CustomerType: CustomerTypeEnum = Field(
-        sa_type=SAEnum(CustomerTypeEnum, values_callable=lambda x: [e.value for e in x])
+        sa_column=Column(
+            SAEnum(CustomerTypeEnum, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=False
+        )
     )
     CompanyName: str | None = Field(default=None, max_length=200)
     FirstName: str | None = Field(default=None, max_length=100)
     LastName: str | None = Field(default=None, max_length=100)
     AdditionalName: str | None = Field(default=None, max_length=100)
     Market: MarketEnum | None = Field(
-        default=None, sa_type=SAEnum(MarketEnum, values_callable=lambda x: [e.value for e in x])
+        default=None,
+        sa_column=Column(
+            SAEnum(MarketEnum, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=True
+        ),
     )
     DtdPotential: DtdPotentialEnum | None = Field(
-        default=None, sa_type=SAEnum(DtdPotentialEnum, values_callable=lambda x: [e.value for e in x])
+        default=None,
+        sa_column=Column(
+            SAEnum(DtdPotentialEnum, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=True
+        ),
     )
     PrimaryEmail: str | None = Field(default=None, max_length=255)
     PrimaryPhone: str | None = Field(default=None, max_length=20)

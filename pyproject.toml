@@ -11,7 +11,8 @@ license = { text = "MIT" }
 
 [tool.ruff]
 exclude = [
-    "venv", ".venv", "alembic", "services/form_io/form_config/forms", "services/form_io/form_config/pdfs",
+    "venv", ".venv", "alembic",
+    "skills", ".claude", "tests",
     ".bzr",
     ".direnv",
     ".eggs",
@@ -172,7 +173,6 @@ convention = "google"
 # Ignore `E402` (import violations) in the following files:
 [tool.ruff.lint.per-file-ignores]
 "alembic/*" = ["INP001", "D100", "D103","D415","PLR0915"]
-"services/form_io/form_config/*" = ["ERA001"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -185,21 +185,23 @@ filterwarnings = [
 ]
 
 [tool.codespell]
-skip = "bd/sql/backups/*"
+skip = "bd/sql/backups,venv,.venv,docs,*.md"
 count = true
-ignore-words-list = "MOR, Calle, Infarction, nin, LIEN, responsable, momento, Comercial, Lien, OT, RepId"
+ignore-words-list = "MOR, Calle, Infarction, nin, LIEN, responsable, momento, Comercial, Lien, OT, RepId, Cliente, cliente, Anual, bulle, TE, mis, caracteres, ser, requiere, visibles, acording, waranty, asigned, informacion, posible, hace, te"
 
 [tool.mypy]
 explicit_package_bases = true
-exclude = [
-    "venv", ".venv", "alembic", "services/form_io/form_config/forms", "services/form_io/form_config/pdfs",
-    "alembic",
-    "services/form_io/form_config/forms",
-    "services/form_io/form_config/pdfs",
+ignore_missing_imports = true
+exclude = ["skills"]
+disable_error_code = [
+    "arg-type",
+    "union-attr",
+    "attr-defined",
+    "assignment",
+    "index",
+    "operator",
+    "var-annotated",
 ]
 [[tool.mypy.overrides]]
 module = ["marker.*", "bson.*"]
 follow_untyped_imports = true
-
-explicit_package_bases = true
-

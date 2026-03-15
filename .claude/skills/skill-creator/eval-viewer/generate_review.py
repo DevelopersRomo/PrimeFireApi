@@ -146,7 +146,9 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
     outputs_dir = run_dir / "outputs"
     output_files: list[dict] = []
     if outputs_dir.is_dir():
-        output_files.extend(embed_file(f) for f in sorted(outputs_dir.iterdir()) if f.is_file() and f.name not in METADATA_FILES)
+        output_files.extend(
+            embed_file(f) for f in sorted(outputs_dir.iterdir()) if f.is_file() and f.name not in METADATA_FILES
+        )
 
     # Load grading if present
     grading = None

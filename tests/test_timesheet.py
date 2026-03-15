@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, get_current_employee_with_permissions
 from main import app
-from models.customers import Customers, CustomerTypeEnum
+from models.customers import CustomerTypeEnum, Customers
 from models.timesheet import (
     TimeSheetPunch,
     TimeSheetPunchStatusEnum,
@@ -112,8 +112,15 @@ def base_settings(db_session: Session) -> TimeSheetSettings:
     return settings
 
 
-def create_punch(db_session: Session, employee_id: int, customer_id: int, status: str,
-                 clock_in: str = None, clock_out: str = None, worked_minutes: int = 0) -> TimeSheetPunch:
+def create_punch(
+    db_session: Session,
+    employee_id: int,
+    customer_id: int,
+    status: str,
+    clock_in: str | None = None,
+    clock_out: str | None = None,
+    worked_minutes: int = 0,
+) -> TimeSheetPunch:
     """Helper to create a TimeSheetPunch with required fields."""
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     punch = TimeSheetPunch(
@@ -176,8 +183,15 @@ def test_clock_out(client, db_session: Session, test_customer, base_settings, mo
 
 
 def test_list_timesheet(client, db_session: Session, test_customer, base_settings):
-    create_punch(db_session, 1, test_customer.CustomerId, TimeSheetPunchStatusEnum.CLOSED.value,
-                 "2023-01-01 08:00:00", "2023-01-01 16:00:00", 480)
+    create_punch(
+        db_session,
+        1,
+        test_customer.CustomerId,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2023-01-01 08:00:00",
+        "2023-01-01 16:00:00",
+        480,
+    )
 
     response = client.get("/api/v1/timesheet?view=month&start_date=2023-01-01&end_date=2023-01-31")
     assert response.status_code == status.HTTP_200_OK
@@ -217,8 +231,15 @@ def test_get_location(client, db_session: Session, mock_httpx_get):
 
 
 def test_admin_list_punches(client, db_session: Session, test_customer):
-    create_punch(db_session, 2, test_customer.CustomerId, TimeSheetPunchStatusEnum.CLOSED.value,
-                 "2023-01-01 08:00:00", "2023-01-01 16:00:00", 480)
+    create_punch(
+        db_session,
+        2,
+        test_customer.CustomerId,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2023-01-01 08:00:00",
+        "2023-01-01 16:00:00",
+        480,
+    )
 
     response = client.get("/api/v1/timesheet/admin?employee_id=2")
     assert response.status_code == status.HTTP_200_OK
@@ -234,8 +255,15 @@ def test_admin_export_punches(client, db_session: Session):
 
 
 def test_update_punch(client, db_session: Session, test_customer):
-    punch = create_punch(db_session, 1, test_customer.CustomerId, TimeSheetPunchStatusEnum.CLOSED.value,
-                         "2023-01-01 08:00:00", "2023-01-01 16:00:00", 480)
+    punch = create_punch(
+        db_session,
+        1,
+        test_customer.CustomerId,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2023-01-01 08:00:00",
+        "2023-01-01 16:00:00",
+        480,
+    )
 
     payload = {"Note": "Updated Note"}
 
@@ -245,8 +273,14 @@ def test_update_punch(client, db_session: Session, test_customer):
 
 
 def test_approve_reject_punch(client, db_session: Session, test_customer):
-    punch = create_punch(db_session, 2, test_customer.CustomerId, TimeSheetPunchStatusEnum.CLOSED.value,
-                         "2023-01-01 08:00:00", "2023-01-01 16:00:00")
+    punch = create_punch(
+        db_session,
+        2,
+        test_customer.CustomerId,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2023-01-01 08:00:00",
+        "2023-01-01 16:00:00",
+    )
 
     response = client.post(f"/api/v1/timesheet/{punch.PunchId}/approve")
     assert response.status_code == status.HTTP_200_OK
@@ -265,8 +299,13 @@ def test_check_notifications(client, db_session: Session, test_customer):
 
     now_dt = datetime.now(UTC)
     past_dt = now_dt - timedelta(hours=9)
-    create_punch(db_session, 1, test_customer.CustomerId, TimeSheetPunchStatusEnum.OPEN.value,
-                 past_dt.strftime("%Y-%m-%d %H:%M:%S"))
+    create_punch(
+        db_session,
+        1,
+        test_customer.CustomerId,
+        TimeSheetPunchStatusEnum.OPEN.value,
+        past_dt.strftime("%Y-%m-%d %H:%M:%S"),
+    )
 
     response = client.get("/api/v1/timesheet/notifications/check")
     assert response.status_code == status.HTTP_200_OK
@@ -277,8 +316,13 @@ def test_check_notifications(client, db_session: Session, test_customer):
 def test_clock_out_auto(client, db_session: Session, test_customer, mock_asyncio_run):
     now_dt = datetime.now(UTC)
     past_dt = now_dt - timedelta(hours=17)
-    create_punch(db_session, 1, test_customer.CustomerId, TimeSheetPunchStatusEnum.OPEN.value,
-                 past_dt.strftime("%Y-%m-%d %H:%M:%S"))
+    create_punch(
+        db_session,
+        1,
+        test_customer.CustomerId,
+        TimeSheetPunchStatusEnum.OPEN.value,
+        past_dt.strftime("%Y-%m-%d %H:%M:%S"),
+    )
 
     response = client.post("/api/v1/timesheet/clock-out-auto")
     assert response.status_code == status.HTTP_200_OK
@@ -291,12 +335,7 @@ def test_notify_hours(client, db_session: Session, test_customer, mock_asyncio_r
     from models.employees import Employees
 
     # Create employee record for the mock employee
-    emp = Employees(
-        EmployeeId=1,
-        FirstName="John",
-        LastName="Doe",
-        Email="john@example.com"
-    )
+    emp = Employees(EmployeeId=1, FirstName="John", LastName="Doe", Email="john@example.com")
     db_session.add(emp)
     db_session.commit()
 

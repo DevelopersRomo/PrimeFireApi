@@ -60,9 +60,8 @@ class CustomerCreate(SQLModel):
     PrimaryAddress: AddressCreate | None = None
     PrimaryAddressId: int | None = None
 
-    @classmethod
     @model_validator(mode="after")
-    def validate_residential(cls):
+    def validate_residential(self):
         if self.CustomerType == CustomerTypeEnum.RESIDENTIAL:
             if not self.FirstName:
                 raise ValueError("FirstName is required for residential customers")
@@ -76,16 +75,14 @@ class CustomerCreate(SQLModel):
                 raise ValueError("DtdPotential should not be set for residential customers")
         return self
 
-    @classmethod
     @model_validator(mode="after")
-    def validate_commercial(cls):
+    def validate_commercial(self):
         if self.CustomerType == CustomerTypeEnum.COMMERCIAL and not self.CompanyName:
             raise ValueError("CompanyName is required for commercial customers")
         return self
 
-    @classmethod
     @model_validator(mode="after")
-    def validate_primary_contact(cls):
+    def validate_primary_contact(self):
         if not self.PrimaryEmail and not self.PrimaryPhone:
             raise ValueError("At least one of PrimaryEmail or PrimaryPhone is required")
         return self
@@ -154,9 +151,8 @@ class CustomerAlternateContactCreate(SQLModel):
     Email: str | None = None
     Phone: str | None = None
 
-    @classmethod
     @model_validator(mode="after")
-    def validate_contact(cls):
+    def validate_contact(self):
         if not self.Email and not self.Phone:
             raise ValueError("At least one of Email or Phone is required")
         return self
@@ -167,9 +163,8 @@ class CustomerAlternateContactUpdate(SQLModel):
     Email: str | None = None
     Phone: str | None = None
 
-    @classmethod
     @model_validator(mode="after")
-    def validate_contact(cls):
+    def validate_contact(self):
         if self.Email is None and self.Phone is None and self.Name is None:
             return self
         if self.Email is None and self.Phone is None:

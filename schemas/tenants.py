@@ -1,104 +1,104 @@
 from datetime import datetime
 
+from pydantic import model_validator
 from sqlmodel import SQLModel
 
 
 class TenantCreate(SQLModel):
-    Name: str
-    DbConnectionKey: str
-    Description: str | None = None
+    name: str
+    db_connection_key: str
+    description: str | None = None
 
 
 class TenantUpdate(SQLModel):
-    Name: str | None = None
-    DbConnectionKey: str | None = None
-    Description: str | None = None
-    IsActive: bool | None = None
+    name: str | None = None
+    db_connection_key: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
 
 
 class TenantRead(SQLModel):
-    TenantId: int
-    Name: str
-    DbConnectionKey: str
-    Description: str | None
-    IsActive: bool
-    CreatedAt: datetime
+    tenant_id: int
+    name: str
+    db_connection_key: str
+    description: str | None
+    is_active: bool
+    created_at: datetime
 
 
 class TenantEmployeeRegister(SQLModel):
-    # Information to complete profile and request access
-    FirstName: str
-    LastName: str
-    Phone: str | None = None
-    CompanyName: str  # To suggest tenant name or identify organization
-    Country: str | None = None
+    first_name: str
+    last_name: str
+    phone: str | None = None
+    company_name: str
+    country: str | None = None
 
 
 class TenantEmployeeRead(SQLModel):
-    Id: int
-    Email: str
-    TenantId: int | None = None
-    TenantName: str | None = None
-    CreatedAt: datetime
+    id: int
+    email: str
+    tenant_id: int | None = None
+    tenant_name: str | None = None
+    created_at: datetime
 
 
 class ApprovalRequest(SQLModel):
-    TenantEmployeeId: int  # ID del TenantEmployee en BD Principal
-    TenantId: int  # ID del Tenant a asignar
+    tenant_employee_id: int
+    tenant_id: int
 
 
 class TenantApprovalRequest(SQLModel):
-    TenantId: int
-    Status: str = "Active"
+    tenant_id: int
+    status: str = "Active"
 
 
 class TenantEmployeePendingRead(SQLModel):
-    Id: int
-    Email: str
-    TenantId: int | None = None
-    TenantName: str | None = None
-    CreatedAt: datetime
+    id: int
+    email: str
+    tenant_id: int | None = None
+    tenant_name: str | None = None
+    created_at: datetime
 
 
 class TenantLogoCreate(SQLModel):
-    TenantId: int
-    Title: str
-    Description: str | None = None
-    Path: str
-    Url: str
-    Email: str | None = None
-    PathBackground: str | None = None
-    PrimaryColor: str | None = None
-    SecondaryColor: str | None = None
-    TertiaryColor: str | None = None
-    FavIcon: str | None = None
+    tenant_id: int
+    title: str
+    description: str | None = None
+    path: str
+    url: str
+    email: str | None = None
+    path_background: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    tertiary_color: str | None = None
+    fav_icon: str | None = None
 
 
 class TenantLogoUpdate(SQLModel):
-    Title: str | None = None
-    Description: str | None = None
-    Path: str | None = None
-    Url: str | None = None
-    Email: str | None = None
-    PathBackground: str | None = None
-    PrimaryColor: str | None = None
-    SecondaryColor: str | None = None
-    TertiaryColor: str | None = None
-    FavIcon: str | None = None
+    title: str | None = None
+    description: str | None = None
+    path: str | None = None
+    url: str | None = None
+    email: str | None = None
+    path_background: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    tertiary_color: str | None = None
+    fav_icon: str | None = None
 
 
 class TenantLogoRead(SQLModel):
-    LogoId: int
-    TenantId: int
-    Title: str
-    Description: str | None = None
-    Path: str
-    Url: str
-    Email: str | None = None
-    PathBackground: str | None = None
-    PrimaryColor: str | None = None
-    SecondaryColor: str | None = None
-    TertiaryColor: str | None = None
-    FavIcon: str | None = None
-    CreatedAt: datetime
-    UpdatedAt: datetime | None = None
+    logo_id: int
+    tenant_id: int
+    title: str
+    description: str | None = None
+    path: str
+    url: str
+    email: str | None = None
+    path_background: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    tertiary_color: str | None = None
+    fav_icon: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None

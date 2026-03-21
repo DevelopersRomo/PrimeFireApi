@@ -11,7 +11,7 @@ class TestRolesAPI:
 
     def test_create_role(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
         """Test POST /roles."""
-        role_data = {"RoleName": "Admin Role", "Description": "Administrator role with full access"}
+        role_data = {"role_name": "Admin Role", "description": "Administrator role with full access"}
         response = client.post("/roles", json=role_data, headers=auth_headers)
 
         # In case the prefix in main.py is different or there's a trailing slash issue,
@@ -21,19 +21,19 @@ class TestRolesAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["RoleName"] == "Admin Role"
-        assert data["Description"] == "Administrator role with full access"
-        assert "RoleId" in data
+        assert data["role_name"] == "Admin Role"
+        assert data["description"] == "Administrator role with full access"
+        assert "role_id" in data
 
         # Verify in DB
-        db_role = db_session.get(Roles, data["RoleId"])
+        db_role = db_session.get(Roles, data["role_id"])
         assert db_role is not None
-        assert db_role.RoleName == "Admin Role"
+        assert db_role.role_name == "Admin Role"
 
     def test_get_roles(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
         """Test GET /roles."""
-        role1 = Roles(RoleName="Role 1", Description="First role")
-        role2 = Roles(RoleName="Role 2", Description="Second role")
+        role1 = Roles(role_name="Role 1", description="First role")
+        role2 = Roles(role_name="Role 2", description="Second role")
         db_session.add(role1)
         db_session.add(role2)
         db_session.commit()
@@ -45,22 +45,22 @@ class TestRolesAPI:
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 2
-        role_names = [r["RoleName"] for r in data]
+        role_names = [r["role_name"] for r in data]
         assert "Role 1" in role_names
         assert "Role 2" in role_names
 
     def test_get_role(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
         """Test GET /roles/{role_id}."""
-        role = Roles(RoleName="Specific Role", Description="Specific description")
+        role = Roles(role_name="Specific Role", description="Specific description")
         db_session.add(role)
         db_session.commit()
         db_session.refresh(role)
 
-        response = client.get(f"/roles/{role.RoleId}", headers=auth_headers)
+        response = client.get(f"/roles/{role.role_id}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["RoleName"] == "Specific Role"
-        assert data["RoleId"] == role.RoleId
+        assert data["role_name"] == "Specific Role"
+        assert data["role_id"] == role.role_id
 
     def test_get_role_not_found(self, client: TestClient, auth_headers: dict) -> None:
         """Test GET /roles/{role_id} for a non-existent role."""
@@ -70,38 +70,38 @@ class TestRolesAPI:
 
     def test_update_role(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
         """Test PUT /roles/{role_id}."""
-        role = Roles(RoleName="Old Role", Description="Old description")
+        role = Roles(role_name="Old Role", description="Old description")
         db_session.add(role)
         db_session.commit()
         db_session.refresh(role)
 
-        update_data = {"RoleName": "Updated Role", "Description": "Updated description"}
-        response = client.put(f"/roles/{role.RoleId}", json=update_data, headers=auth_headers)
+        update_data = {"role_name": "Updated Role", "description": "Updated description"}
+        response = client.put(f"/roles/{role.role_id}", json=update_data, headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
-        assert data["RoleName"] == "Updated Role"
-        assert data["Description"] == "Updated description"
+        assert data["role_name"] == "Updated Role"
+        assert data["description"] == "Updated description"
 
         # Verify in DB
         db_session.refresh(role)
-        assert role.RoleName == "Updated Role"
+        assert role.role_name == "Updated Role"
 
     def test_update_role_not_found(self, client: TestClient, auth_headers: dict) -> None:
         """Test PUT /roles/{role_id} for a non-existent role."""
-        update_data = {"RoleName": "Ghost Role"}
+        update_data = {"role_name": "Ghost Role"}
         response = client.put("/roles/9999", json=update_data, headers=auth_headers)
         assert response.status_code == 404
         assert response.json()["detail"] == "Role not found"
 
     def test_delete_role(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
         """Test DELETE /roles/{role_id}."""
-        role = Roles(RoleName="Role to delete", Description="To be deleted")
+        role = Roles(role_name="Role to delete", description="To be deleted")
         db_session.add(role)
         db_session.commit()
         db_session.refresh(role)
 
-        response = client.delete(f"/roles/{role.RoleId}", headers=auth_headers)
+        response = client.delete(f"/roles/{role.role_id}", headers=auth_headers)
         assert response.status_code == 200
         assert response.json()["detail"] == "Role deleted successfully"
 

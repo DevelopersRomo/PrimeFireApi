@@ -28,23 +28,23 @@ async def create_permission(
 ):
     """Create a new permission (assign a module to a role with specific permissions)."""
     # Validate role exists
-    role = db.exec(select(Roles).where(Roles.RoleId == permission.RoleId)).first()
+    role = db.exec(select(Roles).where(Roles.role_id == permission.role_id)).first()
     if not role:
-        raise HTTPException(status_code=404, detail=f"Role with ID {permission.RoleId} not found")
+        raise HTTPException(status_code=404, detail=f"Role with ID {permission.role_id} not found")
 
     # Validate module exists
-    module = db.exec(select(Modules).where(Modules.ModuleId == permission.ModuleId)).first()
+    module = db.exec(select(Modules).where(Modules.module_id == permission.module_id)).first()
     if not module:
-        raise HTTPException(status_code=404, detail=f"Module with ID {permission.ModuleId} not found")
+        raise HTTPException(status_code=404, detail=f"Module with ID {permission.module_id} not found")
 
     # Check if permission already exists
     existing = db.exec(
-        select(RoleModules).where(RoleModules.RoleId == permission.RoleId, RoleModules.ModuleId == permission.ModuleId)
+        select(RoleModules).where(RoleModules.role_id == permission.role_id, RoleModules.module_id == permission.module_id)
     ).first()
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"Permission already exists for role '{role.RoleName}' and module '{module.ModuleName}'",
+            detail=f"Permission already exists for role '{role.role_name}' and module '{module.module_name}'",
         )
 
     db_permission = RoleModules(**permission.model_dump())
@@ -62,9 +62,9 @@ async def get_all_permissions(db: Session = Depends(get_db), current_user: dict 
     """Get all permissions with role and module details."""
     query = (
         select(RoleModules, Roles, Modules)
-        .join(Roles, RoleModules.RoleId == Roles.RoleId)
-        .join(Modules, RoleModules.ModuleId == Modules.ModuleId)
-        .order_by(Roles.RoleName, Modules.DisplayOrder, Modules.ModuleName)
+        .join(Roles, RoleModules.role_id == Roles.role_id)
+        .join(Modules, RoleModules.module_id == Modules.module_id)
+        .order_by(Roles.role_name, Modules.display_order, Modules.module_name)
     )
 
     results = db.exec(query).all()
@@ -73,19 +73,19 @@ async def get_all_permissions(db: Session = Depends(get_db), current_user: dict 
     for role_module, role, module in results:
         permissions.append(
             PermissionWithDetails(
-                RoleId=role_module.RoleId,
-                ModuleId=role_module.ModuleId,
-                CanView=role_module.CanView,
-                CanCreate=role_module.CanCreate,
-                CanEdit=role_module.CanEdit,
-                CanDelete=role_module.CanDelete,
-                CanExport=role_module.CanExport,
-                AdminActions=role_module.AdminActions,
-                OtherActions=role_module.OtherActions,
-                AssignedAt=role_module.AssignedAt or datetime.utcnow(),  # noqa: DTZ003
-                role_name=role.RoleName,
-                module_name=module.ModuleName,
-                module_key=module.ModuleKey,
+                role_id=role_module.role_id,
+                module_id=role_module.module_id,
+                can_view=role_module.can_view,
+                can_create=role_module.can_create,
+                can_edit=role_module.can_edit,
+                can_delete=role_module.can_delete,
+                can_export=role_module.can_export,
+                admin_actions=role_module.admin_actions,
+                other_actions=role_module.other_actions,
+                assigned_at=role_module.assigned_at or datetime.utcnow(),  # noqa: DTZ003
+                role_name=role.role_name,
+                module_name=module.module_name,
+                module_key=module.module_key,
             )
         )
 
@@ -101,15 +101,15 @@ async def get_role_permissions(
 ):
     """Get all permissions for a specific role."""
     # Validate role exists
-    role = db.exec(select(Roles).where(Roles.RoleId == role_id)).first()
+    role = db.exec(select(Roles).where(Roles.role_id == role_id)).first()
     if not role:
         raise HTTPException(status_code=404, detail=f"Role with ID {role_id} not found")
 
     query = (
         select(RoleModules, Modules)
-        .join(Modules, RoleModules.ModuleId == Modules.ModuleId)
-        .where(RoleModules.RoleId == role_id)
-        .order_by(Modules.DisplayOrder, Modules.ModuleName)
+        .join(Modules, RoleModules.module_id == Modules.module_id)
+        .where(RoleModules.role_id == role_id)
+        .order_by(Modules.display_order, Modules.module_name)
     )
 
     results = db.exec(query).all()
@@ -118,23 +118,23 @@ async def get_role_permissions(
     for role_module, module in results:
         permissions.append(
             PermissionWithDetails(
-                RoleId=role_module.RoleId,
-                ModuleId=role_module.ModuleId,
-                CanView=role_module.CanView,
-                CanCreate=role_module.CanCreate,
-                CanEdit=role_module.CanEdit,
-                CanDelete=role_module.CanDelete,
-                CanExport=role_module.CanExport,
-                AdminActions=role_module.AdminActions,
-                OtherActions=role_module.OtherActions,
-                AssignedAt=role_module.AssignedAt or datetime.utcnow(),  # noqa: DTZ003
-                role_name=role.RoleName,
-                module_name=module.ModuleName,
-                module_key=module.ModuleKey,
+                role_id=role_module.role_id,
+                module_id=role_module.module_id,
+                can_view=role_module.can_view,
+                can_create=role_module.can_create,
+                can_edit=role_module.can_edit,
+                can_delete=role_module.can_delete,
+                can_export=role_module.can_export,
+                admin_actions=role_module.admin_actions,
+                other_actions=role_module.other_actions,
+                assigned_at=role_module.assigned_at or datetime.utcnow(),  # noqa: DTZ003
+                role_name=role.role_name,
+                module_name=module.module_name,
+                module_key=module.module_key,
             )
         )
 
-    return RolePermissionsResponse(RoleId=role.RoleId, RoleName=role.RoleName, permissions=permissions)
+    return RolePermissionsResponse(role_id=role.role_id, role_name=role.role_name, permissions=permissions)
 
 
 # ----------------------------
@@ -146,15 +146,15 @@ async def get_module_permissions(
 ):
     """Get all permissions for a specific module (which roles have access)."""
     # Validate module exists
-    module = db.exec(select(Modules).where(Modules.ModuleId == module_id)).first()
+    module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()
     if not module:
         raise HTTPException(status_code=404, detail=f"Module with ID {module_id} not found")
 
     query = (
         select(RoleModules, Roles)
-        .join(Roles, RoleModules.RoleId == Roles.RoleId)
-        .where(RoleModules.ModuleId == module_id)
-        .order_by(Roles.RoleName)
+        .join(Roles, RoleModules.role_id == Roles.role_id)
+        .where(RoleModules.module_id == module_id)
+        .order_by(Roles.role_name)
     )
 
     results = db.exec(query).all()
@@ -163,19 +163,19 @@ async def get_module_permissions(
     for role_module, role in results:
         permissions.append(
             PermissionWithDetails(
-                RoleId=role_module.RoleId,
-                ModuleId=role_module.ModuleId,
-                CanView=role_module.CanView,
-                CanCreate=role_module.CanCreate,
-                CanEdit=role_module.CanEdit,
-                CanDelete=role_module.CanDelete,
-                CanExport=role_module.CanExport,
-                AdminActions=role_module.AdminActions,
-                OtherActions=role_module.OtherActions,
-                AssignedAt=role_module.AssignedAt or datetime.utcnow(),  # noqa: DTZ003
-                role_name=role.RoleName,
-                module_name=module.ModuleName,
-                module_key=module.ModuleKey,
+                role_id=role_module.role_id,
+                module_id=role_module.module_id,
+                can_view=role_module.can_view,
+                can_create=role_module.can_create,
+                can_edit=role_module.can_edit,
+                can_delete=role_module.can_delete,
+                can_export=role_module.can_export,
+                admin_actions=role_module.admin_actions,
+                other_actions=role_module.other_actions,
+                assigned_at=role_module.assigned_at or datetime.utcnow(),  # noqa: DTZ003
+                role_name=role.role_name,
+                module_name=module.module_name,
+                module_key=module.module_key,
             )
         )
 
@@ -191,7 +191,7 @@ async def get_permission(
 ):
     """Get a specific permission by role and module."""
     db_permission = db.exec(
-        select(RoleModules).where(RoleModules.RoleId == role_id, RoleModules.ModuleId == module_id)
+        select(RoleModules).where(RoleModules.role_id == role_id, RoleModules.module_id == module_id)
     ).first()
 
     if not db_permission:
@@ -215,7 +215,7 @@ async def update_permission(
 ):
     """Update a permission."""
     db_permission = db.exec(
-        select(RoleModules).where(RoleModules.RoleId == role_id, RoleModules.ModuleId == module_id)
+        select(RoleModules).where(RoleModules.role_id == role_id, RoleModules.module_id == module_id)
     ).first()
 
     if not db_permission:
@@ -240,7 +240,7 @@ async def delete_permission(
 ):
     """Delete a permission (revoke module access from a role)."""
     db_permission = db.exec(
-        select(RoleModules).where(RoleModules.RoleId == role_id, RoleModules.ModuleId == module_id)
+        select(RoleModules).where(RoleModules.role_id == role_id, RoleModules.module_id == module_id)
     ).first()
 
     if not db_permission:
@@ -267,22 +267,22 @@ async def bulk_update_permissions(
     This will replace all existing permissions for the role with the new ones.
     """
     # Validate role exists
-    role = db.exec(select(Roles).where(Roles.RoleId == bulk_update.RoleId)).first()
+    role = db.exec(select(Roles).where(Roles.role_id == bulk_update.role_id)).first()
     if not role:
-        raise HTTPException(status_code=404, detail=f"Role with ID {bulk_update.RoleId} not found")
+        raise HTTPException(status_code=404, detail=f"Role with ID {bulk_update.role_id} not found")
 
     # Delete existing permissions for this role
-    existing_permissions = db.exec(select(RoleModules).where(RoleModules.RoleId == bulk_update.RoleId)).all()
+    existing_permissions = db.exec(select(RoleModules).where(RoleModules.role_id == bulk_update.role_id)).all()
     for perm in existing_permissions:
         db.delete(perm)
 
     # Create new permissions
     for permission in bulk_update.permissions:
         # Validate module exists
-        module = db.exec(select(Modules).where(Modules.ModuleId == permission.ModuleId)).first()
+        module = db.exec(select(Modules).where(Modules.module_id == permission.module_id)).first()
         if not module:
             db.rollback()
-            raise HTTPException(status_code=404, detail=f"Module with ID {permission.ModuleId} not found")
+            raise HTTPException(status_code=404, detail=f"Module with ID {permission.module_id} not found")
 
         db_permission = RoleModules(**permission.model_dump())
         db.add(db_permission)
@@ -290,7 +290,7 @@ async def bulk_update_permissions(
     db.commit()
 
     # Return updated permissions
-    return await get_role_permissions(bulk_update.RoleId, db, current_user)
+    return await get_role_permissions(bulk_update.role_id, db, current_user)
 
 
 # ----------------------------
@@ -305,7 +305,7 @@ async def check_user_permission(
     Actions: view, create, edit, delete, export, admin_actions, other_actions.
     """
     # Get module by key
-    module = db.exec(select(Modules).where(Modules.ModuleKey == module_key)).first()
+    module = db.exec(select(Modules).where(Modules.module_key == module_key)).first()
     if not module:
         raise HTTPException(status_code=404, detail=f"Module with key '{module_key}' not found")
 
@@ -315,7 +315,7 @@ async def check_user_permission(
 
     return {
         "module_key": module_key,
-        "module_name": module.ModuleName,
+        "module_name": module.module_name,
         "action": action,
         "allowed": True,  # Placeholder - implement actual permission check
         "message": "Permission check endpoint - implement with actual user roles",

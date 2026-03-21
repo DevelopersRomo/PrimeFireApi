@@ -46,18 +46,18 @@ def resolve_upload_root() -> Path:
 def attachment_to_schema(db_att: CustomerAttachments) -> CustomerAttachment:
     """Convert CustomerAttachments model to CustomerAttachment schema."""
     return CustomerAttachment(
-        CustomerAttachmentId=db_att.CustomerAttachmentId,
-        CustomerId=db_att.CustomerId,
-        FileName=db_att.FileName,
-        FileType=db_att.FileType,
-        FilePath=db_att.FilePath,
-        CreatedAt=db_att.CreatedAt,
-        CreatedBy=db_att.CreatedBy,
+        customer_attachment_id=db_att.customer_attachment_id,
+        customer_id=db_att.customer_id,
+        file_name=db_att.file_name,
+        file_type=db_att.file_type,
+        file_path=db_att.file_path,
+        created_at=db_att.created_at,
+        created_by=db_att.created_by,
         creator=CustomerEmployee(
-            EmployeeId=db_att.creator.EmployeeId,
-            DisplayName=db_att.creator.DisplayName,
-            Email=db_att.creator.Email,
-            Title=db_att.creator.Title,
+            employee_id=db_att.creator.employee_id,
+            display_name=db_att.creator.display_name,
+            email=db_att.creator.email,
+            title=db_att.creator.title,
         )
         if db_att.creator
         else None,
@@ -76,8 +76,8 @@ def list_attachments_for_customer(
     atts = db.exec(
         select(CustomerAttachments)
         .options(selectinload(CustomerAttachments.creator))
-        .where(CustomerAttachments.CustomerId == customer_id)
-        .order_by(CustomerAttachments.CreatedAt)
+        .where(CustomerAttachments.customer_id == customer_id)
+        .order_by(CustomerAttachments.created_at)
     ).all()
 
     return [attachment_to_schema(a) for a in atts]
@@ -90,15 +90,15 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
     if not db_att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    if db_att.FilePath:
-        storage_path = Path(db_att.FilePath)
+    if db_att.file_path:
+        storage_path = Path(db_att.file_path)
         if not storage_path.is_absolute():
             storage_path = BASE_DIR / storage_path
         if storage_path.exists():
             return FileResponse(
                 path=str(storage_path),
-                filename=db_att.FileName or storage_path.name,
-                media_type=db_att.FileType or "application/octet-stream",
+                filename=db_att.file_name or storage_path.name,
+                media_type=db_att.file_type or "application/octet-stream",
             )
 
     return attachment_to_schema(db_att)
@@ -119,7 +119,7 @@ def create_attachment(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    current_employee_id = user_permissions["employee"]["EmployeeId"]
+    current_employee_id = user_permissions["employee"]["employee_id"]
 
     rel_path = None
     final_file_name = file_name
@@ -147,12 +147,12 @@ def create_attachment(
         raise HTTPException(status_code=400, detail="File name is required")
 
     db_att = CustomerAttachments(
-        CustomerId=customer_id,
-        FileName=final_file_name,
-        FileType=final_file_type,
-        FilePath=rel_path,
-        CreatedBy=current_employee_id,
-        CreatedAt=datetime.now(UTC),
+        customer_id=customer_id,
+        file_name=final_file_name,
+        file_type=final_file_type,
+        file_path=rel_path,
+        created_by=current_employee_id,
+        created_at=datetime.now(UTC),
     )
 
     db.add(db_att)
@@ -162,7 +162,7 @@ def create_attachment(
     db_att = db.exec(
         select(CustomerAttachments)
         .options(selectinload(CustomerAttachments.creator))
-        .filter(CustomerAttachments.CustomerAttachmentId == db_att.CustomerAttachmentId)
+        .filter(CustomerAttachments.customer_attachment_id == db_att.customer_attachment_id)
     ).first()
 
     return attachment_to_schema(db_att)

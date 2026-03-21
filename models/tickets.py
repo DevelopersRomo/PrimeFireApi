@@ -45,15 +45,15 @@ class TicketSLA(enum.StrEnum):
 
 
 class Tickets(SQLModel, table=True):
-    __tablename__ = "Tickets"
+    __tablename__ = "tickets"
     __table_args__ = {"schema": "dbo"}
 
-    TicketId: int | None = Field(default=None, primary_key=True, index=True)
-    Title: str = Field(max_length=200)
-    Description: str | None = Field(default=None, max_length=2000)
+    ticket_id: int | None = Field(default=None, primary_key=True, index=True)
+    title: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
 
     # Status enum
-    Status: TicketStatus = Field(
+    status: TicketStatus = Field(
         default=TicketStatus.TODO,
         sa_column=Column(
             SAEnum(TicketStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=False
@@ -61,7 +61,7 @@ class Tickets(SQLModel, table=True):
     )
 
     # Priority enum
-    Priority: TicketPriority = Field(
+    priority: TicketPriority = Field(
         default=TicketPriority.NORMAL,
         sa_column=Column(
             SAEnum(TicketPriority, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=False
@@ -69,7 +69,7 @@ class Tickets(SQLModel, table=True):
     )
 
     # SLA enum (optional)
-    SLA: TicketSLA | None = Field(
+    sla: TicketSLA | None = Field(
         default=None,
         sa_column=Column(
             SAEnum(TicketSLA, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=True
@@ -77,17 +77,17 @@ class Tickets(SQLModel, table=True):
     )
 
     # Foreign keys
-    CreatedBy: int = Field(foreign_key="dbo.Employees.EmployeeId")  # Required
-    AssignedTo: int | None = Field(default=None, foreign_key="dbo.Employees.EmployeeId")  # Optional
+    created_by: int = Field(foreign_key="dbo.employees.employee_id")
+    assigned_to: int | None = Field(default=None, foreign_key="dbo.employees.employee_id")
 
     # Timestamps
-    CreatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    UpdatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Relationships
     creator: Optional["Employees"] = Relationship(
-        back_populates="created_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.CreatedBy"}
+        back_populates="created_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.created_by"}
     )
     assignee: Optional["Employees"] = Relationship(
-        back_populates="assigned_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.AssignedTo"}
+        back_populates="assigned_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.assigned_to"}
     )

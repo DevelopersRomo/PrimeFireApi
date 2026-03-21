@@ -25,27 +25,27 @@ def _quantize(value: Decimal | float | None) -> str:
 def _has_admin_actions(user_permissions: dict) -> bool:
     for perm in user_permissions.get("permissions", []):
         if perm.get("module_key") == "timesheet":
-            return perm.get("permissions", {}).get("AdminActions", False)
+            return perm.get("permissions", {}).get("admin_actions", False)
     return False
 
 
 def _get_or_create_settings(db: Session) -> TimeSheetSettings:
     settings_row = db.exec(
         select(TimeSheetSettings)
-        .where(TimeSheetSettings.IsActive == True)  # noqa: E712
-        .order_by(TimeSheetSettings.SettingId.desc())
+        .where(TimeSheetSettings.is_active == True)  # noqa: E712
+        .order_by(TimeSheetSettings.setting_id.desc())
     ).first()
     if settings_row:
         return settings_row
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ003
     settings_row = TimeSheetSettings(
-        OvertimeDailyHours="8.00",
-        OvertimeWeeklyHours="40.00",
-        MaxOvertimeDailyHours="8.00",
-        RoundToMinutes=None,
-        IsActive=True,
-        CreatedAt=now_str,
-        UpdatedAt=now_str,
+        overtime_daily_hours="8.00",
+        overtime_weekly_hours="40.00",
+        max_overtime_daily_hours="8.00",
+        round_to_minutes=None,
+        is_active=True,
+        created_at=now_str,
+        updated_at=now_str,
     )
     db.add(settings_row)
     db.commit()
@@ -71,17 +71,17 @@ def upsert_timesheet_settings(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
     settings_row = _get_or_create_settings(db)
-    if payload.OvertimeDailyHours is not None:
-        settings_row.OvertimeDailyHours = _quantize(payload.OvertimeDailyHours)
-    if payload.OvertimeWeeklyHours is not None:
-        settings_row.OvertimeWeeklyHours = _quantize(payload.OvertimeWeeklyHours)
-    if payload.MaxOvertimeDailyHours is not None:
-        settings_row.MaxOvertimeDailyHours = _quantize(payload.MaxOvertimeDailyHours)
-    if payload.RoundToMinutes is not None:
-        settings_row.RoundToMinutes = payload.RoundToMinutes
-    if payload.IsActive is not None:
-        settings_row.IsActive = payload.IsActive
-    settings_row.UpdatedAt = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ003
+    if payload.overtime_daily_hours is not None:
+        settings_row.overtime_daily_hours = _quantize(payload.overtime_daily_hours)
+    if payload.overtime_weekly_hours is not None:
+        settings_row.overtime_weekly_hours = _quantize(payload.overtime_weekly_hours)
+    if payload.max_overtime_daily_hours is not None:
+        settings_row.max_overtime_daily_hours = _quantize(payload.max_overtime_daily_hours)
+    if payload.round_to_minutes is not None:
+        settings_row.round_to_minutes = payload.round_to_minutes
+    if payload.is_active is not None:
+        settings_row.is_active = payload.is_active
+    settings_row.updated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ003
 
     db.add(settings_row)
     db.commit()

@@ -21,33 +21,33 @@ def message_to_schema(db_msg: TicketMessages, db: Session) -> TicketMessage:
     # Load employee and convert to schema
     user_obj = None
     try:
-        emp = db.get(Employees, db_msg.UserId)
+        emp = db.get(Employees, db_msg.user_id)
         if emp:
             user_obj = EmployeeSchema(
-                EmployeeId=emp.EmployeeId,
-                FirstName=emp.FirstName,
-                LastName=emp.LastName,
-                DisplayName=emp.DisplayName,
-                Title=emp.Title,
+                employee_id=emp.employee_id,
+                first_name=emp.first_name,
+                last_name=emp.last_name,
+                display_name=emp.display_name,
+                title=emp.title,
             )
     except Exception:
         user_obj = None
 
     return TicketMessage(
-        TicketMessageId=db_msg.TicketMessageId,
-        TicketId=db_msg.TicketId,
-        User=user_obj,
-        MessageTxt=db_msg.MessageTxt,
-        CreatedAt=db_msg.CreatedAt,
-        UpdatedAt=db_msg.UpdatedAt,
-        EditedAt=db_msg.EditedAt,
+        ticket_message_id=db_msg.ticket_message_id,
+        ticket_id=db_msg.ticket_id,
+        user=user_obj,
+        message_txt=db_msg.message_txt,
+        created_at=db_msg.created_at,
+        updated_at=db_msg.updated_at,
+        edited_at=db_msg.edited_at,
     )
 
 
 @router.get("/tickets/{ticket_id}/messages", response_model=list[TicketMessage])
 def list_messages_for_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     msgs = db.exec(
-        select(TicketMessages).where(TicketMessages.TicketId == ticket_id).order_by(TicketMessages.CreatedAt)
+        select(TicketMessages).where(TicketMessages.ticket_id == ticket_id).order_by(TicketMessages.created_at)
     ).all()
     return [message_to_schema(m, db) for m in msgs]
 
@@ -72,38 +72,38 @@ def create_message(
     ticket = db.exec(
         select(Tickets)
         .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
-        .filter(Tickets.TicketId == ticket_id)
+        .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     db_msg = TicketMessages(
-        TicketId=ticket_id,
-        UserId=current_employee.EmployeeId,
-        MessageTxt=payload.MessageTxt,
-        CreatedAt=datetime.now(UTC),
+        ticket_id=ticket_id,
+        user_id=current_employee.employee_id,
+        message_txt=payload.message_txt,
+        created_at=datetime.now(UTC),
     )
     db.add(db_msg)
     db.commit()
     db.refresh(db_msg)
 
     # Send notification
-    if ticket.creator and ticket.creator.Email:
+    if ticket.creator and ticket.creator.email:
         background_tasks.add_task(
             notify_ticket_message,
-            ticket_id=ticket.TicketId,
-            ticket_title=ticket.Title,
-            message_id=db_msg.TicketMessageId,
-            message_text=payload.MessageTxt or "",
-            commenter_id=current_employee.EmployeeId,
-            commenter_name=current_employee.DisplayName or f"{current_employee.FirstName} {current_employee.LastName}",
-            commenter_email=current_employee.Email or "",
-            ticket_creator_id=ticket.CreatedBy,
-            ticket_creator_email=ticket.creator.Email,
-            ticket_assigned_to_id=ticket.AssignedTo,
-            ticket_assigned_to_email=ticket.assignee.Email if ticket.assignee else None,
-            action_url=f"{settings.APP_URL}/tickets/{ticket.TicketId}",
+            ticket_id=ticket.ticket_id,
+            ticket_title=ticket.title,
+            message_id=db_msg.ticket_message_id,
+            message_text=payload.message_txt or "",
+            commenter_id=current_employee.employee_id,
+            commenter_name=current_employee.display_name or f"{current_employee.first_name} {current_employee.last_name}",
+            commenter_email=current_employee.email or "",
+            ticket_creator_id=ticket.created_by,
+            ticket_creator_email=ticket.creator.email,
+            ticket_assigned_to_id=ticket.assigned_to,
+            ticket_assigned_to_email=ticket.assignee.email if ticket.assignee else None,
+            action_url=f"{settings.APP_URL}/tickets/{ticket.ticket_id}",
         )
 
     return message_to_schema(db_msg, db)
@@ -116,25 +116,25 @@ def update_message(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
-    current_employee_id = user_permissions["employee"]["EmployeeId"]
+    current_employee_id = user_permissions["employee"]["employee_id"]
     db_msg = db.get(TicketMessages, message_id)
     if not db_msg:
         raise HTTPException(status_code=404, detail="Message not found")
 
     # Only creator or admin can edit
-    is_creator = db_msg.UserId == current_employee_id
+    is_creator = db_msg.user_id == current_employee_id
     has_admin = False
     for perm in user_permissions.get("permissions", []):
         if perm.get("module_key") == "tickets":
-            has_admin = perm.get("permissions", {}).get("AdminActions", False)
+            has_admin = perm.get("permissions", {}).get("admin_actions", False)
     if not (is_creator or has_admin):
         raise HTTPException(status_code=403, detail="Not allowed to edit message")
 
     update_data = payload.model_dump(exclude_unset=True)
     for k, v in update_data.items():
         setattr(db_msg, k, v)
-    db_msg.UpdatedAt = datetime.now(UTC)
-    db_msg.EditedAt = datetime.now(UTC)
+    db_msg.updated_at = datetime.now(UTC)
+    db_msg.edited_at = datetime.now(UTC)
     db.add(db_msg)
     db.commit()
     db.refresh(db_msg)
@@ -147,15 +147,15 @@ def delete_message(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
-    current_employee_id = user_permissions["employee"]["EmployeeId"]
+    current_employee_id = user_permissions["employee"]["employee_id"]
     db_msg = db.get(TicketMessages, message_id)
     if not db_msg:
         raise HTTPException(status_code=404, detail="Message not found")
-    is_creator = db_msg.UserId == current_employee_id
+    is_creator = db_msg.user_id == current_employee_id
     has_admin = False
     for perm in user_permissions.get("permissions", []):
         if perm.get("module_key") == "tickets":
-            has_admin = perm.get("permissions", {}).get("AdminActions", False)
+            has_admin = perm.get("permissions", {}).get("admin_actions", False)
     if not (is_creator or has_admin):
         raise HTTPException(status_code=403, detail="Not allowed to delete message")
 

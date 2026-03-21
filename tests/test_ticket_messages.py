@@ -15,7 +15,7 @@ from tests.conftest import create_test_record
 @pytest.fixture
 def current_employee(db_session: Session):
     emp = create_test_record(
-        db_session, Employees, Email="test@example.com", FirstName="Test", LastName="User", DisplayName="Test User"
+        db_session, Employees, email="test@example.com", first_name="Test", last_name="User", display_name="Test User"
     )
     db_session.commit()
     return emp
@@ -26,10 +26,10 @@ def test_ticket(db_session: Session, current_employee: Employees):
     ticket = create_test_record(
         db_session,
         Tickets,
-        Title="Test Ticket",
-        Description="Desc",
-        Status=TicketStatus.TODO,
-        CreatedBy=current_employee.EmployeeId,
+        title="Test Ticket",
+        description="Desc",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
     )
     db_session.commit()
     return ticket
@@ -50,13 +50,13 @@ def test_create_message(
     client: TestClient, auth_headers: dict, test_ticket: Tickets, current_employee: Employees, auth_overrides
 ):
     with patch("api.ticket_messages.notify_ticket_message") as mock_notify:
-        payload = {"MessageTxt": "This is a test message", "TicketId": test_ticket.TicketId}
+        payload = {"message_txt": "This is a test message", "ticket_id": test_ticket.ticket_id}
 
-        response = client.post(f"/tickets/{test_ticket.TicketId}/messages", json=payload, headers=auth_headers)
+        response = client.post(f"/tickets/{test_ticket.ticket_id}/messages", json=payload, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["MessageTxt"] == "This is a test message"
-        assert data["TicketId"] == test_ticket.TicketId
+        assert data["message_txt"] == "This is a test message"
+        assert data["ticket_id"] == test_ticket.ticket_id
 
         mock_notify.assert_called_once()
 
@@ -67,24 +67,24 @@ def test_get_messages_for_ticket(
     create_test_record(
         db_session,
         TicketMessages,
-        TicketId=test_ticket.TicketId,
-        UserId=current_employee.EmployeeId,
-        MessageTxt="Message 1",
+        ticket_id=test_ticket.ticket_id,
+        user_id=current_employee.employee_id,
+        message_txt="Message 1",
     )
     create_test_record(
         db_session,
         TicketMessages,
-        TicketId=test_ticket.TicketId,
-        UserId=current_employee.EmployeeId,
-        MessageTxt="Message 2",
+        ticket_id=test_ticket.ticket_id,
+        user_id=current_employee.employee_id,
+        message_txt="Message 2",
     )
     db_session.commit()
 
-    response = client.get(f"/tickets/{test_ticket.TicketId}/messages", headers=auth_headers)
+    response = client.get(f"/tickets/{test_ticket.ticket_id}/messages", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data) >= 2
-    messages = [m["MessageTxt"] for m in data]
+    messages = [m["message_txt"] for m in data]
     assert "Message 1" in messages
     assert "Message 2" in messages
 
@@ -95,13 +95,13 @@ def test_get_message(
     msg = create_test_record(
         db_session,
         TicketMessages,
-        TicketId=test_ticket.TicketId,
-        UserId=current_employee.EmployeeId,
-        MessageTxt="Single Message",
+        ticket_id=test_ticket.ticket_id,
+        user_id=current_employee.employee_id,
+        message_txt="Single Message",
     )
     db_session.commit()
 
-    response = client.get(f"/messages/{msg.TicketMessageId}", headers=auth_headers)
+    response = client.get(f"/messages/{msg.ticket_message_id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["MessageTxt"] == "Single Message"
+    assert data["message_txt"] == "Single Message"

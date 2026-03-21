@@ -6,64 +6,58 @@ from sqlmodel import SQLModel
 from models.tickets import TicketPriority, TicketSLA, TicketStatus
 
 
-# Schema for creating tickets
 class TicketCreate(SQLModel):
-    Title: str
-    Description: str | None = None
-    Status: TicketStatus = TicketStatus.TODO
-    Priority: TicketPriority = TicketPriority.NORMAL
-    SLA: TicketSLA | None = None  # Service Level Agreement
-    AssignedTo: int | None = None  # EmployeeId to assign ticket to
+    title: str
+    description: str | None = None
+    status: TicketStatus = TicketStatus.TODO
+    priority: TicketPriority = TicketPriority.NORMAL
+    sla: TicketSLA | None = None
+    assigned_to: int | None = None
 
 
-# Schema for updating tickets (partial updates allowed)
 class TicketUpdate(SQLModel):
-    Title: str | None = None
-    Description: str | None = None
-    Status: TicketStatus | None = None
-    Priority: TicketPriority | None = None
-    SLA: TicketSLA | None = None  # Service Level Agreement (can be None to clear)
-    AssignedTo: int | None = None  # Can be None to unassign
+    title: str | None = None
+    description: str | None = None
+    status: TicketStatus | None = None
+    priority: TicketPriority | None = None
+    sla: TicketSLA | None = None
+    assigned_to: int | None = None
 
     @classmethod
-    @field_validator("SLA", mode="before")
+    @field_validator("sla", mode="before")
     def validate_sla(cls, v):
-        if v == "":  # noqa: PLC1901
+        if v == "":
             return None
         return v
 
 
-# Schema for simplified employee info in ticket responses
 class TicketEmployee(SQLModel):
-    EmployeeId: int
-    DisplayName: str | None = None
-    Email: str | None = None
-    Title: str | None = None
+    employee_id: int
+    display_name: str | None = None
+    email: str | None = None
+    title: str | None = None
 
 
-# Schema for ticket response with related data
 class Ticket(SQLModel):
-    TicketId: int | None = None
-    Title: str
-    Description: str | None = None
-    Status: TicketStatus
-    Priority: TicketPriority
-    SLA: TicketSLA | None = None  # Service Level Agreement
-    CreatedBy: int
-    AssignedTo: int | None = None
-    CreatedAt: datetime
-    UpdatedAt: datetime
+    ticket_id: int | None = None
+    title: str
+    description: str | None = None
+    status: TicketStatus
+    priority: TicketPriority
+    sla: TicketSLA | None = None
+    created_by: int
+    assigned_to: int | None = None
+    created_at: datetime
+    updated_at: datetime
 
-    # Related data
     creator: TicketEmployee | None = None
     assignee: TicketEmployee | None = None
 
 
-# Schema for ticket filters/pagination
 class TicketFilters(SQLModel):
     status: TicketStatus | None = None
     priority: TicketPriority | None = None
-    sla: TicketSLA | None = None  # Service Level Agreement filter
-    assigned_to: int | None = None  # EmployeeId
-    created_by: int | None = None  # EmployeeId
-    search: str | None = None  # Search in title/description
+    sla: TicketSLA | None = None
+    assigned_to: int | None = None
+    created_by: int | None = None
+    search: str | None = None

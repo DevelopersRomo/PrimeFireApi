@@ -18,10 +18,10 @@ from models.timesheet import (
 # Set up defaults for overrides
 class MockEmployee:
     def __init__(self, employee_id=1, email="john@example.com", first_name="John", last_name="Doe"):
-        self.EmployeeId = employee_id
-        self.Email = email
-        self.FirstName = first_name
-        self.LastName = last_name
+        self.employee_id = employee_id
+        self.email = email
+        self.first_name = first_name
+        self.last_name = last_name
 
 
 def mock_get_current_employee():
@@ -30,8 +30,8 @@ def mock_get_current_employee():
 
 def mock_get_current_admin_permissions():
     return {
-        "employee": {"EmployeeId": 1, "FirstName": "John", "LastName": "Doe"},
-        "permissions": [{"module_key": "timesheet", "permissions": {"AdminActions": True}}],
+        "employee": {"employee_id": 1, "first_name": "John", "last_name": "Doe"},
+        "permissions": [{"module_key": "timesheet", "permissions": {"admin_actions": True}}],
     }
 
 
@@ -84,11 +84,11 @@ def mock_asyncio_run():
 @pytest.fixture
 def test_customer(db_session: Session) -> Customers:
     customer = Customers(
-        CompanyName="Test Company",
-        FirstName="Test",
-        LastName="Cust",
-        CustomerType=CustomerTypeEnum.COMMERCIAL,
-        CreatedBy=1,
+        company_name="Test Company",
+        first_name="Test",
+        last_name="Cust",
+        customer_type=CustomerTypeEnum.COMMERCIAL,
+        created_by=1,
     )
     db_session.add(customer)
     db_session.commit()
@@ -99,12 +99,12 @@ def test_customer(db_session: Session) -> Customers:
 @pytest.fixture
 def base_settings(db_session: Session) -> TimeSheetSettings:
     settings = TimeSheetSettings(
-        OvertimeDailyHours="8.00",
-        OvertimeWeeklyHours="40.00",
-        MaxOvertimeDailyHours="8.00",
-        IsActive=True,
-        CreatedAt=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
-        UpdatedAt=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
+        overtime_daily_hours="8.00",
+        overtime_weekly_hours="40.00",
+        max_overtime_daily_hours="8.00",
+        is_active=True,
+        created_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
+        updated_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
     )
     db_session.add(settings)
     db_session.commit()
@@ -124,14 +124,14 @@ def create_punch(
     """Helper to create a TimeSheetPunch with required fields."""
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     punch = TimeSheetPunch(
-        EmployeeId=employee_id,
-        CustomerId=customer_id,
-        Status=status,
-        ClockInAt=clock_in or now,
-        ClockOutAt=clock_out,
-        WorkedMinutes=worked_minutes,
-        CreatedAt=now,
-        UpdatedAt=now,
+        employee_id=employee_id,
+        customer_id=customer_id,
+        status=status,
+        clock_in_at=clock_in or now,
+        clock_out_at=clock_out,
+        worked_minutes=worked_minutes,
+        created_at=now,
+        updated_at=now,
     )
     db_session.add(punch)
     db_session.commit()
@@ -144,24 +144,24 @@ def create_punch(
 
 def test_clock_in(client, db_session: Session, test_customer, base_settings, mock_httpx_get, mock_asyncio_run):
     payload = {
-        "CustomerId": test_customer.CustomerId,
-        "Note": "Starting work",
-        "UseLocation": True,
-        "Latitude": "11.1",
-        "Longitude": "22.2",
-        "GpsAccuracy": "10m",
+        "customer_id": test_customer.customer_id,
+        "note": "Starting work",
+        "use_location": True,
+        "latitude": "11.1",
+        "longitude": "22.2",
+        "gps_accuracy": "10m",
     }
 
     response = client.post("/api/v1/timesheet/clock-in", json=payload)
     assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
-    assert data["Status"] == TimeSheetPunchStatusEnum.OPEN.value
-    assert data["Note"] == "Starting work"
+    assert data["status"] == TimeSheetPunchStatusEnum.OPEN.value
+    assert data["note"] == "Starting work"
 
     # Verify db
-    punch = db_session.exec(select(TimeSheetPunch).where(TimeSheetPunch.PunchId == data["PunchId"])).first()
+    punch = db_session.exec(select(TimeSheetPunch).where(TimeSheetPunch.punch_id == data["punch_id"])).first()
     assert punch is not None
-    assert punch.ClockOutAt is None
+    assert punch.clock_out_at is None
 
     # Try to clock in again should fail due to conflict
     response = client.post("/api/v1/timesheet/clock-in", json=payload)
@@ -170,23 +170,23 @@ def test_clock_in(client, db_session: Session, test_customer, base_settings, moc
 
 def test_clock_out(client, db_session: Session, test_customer, base_settings, mock_httpx_get):
     # Setup open punch
-    create_punch(db_session, 1, test_customer.CustomerId, TimeSheetPunchStatusEnum.OPEN.value, "2023-01-01 08:00:00")
+    create_punch(db_session, 1, test_customer.customer_id, TimeSheetPunchStatusEnum.OPEN.value, "2023-01-01 08:00:00")
 
-    payload = {"Note": "Done for the day", "UseLocation": False}
+    payload = {"note": "Done for the day", "use_location": False}
 
     response = client.post("/api/v1/timesheet/clock-out", json=payload)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert data["Status"] == TimeSheetPunchStatusEnum.CLOSED.value
-    assert data["Note"] == "Done for the day"
-    assert data["ClockOutAt"] is not None
+    assert data["status"] == TimeSheetPunchStatusEnum.CLOSED.value
+    assert data["note"] == "Done for the day"
+    assert data["clock_out_at"] is not None
 
 
 def test_list_timesheet(client, db_session: Session, test_customer, base_settings):
     create_punch(
         db_session,
         1,
-        test_customer.CustomerId,
+        test_customer.customer_id,
         TimeSheetPunchStatusEnum.CLOSED.value,
         "2023-01-01 08:00:00",
         "2023-01-01 16:00:00",
@@ -196,21 +196,21 @@ def test_list_timesheet(client, db_session: Session, test_customer, base_setting
     response = client.get("/api/v1/timesheet?view=month&start_date=2023-01-01&end_date=2023-01-31")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert "Items" in data
-    assert "Totals" in data
-    assert data["Totals"]["TotalHours"] == 8.0
+    assert "items" in data
+    assert "totals" in data
+    assert data["totals"]["total_hours"] == 8.0
 
 
 def test_get_open_punch(client, db_session: Session, test_customer):
     response = client.get("/api/v1/timesheet/open")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["Punch"] is None
+    assert response.json()["punch"] is None
 
-    create_punch(db_session, 1, test_customer.CustomerId, TimeSheetPunchStatusEnum.OPEN.value, "2023-01-01 08:00:00")
+    create_punch(db_session, 1, test_customer.customer_id, TimeSheetPunchStatusEnum.OPEN.value, "2023-01-01 08:00:00")
 
     response = client.get("/api/v1/timesheet/open")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["Punch"]["PunchId"] is not None
+    assert response.json()["punch"]["punch_id"] is not None
 
 
 def test_export_timesheet(client, db_session: Session, test_customer):
@@ -226,15 +226,15 @@ def test_get_location(client, db_session: Session, mock_httpx_get):
         response = client.get("/api/v1/timesheet/location")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["IpAddress"] == "1.2.3.4"
-        assert data["City"] == "TestCity"
+        assert data["ip_address"] == "1.2.3.4"
+        assert data["city"] == "TestCity"
 
 
 def test_admin_list_punches(client, db_session: Session, test_customer):
     create_punch(
         db_session,
         2,
-        test_customer.CustomerId,
+        test_customer.customer_id,
         TimeSheetPunchStatusEnum.CLOSED.value,
         "2023-01-01 08:00:00",
         "2023-01-01 16:00:00",
@@ -245,7 +245,7 @@ def test_admin_list_punches(client, db_session: Session, test_customer):
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert len(data) == 1
-    assert data[0]["EmployeeId"] == 2
+    assert data[0]["employee_id"] == 2
 
 
 def test_admin_export_punches(client, db_session: Session):
@@ -258,38 +258,38 @@ def test_update_punch(client, db_session: Session, test_customer):
     punch = create_punch(
         db_session,
         1,
-        test_customer.CustomerId,
+        test_customer.customer_id,
         TimeSheetPunchStatusEnum.CLOSED.value,
         "2023-01-01 08:00:00",
         "2023-01-01 16:00:00",
         480,
     )
 
-    payload = {"Note": "Updated Note"}
+    payload = {"note": "Updated Note"}
 
-    response = client.patch(f"/api/v1/timesheet/{punch.PunchId}", json=payload)
+    response = client.patch(f"/api/v1/timesheet/{punch.punch_id}", json=payload)
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["Note"] == "Updated Note"
+    assert response.json()["note"] == "Updated Note"
 
 
 def test_approve_reject_punch(client, db_session: Session, test_customer):
     punch = create_punch(
         db_session,
         2,
-        test_customer.CustomerId,
+        test_customer.customer_id,
         TimeSheetPunchStatusEnum.CLOSED.value,
         "2023-01-01 08:00:00",
         "2023-01-01 16:00:00",
     )
 
-    response = client.post(f"/api/v1/timesheet/{punch.PunchId}/approve")
+    response = client.post(f"/api/v1/timesheet/{punch.punch_id}/approve")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["Status"] == TimeSheetPunchStatusEnum.APPROVED.value
-    assert response.json()["ApprovedBy"] == 1
+    assert response.json()["status"] == TimeSheetPunchStatusEnum.APPROVED.value
+    assert response.json()["approved_by"] == 1
 
-    response = client.post(f"/api/v1/timesheet/{punch.PunchId}/reject")
+    response = client.post(f"/api/v1/timesheet/{punch.punch_id}/reject")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["Status"] == TimeSheetPunchStatusEnum.REJECTED.value
+    assert response.json()["status"] == TimeSheetPunchStatusEnum.REJECTED.value
 
 
 def test_check_notifications(client, db_session: Session, test_customer):
@@ -302,7 +302,7 @@ def test_check_notifications(client, db_session: Session, test_customer):
     create_punch(
         db_session,
         1,
-        test_customer.CustomerId,
+        test_customer.customer_id,
         TimeSheetPunchStatusEnum.OPEN.value,
         past_dt.strftime("%Y-%m-%d %H:%M:%S"),
     )
@@ -319,7 +319,7 @@ def test_clock_out_auto(client, db_session: Session, test_customer, mock_asyncio
     create_punch(
         db_session,
         1,
-        test_customer.CustomerId,
+        test_customer.customer_id,
         TimeSheetPunchStatusEnum.OPEN.value,
         past_dt.strftime("%Y-%m-%d %H:%M:%S"),
     )
@@ -327,19 +327,19 @@ def test_clock_out_auto(client, db_session: Session, test_customer, mock_asyncio
     response = client.post("/api/v1/timesheet/clock-out-auto")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert data["Status"] == TimeSheetPunchStatusEnum.CLOSED.value
-    assert data["ClockOutAt"] is not None
+    assert data["status"] == TimeSheetPunchStatusEnum.CLOSED.value
+    assert data["clock_out_at"] is not None
 
 
 def test_notify_hours(client, db_session: Session, test_customer, mock_asyncio_run):
     from models.employees import Employees
 
     # Create employee record for the mock employee
-    emp = Employees(EmployeeId=1, FirstName="John", LastName="Doe", Email="john@example.com")
+    emp = Employees(employee_id=1, first_name="John", last_name="Doe", email="john@example.com")
     db_session.add(emp)
     db_session.commit()
 
-    create_punch(db_session, 1, test_customer.CustomerId, TimeSheetPunchStatusEnum.OPEN.value, "2023-01-01 08:00:00")
+    create_punch(db_session, 1, test_customer.customer_id, TimeSheetPunchStatusEnum.OPEN.value, "2023-01-01 08:00:00")
 
     # Patch asyncio.run to return success
     with patch("api.timesheet.asyncio.run") as mock_run:

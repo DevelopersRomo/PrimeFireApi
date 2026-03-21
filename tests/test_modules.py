@@ -10,14 +10,14 @@ from models.modules import Modules
 def sample_module_data():
     """Sample module data for testing."""
     return {
-        "ModuleName": "Test Module",
-        "ModuleKey": "test_module",
-        "Description": "A test module",
-        "Icon": "test_icon",
-        "RouteUrl": "/test",
-        "DisplayOrder": 99,
-        "IsActive": True,
-        "ParentModuleId": None,
+        "module_name": "Test Module",
+        "module_key": "test_module",
+        "description": "A test module",
+        "icon": "test_icon",
+        "route_url": "/test",
+        "display_order": 99,
+        "is_active": True,
+        "parent_module_id": None,
     }
 
 
@@ -25,22 +25,22 @@ def sample_module_data():
 def sample_permission_data():
     """Sample permission data for testing."""
     return {
-        "RoleId": 1,
-        "ModuleId": 1,
-        "CanView": True,
-        "CanCreate": True,
-        "CanEdit": True,
-        "CanDelete": False,
-        "CanExport": True,
-        "AdminActions": False,
-        "OtherActions": False,
+        "role_id": 1,
+        "module_id": 1,
+        "can_view": True,
+        "can_create": True,
+        "can_edit": True,
+        "can_delete": False,
+        "can_export": True,
+        "admin_actions": False,
+        "other_actions": False,
     }
 
 
 @pytest.fixture
 def test_role(db_session: Session):
     """Create a test role."""
-    role = Roles(RoleId=1, RoleName="Admin", Description="Admin role")
+    role = Roles(role_id=1, role_name="Admin", description="Admin role")
     db_session.add(role)
     db_session.commit()
     db_session.refresh(role)
@@ -51,14 +51,14 @@ def test_role(db_session: Session):
 def test_module(db_session: Session):
     """Create a test module."""
     module = Modules(
-        ModuleId=1,
-        ModuleName="Dashboard",
-        ModuleKey="dashboard",
-        Description="Dashboard module",
-        Icon="dashboard",
-        RouteUrl="/dashboard",
-        DisplayOrder=1,
-        IsActive=True,
+        module_id=1,
+        module_name="Dashboard",
+        module_key="dashboard",
+        description="Dashboard module",
+        icon="dashboard",
+        route_url="/dashboard",
+        display_order=1,
+        is_active=True,
     )
     db_session.add(module)
     db_session.commit()
@@ -69,7 +69,7 @@ def test_module(db_session: Session):
 @pytest.fixture
 def test_role_user(db_session: Session):
     """Create a test user role."""
-    role = Roles(RoleId=3, RoleName="User", Description="Regular user role")
+    role = Roles(role_id=3, role_name="User", description="Regular user role")
     db_session.add(role)
     db_session.commit()
     db_session.refresh(role)
@@ -84,9 +84,9 @@ class TestModules:
         response = client.post("/modules/", json=sample_module_data, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["ModuleName"] == sample_module_data["ModuleName"]
-        assert data["ModuleKey"] == sample_module_data["ModuleKey"]
-        assert "ModuleId" in data
+        assert data["module_name"] == sample_module_data["module_name"]
+        assert data["module_key"] == sample_module_data["module_key"]
+        assert "module_id" in data
 
     def test_create_module_duplicate_key(
         self, client: TestClient, auth_headers: dict, sample_module_data: dict
@@ -111,14 +111,14 @@ class TestModules:
         """Test getting a specific module by ID."""
         # Create module
         create_response = client.post("/modules/", json=sample_module_data, headers=auth_headers)
-        module_id = create_response.json()["ModuleId"]
+        module_id = create_response.json()["module_id"]
 
         # Get module
         response = client.get(f"/modules/{module_id}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["ModuleId"] == module_id
-        assert data["ModuleName"] == sample_module_data["ModuleName"]
+        assert data["module_id"] == module_id
+        assert data["module_name"] == sample_module_data["module_name"]
 
     def test_get_module_by_key(self, client: TestClient, auth_headers: dict, sample_module_data: dict) -> None:
         """Test getting a specific module by key."""
@@ -126,10 +126,10 @@ class TestModules:
         client.post("/modules/", json=sample_module_data, headers=auth_headers)
 
         # Get module by key
-        response = client.get(f"/modules/by-key/{sample_module_data['ModuleKey']}", headers=auth_headers)
+        response = client.get(f"/modules/by-key/{sample_module_data['module_key']}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["ModuleKey"] == sample_module_data["ModuleKey"]
+        assert data["module_key"] == sample_module_data["module_key"]
 
     def test_get_root_modules(self, client: TestClient, auth_headers: dict) -> None:
         """Test getting root modules."""
@@ -137,41 +137,41 @@ class TestModules:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        # All modules should have ParentModuleId as None
+        # All modules should have parent_module_id as None
         for module in data:
-            assert module["ParentModuleId"] is None
+            assert module["parent_module_id"] is None
 
     def test_update_module(self, client: TestClient, auth_headers: dict, sample_module_data: dict) -> None:
         """Test updating a module."""
         # Create module
         create_response = client.post("/modules/", json=sample_module_data, headers=auth_headers)
-        module_id = create_response.json()["ModuleId"]
+        module_id = create_response.json()["module_id"]
 
         # Update module
-        update_data = {"ModuleName": "Updated Module Name"}
+        update_data = {"module_name": "Updated Module Name"}
         response = client.put(f"/modules/{module_id}", json=update_data, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["ModuleName"] == "Updated Module Name"
+        assert data["module_name"] == "Updated Module Name"
 
     def test_toggle_module_active(self, client: TestClient, auth_headers: dict, sample_module_data: dict) -> None:
         """Test toggling module active status."""
         # Create module
         create_response = client.post("/modules/", json=sample_module_data, headers=auth_headers)
-        module_id = create_response.json()["ModuleId"]
-        original_status = create_response.json()["IsActive"]
+        module_id = create_response.json()["module_id"]
+        original_status = create_response.json()["is_active"]
 
         # Toggle status
         response = client.patch(f"/modules/{module_id}/toggle-active", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["IsActive"] != original_status
+        assert data["is_active"] != original_status
 
     def test_delete_module(self, client: TestClient, auth_headers: dict, sample_module_data: dict) -> None:
         """Test deleting a module."""
         # Create module
         create_response = client.post("/modules/", json=sample_module_data, headers=auth_headers)
-        module_id = create_response.json()["ModuleId"]
+        module_id = create_response.json()["module_id"]
 
         # Delete module
         response = client.delete(f"/modules/{module_id}", headers=auth_headers)
@@ -187,10 +187,10 @@ class TestModules:
         """Test that deleting a module with children fails."""
         # Create parent module
         parent_response = client.post("/modules/", json=sample_module_data, headers=auth_headers)
-        parent_id = parent_response.json()["ModuleId"]
+        parent_id = parent_response.json()["module_id"]
 
         # Create child module
-        child_data = {**sample_module_data, "ModuleKey": "child_module", "ParentModuleId": parent_id}
+        child_data = {**sample_module_data, "module_key": "child_module", "parent_module_id": parent_id}
         client.post("/modules/", json=child_data, headers=auth_headers)
 
         # Try to delete parent
@@ -215,9 +215,9 @@ class TestPermissions:
         response = client.post("/permissions", json=sample_permission_data, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["RoleId"] == sample_permission_data["RoleId"]
-        assert data["ModuleId"] == sample_permission_data["ModuleId"]
-        assert data["CanView"] == sample_permission_data["CanView"]
+        assert data["role_id"] == sample_permission_data["role_id"]
+        assert data["module_id"] == sample_permission_data["module_id"]
+        assert data["can_view"] == sample_permission_data["can_view"]
 
     def test_get_all_permissions(self, client: TestClient, auth_headers: dict) -> None:
         """Test getting all permissions."""
@@ -232,8 +232,8 @@ class TestPermissions:
         response = client.get(f"/permissions/role/{role_id}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["RoleId"] == role_id
-        assert "RoleName" in data
+        assert data["role_id"] == role_id
+        assert "role_name" in data
         assert "permissions" in data
         assert isinstance(data["permissions"], list)
 
@@ -265,8 +265,8 @@ class TestPermissions:
         response = client.get(f"/permissions/{role_id}/{module_id}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["RoleId"] == role_id
-        assert data["ModuleId"] == module_id
+        assert data["role_id"] == role_id
+        assert data["module_id"] == module_id
 
     def test_update_permission(
         self,
@@ -283,12 +283,12 @@ class TestPermissions:
 
         role_id = 1
         module_id = 1
-        update_data = {"CanDelete": False}
+        update_data = {"can_delete": False}
 
         response = client.put(f"/permissions/{role_id}/{module_id}", json=update_data, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert not data["CanDelete"]
+        assert not data["can_delete"]
 
     def test_delete_permission(
         self,
@@ -302,8 +302,8 @@ class TestPermissions:
         """Test deleting a permission."""
         # Create permission
         create_response = client.post("/permissions", json=sample_permission_data, headers=auth_headers)
-        role_id = create_response.json()["RoleId"]
-        module_id = create_response.json()["ModuleId"]
+        role_id = create_response.json()["role_id"]
+        module_id = create_response.json()["module_id"]
 
         # Delete permission
         response = client.delete(f"/permissions/{role_id}/{module_id}", headers=auth_headers)
@@ -319,42 +319,42 @@ class TestPermissions:
         """Test bulk updating permissions for a role."""
         # Create second module for bulk test
         module2 = Modules(
-            ModuleId=2,
-            ModuleName="Settings",
-            ModuleKey="settings",
-            Description="Settings module",
-            Icon="settings",
-            RouteUrl="/settings",
-            DisplayOrder=2,
-            IsActive=True,
+            module_id=2,
+            module_name="Settings",
+            module_key="settings",
+            description="Settings module",
+            icon="settings",
+            route_url="/settings",
+            display_order=2,
+            is_active=True,
         )
         db_session.add(module2)
         db_session.commit()
 
         bulk_data = {
-            "RoleId": 3,  # User role
+            "role_id": 3,  # User role
             "permissions": [
                 {
-                    "RoleId": 3,
-                    "ModuleId": 1,
-                    "CanView": True,
-                    "CanCreate": False,
-                    "CanEdit": False,
-                    "CanDelete": False,
-                    "CanExport": False,
-                    "AdminActions": False,
-                    "OtherActions": False,
+                    "role_id": 3,
+                    "module_id": 1,
+                    "can_view": True,
+                    "can_create": False,
+                    "can_edit": False,
+                    "can_delete": False,
+                    "can_export": False,
+                    "admin_actions": False,
+                    "other_actions": False,
                 },
                 {
-                    "RoleId": 3,
-                    "ModuleId": 2,
-                    "CanView": True,
-                    "CanCreate": False,
-                    "CanEdit": False,
-                    "CanDelete": False,
-                    "CanExport": False,
-                    "AdminActions": False,
-                    "OtherActions": False,
+                    "role_id": 3,
+                    "module_id": 2,
+                    "can_view": True,
+                    "can_create": False,
+                    "can_edit": False,
+                    "can_delete": False,
+                    "can_export": False,
+                    "admin_actions": False,
+                    "other_actions": False,
                 },
             ],
         }
@@ -362,7 +362,7 @@ class TestPermissions:
         response = client.post("/permissions/bulk-update", json=bulk_data, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["RoleId"] == 3
+        assert data["role_id"] == 3
         assert len(data["permissions"]) == 2
 
     def test_check_user_permission(

@@ -1,7 +1,7 @@
 def test_get_timesheet_settings(client, auth_headers):
     response = client.get("/api/v1/catalogs/timesheet", headers=auth_headers)
     assert response.status_code == 200
-    assert "OvertimeDailyHours" in response.json()
+    assert "overtime_daily_hours" in response.json()
 
 
 def test_upsert_timesheet_settings_forbidden(client, auth_headers):

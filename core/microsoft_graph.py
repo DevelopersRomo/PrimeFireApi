@@ -153,59 +153,59 @@ class MicrosoftGraphClient:
         office_phone = business_phones[0] if business_phones else None
 
         return {
-            "AzureOid": graph_user.get("id"),
-            "AzureUpn": graph_user.get("userPrincipalName"),
-            "FirstName": graph_user.get("givenName"),
-            "LastName": graph_user.get("surname"),
-            "DisplayName": graph_user.get("displayName"),
-            "Title": graph_user.get("jobTitle"),
-            "Department": graph_user.get("department"),
-            "Office": graph_user.get("officeLocation"),
-            "Email": graph_user.get("mail") or graph_user.get("userPrincipalName"),
-            "Manager": graph_user.get("manager", {}).get("displayName") if graph_user.get("manager") else None,
-            "ManagerEmail": graph_user.get("manager", {}).get("mail")
+            "azure_oid": graph_user.get("id"),
+            "azure_upn": graph_user.get("userPrincipalName"),
+            "first_name": graph_user.get("givenName"),
+            "last_name": graph_user.get("surname"),
+            "display_name": graph_user.get("displayName"),
+            "title": graph_user.get("jobTitle"),
+            "department": graph_user.get("department"),
+            "office": graph_user.get("officeLocation"),
+            "email": graph_user.get("mail") or graph_user.get("userPrincipalName"),
+            "manager": graph_user.get("manager", {}).get("displayName") if graph_user.get("manager") else None,
+            "manager_email": graph_user.get("manager", {}).get("mail")
             or graph_user.get("manager", {}).get("userPrincipalName")
             if graph_user.get("manager")
             else None,
-            "MobilePhone": graph_user.get("mobilePhone"),
-            "OfficePhone": office_phone,
-            "StreetAddress": graph_user.get("streetAddress"),
-            "City": graph_user.get("city"),
-            "State": graph_user.get("state"),
-            "PostalCode": graph_user.get("postalCode"),
-            "Country": graph_user.get("countryLetterCode") or graph_user.get("country"),
+            "mobile_phone": graph_user.get("mobilePhone"),
+            "office_phone": office_phone,
+            "street_address": graph_user.get("streetAddress"),
+            "city": graph_user.get("city"),
+            "state": graph_user.get("state"),
+            "postal_code": graph_user.get("postalCode"),
+            "country": graph_user.get("countryLetterCode") or graph_user.get("country"),
         }
 
     def map_employee_to_graph_user(self, employee_data: dict[str, Any]) -> dict[str, Any]:
         """Map Employee model to Microsoft Graph user update format."""
         graph_data = {}
 
-        if employee_data.get("FirstName"):
-            graph_data["givenName"] = employee_data["FirstName"]
-        if employee_data.get("LastName"):
-            graph_data["surname"] = employee_data["LastName"]
-        if employee_data.get("DisplayName"):
-            graph_data["displayName"] = employee_data["DisplayName"]
-        if employee_data.get("Title"):
-            graph_data["jobTitle"] = employee_data["Title"]
-        if employee_data.get("Department"):
-            graph_data["department"] = employee_data["Department"]
-        if employee_data.get("Office"):
-            graph_data["officeLocation"] = employee_data["Office"]
-        if employee_data.get("MobilePhone"):
-            graph_data["mobilePhone"] = employee_data["MobilePhone"]
-        if employee_data.get("OfficePhone"):
-            graph_data["businessPhones"] = [employee_data["OfficePhone"]]
-        if employee_data.get("StreetAddress"):
-            graph_data["streetAddress"] = employee_data["StreetAddress"]
-        if employee_data.get("City"):
-            graph_data["city"] = employee_data["City"]
-        if employee_data.get("State"):
-            graph_data["state"] = employee_data["State"]
-        if employee_data.get("PostalCode"):
-            graph_data["postalCode"] = employee_data["PostalCode"]
-        if employee_data.get("Country"):
-            graph_data["country"] = employee_data["Country"]
+        if employee_data.get("first_name"):
+            graph_data["givenName"] = employee_data["first_name"]
+        if employee_data.get("last_name"):
+            graph_data["surname"] = employee_data["last_name"]
+        if employee_data.get("display_name"):
+            graph_data["displayName"] = employee_data["display_name"]
+        if employee_data.get("title"):
+            graph_data["jobTitle"] = employee_data["title"]
+        if employee_data.get("department"):
+            graph_data["department"] = employee_data["department"]
+        if employee_data.get("office"):
+            graph_data["officeLocation"] = employee_data["office"]
+        if employee_data.get("mobile_phone"):
+            graph_data["mobilePhone"] = employee_data["mobile_phone"]
+        if employee_data.get("office_phone"):
+            graph_data["businessPhones"] = [employee_data["office_phone"]]
+        if employee_data.get("street_address"):
+            graph_data["streetAddress"] = employee_data["street_address"]
+        if employee_data.get("city"):
+            graph_data["city"] = employee_data["city"]
+        if employee_data.get("state"):
+            graph_data["state"] = employee_data["state"]
+        if employee_data.get("postal_code"):
+            graph_data["postalCode"] = employee_data["postal_code"]
+        if employee_data.get("country"):
+            graph_data["country"] = employee_data["country"]
 
         return graph_data
 

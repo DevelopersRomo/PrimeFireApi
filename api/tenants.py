@@ -56,9 +56,9 @@ async def create_tenant(
 @router.get("/my-tenants", response_model=list[TenantRead])
 async def get_my_tenants(current_user: Employees = Depends(get_current_employee), db: Session = Depends(get_main_db)):
     """Get all tenants the current user has access to."""
-    links = db.exec(select(TenantEmployees).where(TenantEmployees.Email == current_user.Email)).all()
+    links = db.exec(select(TenantEmployees).where(TenantEmployees.email == current_user.email)).all()
 
-    return [link.tenant for link in links if link.tenant and link.tenant.IsActive]
+    return [link.tenant for link in links if link.tenant and link.tenant.is_active]
 
 
 # ----------------------------
@@ -68,18 +68,18 @@ async def get_my_tenants(current_user: Employees = Depends(get_current_employee)
 async def list_pending_users(db: Session = Depends(get_main_db)):
     """List all external users pending tenant assignment (Admin only)."""
     # Users pending assignment (TenantId is NULL)
-    external_users = db.exec(select(TenantEmployees).where(TenantEmployees.TenantId is None)).all()
+    external_users = db.exec(select(TenantEmployees).where(TenantEmployees.tenant_id is None)).all()
 
     result = []
     for ext_user in external_users:
-        tenant = db.get(Tenants, ext_user.TenantId) if ext_user.TenantId else None
+        tenant = db.get(Tenants, ext_user.tenant_id) if ext_user.tenant_id else None
         result.append(
             TenantEmployeePendingRead(
-                Id=ext_user.Id,
-                Email=ext_user.Email,
-                TenantId=ext_user.TenantId,
-                TenantName=tenant.Name if tenant else None,
-                CreatedAt=ext_user.CreatedAt,
+                id=ext_user.id,
+                email=ext_user.email,
+                tenant_id=ext_user.tenant_id,
+                tenant_name=tenant.name if tenant else None,
+                created_at=ext_user.created_at,
             )
         )
     return result
@@ -99,52 +99,52 @@ async def approve_external_user(
     Creates user in tenant's database and updates TenantEmployees record.
     """
     # 1. Get external user
-    external_user = db.get(TenantEmployees, request.TenantEmployeeId)
+    external_user = db.get(TenantEmployees, request.tenant_employee_id)
     if not external_user:
         raise HTTPException(status_code=404, detail="External user not found")
 
     # 2. Get tenant
-    tenant = db.get(Tenants, request.TenantId)
+    tenant = db.get(Tenants, request.tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    if not tenant.IsActive:
+    if not tenant.is_active:
         raise HTTPException(status_code=400, detail="Tenant is not active")
 
     # 3. Update pending user to point to the assigned tenant
-    external_user.TenantId = tenant.TenantId
+    external_user.tenant_id = tenant.tenant_id
     db.add(external_user)
     db.commit()
     db.refresh(external_user)
 
     # 4. Create/Update user in MAIN database (ignoring tenant DB separation)
     # Check if user already exists in MAIN DB
-    existing = db.exec(select(Employees).where(Employees.Email == external_user.Email)).first()
+    existing = db.exec(select(Employees).where(Employees.email == external_user.email)).first()
 
     if not existing:
         # Generate unique AzureOid for external users to avoid UNIQUE constraint violation
         external_oid = str(uuid.uuid4())
         new_employee = Employees(
-            Email=external_user.Email,
-            PasswordHash=external_user.PasswordHash,
-            DisplayName=external_user.Email.split("@")[0],  # Use email prefix as fallback
-            Title="External User",
-            AzureOid=external_oid,  # Unique identifier for external users
+            email=external_user.email,
+            password_hash=external_user.password_hash,
+            display_name=external_user.email.split("@")[0],  # Use email prefix as fallback
+            title="External User",
+            azure_oid=external_oid,  # Unique identifier for external users
         )
         db.add(new_employee)
         db.commit()
         db.refresh(new_employee)
     else:
         # Update password if needed
-        existing.PasswordHash = external_user.PasswordHash
+        existing.password_hash = external_user.password_hash
         db.add(existing)
         db.commit()
 
     return {
         "message": "User approved and assigned to tenant",
-        "tenant_employee_id": external_user.Id,
-        "tenant_id": tenant.TenantId,
-        "tenant_name": tenant.Name,
+        "tenant_employee_id": external_user.id,
+        "tenant_id": tenant.tenant_id,
+        "tenant_name": tenant.name,
         "status": "Active",
     }
 
@@ -159,11 +159,11 @@ async def approve_tenant_request(
     db: Session = Depends(get_main_db),
 ):
     """(Admin Only) Approve a tenant request and assign connection key."""
-    tenant = db.get(Tenants, request.TenantId)
+    tenant = db.get(Tenants, request.tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    tenant.IsActive = True
+    tenant.is_active = True
     db.add(tenant)
     db.commit()
     db.refresh(tenant)
@@ -181,7 +181,7 @@ async def create_tenant_logo(
 ):
     """Create a new logo for a tenant."""
     # Verify tenant exists
-    tenant = db.get(Tenants, logo_data.TenantId)
+    tenant = db.get(Tenants, logo_data.tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
@@ -197,7 +197,7 @@ async def list_tenant_logos(tenant_id: int | None = None, db: Session = Depends(
     """List all logos, optionally filtered by tenant_id."""
     query = select(TenantLogos)
     if tenant_id:
-        query = query.where(TenantLogos.TenantId == tenant_id)
+        query = query.where(TenantLogos.tenant_id == tenant_id)
 
     logos = db.exec(query).all()
     return list(logos) if logos else []
@@ -218,7 +218,7 @@ async def get_tenant_logo_by_url(url: str, db: Session = Depends(get_main_db)):
     Get logo configuration by URL identifier.
     This endpoint is public (no auth required) for frontend login page usage.
     """
-    logo = db.exec(select(TenantLogos).where(TenantLogos.Url == url)).first()
+    logo = db.exec(select(TenantLogos).where(TenantLogos.url == url)).first()
     if not logo:
         raise HTTPException(status_code=404, detail="Logo not found for the provided URL")
     return logo
@@ -241,7 +241,7 @@ async def update_tenant_logo(
     for field, value in update_data.items():
         setattr(logo, field, value)
 
-    logo.UpdatedAt = datetime.now()  # noqa: DTZ005
+    logo.updated_at = datetime.now()  # noqa: DTZ005
     db.add(logo)
     db.commit()
     db.refresh(logo)
@@ -312,14 +312,14 @@ async def delete_tenant_request(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    # Only allow deleting PENDING tenants
-    if tenant.DbConnectionKey != "PENDING":
+    # Only allow deleting inactive tenants
+    if tenant.is_active:
         raise HTTPException(
-            status_code=400, detail="Cannot delete active tenants. Only PENDING tenants can be deleted."
+            status_code=400, detail="Cannot delete active tenants. Only inactive tenants can be deleted."
         )
 
     # Cleanup associated employee links
-    links = db.exec(select(TenantEmployees).where(TenantEmployees.TenantId == tenant_id)).all()
+    links = db.exec(select(TenantEmployees).where(TenantEmployees.tenant_id == tenant_id)).all()
 
     for link in links:
         db.delete(link)

@@ -6,39 +6,37 @@ from .employees import Employee as EmployeeSchema
 
 
 class TicketMessageCreate(SQLModel):
-    MessageTxt: str
-    TicketId: int
+    message_txt: str
+    ticket_id: int
 
 
 class TicketMessageUpdate(SQLModel):
-    MessageTxt: str | None = None
+    message_txt: str | None = None
 
 
 class TicketMessage(SQLModel):
-    TicketMessageId: int | None = None
-    TicketId: int
-    # Replaced numeric UserId with a nested User object (Employee schema)
-    User: EmployeeSchema | None = None
-    MessageTxt: str | None = None
-    CreatedAt: datetime
-    UpdatedAt: datetime | None = None
-    EditedAt: datetime | None = None
+    ticket_message_id: int | None = None
+    ticket_id: int
+    user: EmployeeSchema | None = None
+    message_txt: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+    edited_at: datetime | None = None
 
 
 class TicketAttachmentCreate(SQLModel):
-    # TicketId comes from the path param in the endpoint; make optional in body
-    TicketId: int | None = None
-    TicketMessageId: int | None = None
-    FileName: str | None = None
-    FileType: str | None = None
-    FilePath: str | None = None
+    ticket_id: int | None = None
+    ticket_message_id: int | None = None
+    file_name: str | None = None
+    file_type: str | None = None
+    file_path: str | None = None
 
 
 class TicketAttachment(SQLModel):
-    TicketAttachmentId: int | None = None
-    TicketId: int
-    TicketMessageId: int | None = None
-    FileName: str
-    FileType: str | None = None
-    FilePath: str | None = None
-    CreatedAt: datetime
+    ticket_attachment_id: int | None = None
+    ticket_id: int
+    ticket_message_id: int | None = None
+    file_name: str
+    file_type: str | None = None
+    file_path: str | None = None
+    created_at: datetime

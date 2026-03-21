@@ -39,7 +39,7 @@ async def get_roles(db: Session = Depends(get_db), current_user: dict = Depends(
 @router.get("/{role_id}", response_model=Role)
 async def get_role(role_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)):
     """Get a specific role by ID."""
-    db_role = db.exec(select(Roles).filter(Roles.RoleId == role_id)).first()
+    db_role = db.exec(select(Roles).filter(Roles.role_id == role_id)).first()
     if not db_role:
         raise HTTPException(status_code=404, detail="Role not found")
     return db_role
@@ -53,7 +53,7 @@ async def update_role(
     role_id: int, role: RoleCreate, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
 ):
     """Update a role."""
-    db_role = db.exec(select(Roles).filter(Roles.RoleId == role_id)).first()
+    db_role = db.exec(select(Roles).filter(Roles.role_id == role_id)).first()
     if not db_role:
         raise HTTPException(status_code=404, detail="Role not found")
 
@@ -73,7 +73,7 @@ async def delete_role(
     role_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
 ):
     """Delete a role."""
-    db_role = db.exec(select(Roles).filter(Roles.RoleId == role_id)).first()
+    db_role = db.exec(select(Roles).filter(Roles.role_id == role_id)).first()
     if not db_role:
         raise HTTPException(status_code=404, detail="Role not found")
 

@@ -14,7 +14,7 @@ from tests.conftest import create_test_record
 @pytest.fixture
 def current_employee(db_session: Session):
     emp = create_test_record(
-        db_session, Employees, Email="test@example.com", FirstName="Test", LastName="User", DisplayName="Test User"
+        db_session, Employees, email="test@example.com", first_name="Test", last_name="User", display_name="Test User"
     )
     db_session.commit()
     return emp
@@ -23,7 +23,7 @@ def current_employee(db_session: Session):
 @pytest.fixture
 def other_employee(db_session: Session):
     emp = create_test_record(
-        db_session, Employees, Email="other@example.com", FirstName="Other", LastName="User", DisplayName="Other User"
+        db_session, Employees, email="other@example.com", first_name="Other", last_name="User", display_name="Other User"
     )
     db_session.commit()
     return emp
@@ -38,8 +38,8 @@ def auth_overrides(current_employee: Employees):
     # Override employee with permissions
     def mock_get_current_employee_with_permissions():
         return {
-            "employee": {"EmployeeId": current_employee.EmployeeId, "Email": current_employee.Email},
-            "permissions": [],  # Has no AdminActions by default
+            "employee": {"employee_id": current_employee.employee_id, "email": current_employee.email},
+            "permissions": [],  # Has no admin_actions by default
         }
 
     app.dependency_overrides[get_current_employee] = mock_get_current_employee
@@ -54,23 +54,23 @@ def test_create_ticket(
 ):
     with patch("api.tickets.notify_ticket_created") as mock_notify:
         payload = {
-            "Title": "Test Ticket",
-            "Description": "This is a test ticket",
-            "Status": "todo",
-            "Priority": "high",
-            "SLA": "24h",
-            "AssignedTo": other_employee.EmployeeId,
+            "title": "Test Ticket",
+            "description": "This is a test ticket",
+            "status": "todo",
+            "priority": "high",
+            "sla": "24h",
+            "assigned_to": other_employee.employee_id,
         }
 
         response = client.post("/tickets", json=payload, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["Title"] == "Test Ticket"
-        assert data["Status"] == "todo"
-        assert data["Priority"] == "high"
-        assert data["SLA"] == "24h"
-        assert data["CreatedBy"] == current_employee.EmployeeId
-        assert data["AssignedTo"] == other_employee.EmployeeId
+        assert data["title"] == "Test Ticket"
+        assert data["status"] == "todo"
+        assert data["priority"] == "high"
+        assert data["sla"] == "24h"
+        assert data["created_by"] == current_employee.employee_id
+        assert data["assigned_to"] == other_employee.employee_id
 
         mock_notify.assert_called_once()
 
@@ -81,20 +81,20 @@ def test_get_tickets(
     create_test_record(
         db_session,
         Tickets,
-        Title="Test Ticket 1",
-        Description="Desc 1",
-        Status=TicketStatus.TODO,
-        Priority=TicketPriority.LOW,
-        CreatedBy=current_employee.EmployeeId,
+        title="Test Ticket 1",
+        description="Desc 1",
+        status=TicketStatus.TODO,
+        priority=TicketPriority.LOW,
+        created_by=current_employee.employee_id,
     )
     create_test_record(
         db_session,
         Tickets,
-        Title="Test Ticket 2",
-        Description="Desc 2",
-        Status=TicketStatus.DONE,
-        Priority=TicketPriority.HIGH,
-        CreatedBy=current_employee.EmployeeId,
+        title="Test Ticket 2",
+        description="Desc 2",
+        status=TicketStatus.DONE,
+        priority=TicketPriority.HIGH,
+        created_by=current_employee.employee_id,
     )
     db_session.commit()
 
@@ -107,21 +107,21 @@ def test_get_tickets(
     response = client.get("/tickets?status=done", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert all(t["Status"] == "done" for t in data)
+    assert all(t["status"] == "done" for t in data)
 
 
 def test_get_ticket(
     client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
 ):
     ticket = create_test_record(
-        db_session, Tickets, Title="Test Ticket", Status=TicketStatus.TODO, CreatedBy=current_employee.EmployeeId
+        db_session, Tickets, title="Test Ticket", status=TicketStatus.TODO, created_by=current_employee.employee_id
     )
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.TicketId}", headers=auth_headers)
+    response = client.get(f"/tickets/{ticket.ticket_id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["Title"] == "Test Ticket"
+    assert data["title"] == "Test Ticket"
 
 
 def test_update_ticket(
@@ -134,17 +134,17 @@ def test_update_ticket(
 ):
     with patch("api.tickets.send_ticket_assigned_notification") as mock_notify:
         ticket = create_test_record(
-            db_session, Tickets, Title="Test Ticket", Status=TicketStatus.TODO, CreatedBy=current_employee.EmployeeId
+            db_session, Tickets, title="Test Ticket", status=TicketStatus.TODO, created_by=current_employee.employee_id
         )
         db_session.commit()
 
-        payload = {"Status": "in_progress", "AssignedTo": other_employee.EmployeeId}
+        payload = {"status": "in_progress", "assigned_to": other_employee.employee_id}
 
-        response = client.patch(f"/tickets/{ticket.TicketId}", json=payload, headers=auth_headers)
+        response = client.patch(f"/tickets/{ticket.ticket_id}", json=payload, headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["Status"] == "in_progress"
-        assert data["AssignedTo"] == other_employee.EmployeeId
+        assert data["status"] == "in_progress"
+        assert data["assigned_to"] == other_employee.employee_id
 
         mock_notify.assert_called_once()
 
@@ -153,12 +153,12 @@ def test_delete_ticket(
     client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
 ):
     ticket = create_test_record(
-        db_session, Tickets, Title="Test Ticket", Status=TicketStatus.TODO, CreatedBy=current_employee.EmployeeId
+        db_session, Tickets, title="Test Ticket", status=TicketStatus.TODO, created_by=current_employee.employee_id
     )
     db_session.commit()
 
-    response = client.delete(f"/tickets/{ticket.TicketId}", headers=auth_headers)
+    response = client.delete(f"/tickets/{ticket.ticket_id}", headers=auth_headers)
     assert response.status_code == 200
 
-    response = client.get(f"/tickets/{ticket.TicketId}", headers=auth_headers)
+    response = client.get(f"/tickets/{ticket.ticket_id}", headers=auth_headers)
     assert response.status_code == 404

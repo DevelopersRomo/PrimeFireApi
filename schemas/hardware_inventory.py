@@ -6,23 +6,23 @@ from schemas.employees import EmployeeRead
 
 
 class HardwareInventoryBase(BaseModel):
-    SerialNumber: str
-    Brand: str
-    Model: str | None = None
-    DeviceType: str | None = None
-    Processor: str | None = None
-    RAM_GB: int | None = None
-    StorageType: str | None = None
-    StorageSize_GB: int | None = None
-    GPU: str | None = None
-    OperatingSystem: str | None = None
-    WarrantyStartDate: date | None = None
-    WarrantyEndDate: date | None = None
-    PurchaseDate: date | None = None
-    EmployeeId: int | None = None
-    Location: str | None = None
-    Status: str | None = "Active"
-    Notes: str | None = None
+    serial_number: str
+    brand: str
+    model: str | None = None
+    device_type: str | None = None
+    processor: str | None = None
+    ram_gb: int | None = None
+    storage_type: str | None = None
+    storage_size_gb: int | None = None
+    gpu: str | None = None
+    operating_system: str | None = None
+    warranty_start_date: date | None = None
+    warranty_end_date: date | None = None
+    purchase_date: date | None = None
+    employee_id: int | None = None
+    location: str | None = None
+    status: str | None = "Active"
+    notes: str | None = None
 
 
 class HardwareInventoryCreate(HardwareInventoryBase):
@@ -30,14 +30,14 @@ class HardwareInventoryCreate(HardwareInventoryBase):
 
 
 class HardwareInventoryUpdate(HardwareInventoryBase):
-    UpdatedAt: datetime | None = datetime.utcnow()  # noqa: DTZ003
+    updated_at: datetime | None = datetime.utcnow()
 
 
 class HardwareInventoryRead(HardwareInventoryBase):
-    HardwareID: int
-    Employee: EmployeeRead | None
-    CreatedAt: datetime
-    UpdatedAt: datetime | None
+    hardware_id: int
+    employee: EmployeeRead | None
+    created_at: datetime
+    updated_at: datetime | None
 
     class Config:
         from_attributes = True

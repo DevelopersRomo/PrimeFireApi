@@ -1,29 +1,38 @@
+from datetime import datetime
+
 from sqlmodel import SQLModel
 
-from models.curriculums import Curriculums
 
-
-# Schema for creating Curriculums (without file)
 class CurriculumCreate(SQLModel):
-    JobId: int
-    Name: str
-    Email: str
-    Phone: str | None = None
-    CoverLetter: str | None = None
-    Status: str = "pending"
-    EmployeeId: int | None = None
+    job_id: int
+    name: str
+    email: str
+    phone: str | None = None
+    cover_letter: str | None = None
+    status: str = "pending"
+    employee_id: int | None = None
 
 
-# Schema for updating Curriculums
 class CurriculumUpdate(SQLModel):
-    Name: str | None = None
-    Email: str | None = None
-    Phone: str | None = None
-    CurriculumPath: str | None = None
-    CoverLetter: str | None = None
-    Status: str | None = None
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    curriculum_path: str | None = None
+    cover_letter: str | None = None
+    status: str | None = None
 
 
-# Schema for response (all fields)
-class Curriculum(Curriculums):
-    pass
+class Curriculum(SQLModel):
+    curriculum_id: int | None = None
+    job_id: int | None = None
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    curriculum_path: str | None = None
+    cover_letter: str | None = None
+    status: str | None = None
+    submitted_at: datetime | None = None
+    employee_id: int | None = None
+
+    class Config:
+        from_attributes = True

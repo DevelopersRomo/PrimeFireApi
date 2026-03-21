@@ -66,13 +66,13 @@ def get_db(request: Request = None) -> Generator[Session, None, None]:
 
             main_db = SessionLocal()
             try:
-                tenant = main_db.exec(select(Tenants).where(Tenants.DbConnectionKey == tenant_key)).first()
+                tenant = main_db.exec(select(Tenants).where(Tenants.db_connection_key == tenant_key)).first()
                 if not tenant:
                     raise HTTPException(
                         status_code=404,
                         detail=f"Tenant '{tenant_key}' not found in database. Available tenants can be checked at /tenants/list-all",
                     )
-                if not tenant.IsActive:
+                if not tenant.is_active:
                     raise HTTPException(status_code=400, detail=f"Tenant '{tenant_key}' is not active")
             finally:
                 main_db.close()

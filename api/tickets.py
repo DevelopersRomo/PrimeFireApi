@@ -30,29 +30,29 @@ def has_admin_actions(user_permissions: dict) -> bool:
 def ticket_to_schema(db_ticket: Tickets) -> Ticket:
     """Convert Tickets model to Ticket schema with related employee data."""
     return Ticket(
-        TicketId=db_ticket.TicketId,
-        Title=db_ticket.Title,
-        Description=db_ticket.Description,
-        Status=db_ticket.Status,
-        Priority=db_ticket.Priority,
-        SLA=db_ticket.SLA,
-        CreatedBy=db_ticket.CreatedBy,
-        AssignedTo=db_ticket.AssignedTo,
-        CreatedAt=db_ticket.CreatedAt,
-        UpdatedAt=db_ticket.UpdatedAt,
+        ticket_id=db_ticket.ticket_id,
+        title=db_ticket.title,
+        description=db_ticket.description,
+        status=db_ticket.status,
+        priority=db_ticket.priority,
+        sla=db_ticket.sla,
+        created_by=db_ticket.created_by,
+        assigned_to=db_ticket.assigned_to,
+        created_at=db_ticket.created_at,
+        updated_at=db_ticket.updated_at,
         creator=TicketEmployee(
-            EmployeeId=db_ticket.creator.EmployeeId,
-            DisplayName=db_ticket.creator.DisplayName,
-            Email=db_ticket.creator.Email,
-            Title=db_ticket.creator.Title,
+            employee_id=db_ticket.creator.employee_id,
+            display_name=db_ticket.creator.display_name,
+            email=db_ticket.creator.email,
+            title=db_ticket.creator.title,
         )
         if db_ticket.creator
         else None,
         assignee=TicketEmployee(
-            EmployeeId=db_ticket.assignee.EmployeeId,
-            DisplayName=db_ticket.assignee.DisplayName,
-            Email=db_ticket.assignee.Email,
-            Title=db_ticket.assignee.Title,
+            employee_id=db_ticket.assignee.employee_id,
+            display_name=db_ticket.assignee.display_name,
+            email=db_ticket.assignee.email,
+            title=db_ticket.assignee.title,
         )
         if db_ticket.assignee
         else None,
@@ -84,24 +84,24 @@ def get_tickets(
     # Apply filters
     filters = []
     if status:
-        filters.append(Tickets.Status == status)
+        filters.append(Tickets.status == status)
     if priority:
-        filters.append(Tickets.Priority == priority)
+        filters.append(Tickets.priority == priority)
     if sla:
-        filters.append(sla == Tickets.SLA)
+        filters.append(sla == Tickets.sla)
     if assigned_to:
-        filters.append(Tickets.AssignedTo == assigned_to)
+        filters.append(Tickets.assigned_to == assigned_to)
     if created_by:
-        filters.append(Tickets.CreatedBy == created_by)
+        filters.append(Tickets.created_by == created_by)
     if search:
         search_filter = f"%{search}%"
-        filters.append(or_(Tickets.Title.ilike(search_filter), Tickets.Description.ilike(search_filter)))
+        filters.append(or_(Tickets.title.ilike(search_filter), Tickets.description.ilike(search_filter)))
 
     if filters:
         query = query.where(and_(*filters))
 
     # Apply ordering (newest first) and pagination
-    query = query.order_by(Tickets.CreatedAt.desc()).offset(skip).limit(limit)
+    query = query.order_by(Tickets.created_at.desc()).offset(skip).limit(limit)
 
     tickets = db.exec(query).all()
     return [ticket_to_schema(ticket) for ticket in tickets]
@@ -116,7 +116,7 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(requ
     db_ticket = db.exec(
         select(Tickets)
         .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
-        .filter(Tickets.TicketId == ticket_id)
+        .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
     if not db_ticket:
@@ -137,22 +137,22 @@ def create_ticket(
 ):
     """Create a new ticket. Creator is automatically set to the authenticated user."""
     # Validate assigned employee exists if provided
-    if ticket.AssignedTo:
-        assigned_employee = db.exec(select(Employees).filter(Employees.EmployeeId == ticket.AssignedTo)).first()
+    if ticket.assigned_to:
+        assigned_employee = db.exec(select(Employees).filter(Employees.employee_id == ticket.assigned_to)).first()
         if not assigned_employee:
             raise HTTPException(status_code=404, detail="Assigned employee not found")
 
     # Create ticket
     db_ticket = Tickets(
-        Title=ticket.Title,
-        Description=ticket.Description,
-        Status=ticket.Status,
-        Priority=ticket.Priority,
-        SLA=ticket.SLA,
-        CreatedBy=current_employee.EmployeeId,
-        AssignedTo=ticket.AssignedTo,
-        CreatedAt=datetime.now(UTC),
-        UpdatedAt=datetime.now(UTC),
+        title=ticket.title,
+        description=ticket.description,
+        status=ticket.status,
+        priority=ticket.priority,
+        sla=ticket.sla,
+        created_by=current_employee.employee_id,
+        assigned_to=ticket.assigned_to,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     db.add(db_ticket)
@@ -163,25 +163,25 @@ def create_ticket(
     db_ticket = db.exec(
         select(Tickets)
         .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
-        .filter(Tickets.TicketId == db_ticket.TicketId)
+        .filter(Tickets.ticket_id == db_ticket.ticket_id)
     ).first()
 
     # Send notification if ticket has assignee and assignee is different from creator
-    if db_ticket.AssignedTo and db_ticket.assignee and db_ticket.AssignedTo != current_employee.EmployeeId:
+    if db_ticket.assigned_to and db_ticket.assignee and db_ticket.assigned_to != current_employee.employee_id:
         background_tasks.add_task(
             notify_ticket_created,
-            ticket_id=db_ticket.TicketId,
-            title=db_ticket.Title,
-            description=db_ticket.Description,
-            status=db_ticket.Status.value,
-            priority=db_ticket.Priority.value,
-            created_by_name=db_ticket.creator.DisplayName
-            or f"{db_ticket.creator.FirstName} {db_ticket.creator.LastName}",
-            created_by_email=db_ticket.creator.Email or "",
-            assigned_to_name=db_ticket.assignee.DisplayName
-            or f"{db_ticket.assignee.FirstName} {db_ticket.assignee.LastName}",
-            assigned_to_email=db_ticket.assignee.Email or "",
-            action_url=f"{settings.APP_URL}/tickets/{db_ticket.TicketId}",
+            ticket_id=db_ticket.ticket_id,
+            title=db_ticket.title,
+            description=db_ticket.description,
+            status=db_ticket.status.value,
+            priority=db_ticket.priority.value,
+            created_by_name=db_ticket.creator.display_name
+            or f"{db_ticket.creator.first_name} {db_ticket.creator.last_name}",
+            created_by_email=db_ticket.creator.email or "",
+            assigned_to_name=db_ticket.assignee.display_name
+            or f"{db_ticket.assignee.first_name} {db_ticket.assignee.last_name}",
+            assigned_to_email=db_ticket.assignee.email or "",
+            action_url=f"{settings.APP_URL}/tickets/{db_ticket.ticket_id}",
             notify_assignee=True,
         )
 
@@ -200,21 +200,21 @@ async def update_ticket(
     db: Session = Depends(get_db),
 ):
     """Update a ticket. Only creator, assigned employee, or users with AdminActions can update."""
-    current_employee_id = user_permissions["employee"]["EmployeeId"]
+    current_employee_id = user_permissions["employee"]["employee_id"]
 
     # Get ticket
     db_ticket = db.exec(
         select(Tickets)
         .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
-        .filter(Tickets.TicketId == ticket_id)
+        .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
     if not db_ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # Check permissions: creator, assignee, or AdminActions
-    is_creator = db_ticket.CreatedBy == current_employee_id
-    is_assignee = db_ticket.AssignedTo == current_employee_id
+    is_creator = db_ticket.created_by == current_employee_id
+    is_assignee = db_ticket.assigned_to == current_employee_id
     has_admin = has_admin_actions(user_permissions)
 
     if not (is_creator or is_assignee or has_admin):
@@ -223,12 +223,12 @@ async def update_ticket(
             detail="You can only update tickets you created, are assigned to, or have admin permissions",
         )
 
-    # Track if AssignedTo changed
-    old_assigned_to = db_ticket.AssignedTo
+    # Track if assigned_to changed
+    old_assigned_to = db_ticket.assigned_to
 
     # Validate assigned employee exists if being updated
-    if ticket_update.AssignedTo is not None and ticket_update.AssignedTo:  # If assigning to someone
-        assigned_employee = db.exec(select(Employees).filter(Employees.EmployeeId == ticket_update.AssignedTo)).first()
+    if ticket_update.assigned_to is not None and ticket_update.assigned_to:  # If assigning to someone
+        assigned_employee = db.exec(select(Employees).filter(Employees.employee_id == ticket_update.assigned_to)).first()
         if not assigned_employee:
             raise HTTPException(status_code=404, detail="Assigned employee not found")
 
@@ -238,7 +238,7 @@ async def update_ticket(
         setattr(db_ticket, key, value)
 
     # Update timestamp
-    db_ticket.UpdatedAt = datetime.now(UTC)
+    db_ticket.updated_at = datetime.now(UTC)
 
     db.commit()
     db.refresh(db_ticket)
@@ -247,30 +247,30 @@ async def update_ticket(
     db_ticket = db.exec(
         select(Tickets)
         .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
-        .filter(Tickets.TicketId == ticket_id)
+        .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
-    # Send notification if AssignedTo changed and new assignee exists and is different from current user
-    if ticket_update.AssignedTo is not None and old_assigned_to != db_ticket.AssignedTo:  # noqa: SIM102
-        if db_ticket.AssignedTo and db_ticket.assignee and db_ticket.AssignedTo != current_employee_id:
+    # Send notification if assigned_to changed and new assignee exists and is different from current user
+    if ticket_update.assigned_to is not None and old_assigned_to != db_ticket.assigned_to:  # noqa: SIM102
+        if db_ticket.assigned_to and db_ticket.assignee and db_ticket.assigned_to != current_employee_id:
             notification_data = TicketNotificationData(
-                ticket_id=db_ticket.TicketId,
-                title=db_ticket.Title,
-                description=db_ticket.Description,
-                status=db_ticket.Status.value,
-                priority=db_ticket.Priority.value,
-                created_by_name=db_ticket.creator.DisplayName
-                or f"{db_ticket.creator.FirstName} {db_ticket.creator.LastName}",
-                created_by_email=db_ticket.creator.Email or "",
-                assigned_to_name=db_ticket.assignee.DisplayName
-                or f"{db_ticket.assignee.FirstName} {db_ticket.assignee.LastName}",
-                assigned_to_email=db_ticket.assignee.Email or "",
-                action_url=f"{settings.APP_URL}/tickets/{db_ticket.TicketId}",
+                ticket_id=db_ticket.ticket_id,
+                title=db_ticket.title,
+                description=db_ticket.description,
+                status=db_ticket.status.value,
+                priority=db_ticket.priority.value,
+                created_by_name=db_ticket.creator.display_name
+                or f"{db_ticket.creator.first_name} {db_ticket.creator.last_name}",
+                created_by_email=db_ticket.creator.email or "",
+                assigned_to_name=db_ticket.assignee.display_name
+                or f"{db_ticket.assignee.first_name} {db_ticket.assignee.last_name}",
+                assigned_to_email=db_ticket.assignee.email or "",
+                action_url=f"{settings.APP_URL}/tickets/{db_ticket.ticket_id}",
             )
             background_tasks.add_task(
                 send_ticket_assigned_notification,
                 notification_data=notification_data,
-                to_email=db_ticket.assignee.Email or "",
+                to_email=db_ticket.assignee.email or "",
             )
 
     return ticket_to_schema(db_ticket)
@@ -286,20 +286,20 @@ async def delete_ticket(
     db: Session = Depends(get_db),
 ):
     """Soft delete a ticket by marking it as closed. Only creator or users with AdminActions can delete."""
-    current_employee_id = user_permissions["employee"]["EmployeeId"]
+    current_employee_id = user_permissions["employee"]["employee_id"]
 
     # Get ticket
     db_ticket = db.exec(
         select(Tickets)
         .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
-        .filter(Tickets.TicketId == ticket_id)
+        .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
     if not db_ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # Check permissions: creator or AdminActions
-    is_creator = db_ticket.CreatedBy == current_employee_id
+    is_creator = db_ticket.created_by == current_employee_id
     has_admin = has_admin_actions(user_permissions)
 
     if not (is_creator or has_admin):

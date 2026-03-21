@@ -20,53 +20,53 @@ class TestJobsAPI:
     def test_create_job(self, client, auth_headers) -> None:
         """Test POST /jobs/ creates a new job."""
         job_data = {
-            "Title": "Software Developer",
-            "Description": "We are looking for a skilled software developer",
-            "Requirements": "Python, FastAPI, SQL experience required",
-            "Location": "Remote",
-            "SalaryMin": 50000.0,
-            "SalaryMax": 70000.0,
-            "Status": "active",
-            "EmployeeId": 2,
+            "title": "Software Developer",
+            "description": "We are looking for a skilled software developer",
+            "requirements": "Python, FastAPI, SQL experience required",
+            "location": "Remote",
+            "salary_min": 50000.0,
+            "salary_max": 70000.0,
+            "status": "active",
+            "employee_id": 2,
         }
 
         response = client.post("/jobs/", json=job_data, headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["Title"] == "Software Developer"
-        assert data["Description"] == "We are looking for a skilled software developer"
-        assert data["Location"] == "Remote"
-        assert data["SalaryMin"] == 50000.0  # noqa: RUF069
-        assert data["SalaryMax"] == 70000.0  # noqa: RUF069
-        assert data["Status"] == "active"
-        assert data["JobId"] is not None
+        assert data["title"] == "Software Developer"
+        assert data["description"] == "We are looking for a skilled software developer"
+        assert data["location"] == "Remote"
+        assert data["salary_min"] == 50000.0  # noqa: RUF069
+        assert data["salary_max"] == 70000.0  # noqa: RUF069
+        assert data["status"] == "active"
+        assert data["job_id"] is not None
 
     def test_get_job_by_id(self, client, auth_headers) -> None:
         """Test GET /jobs/{job_id} returns specific job."""
         # Create test data using the API
         job_data = {
-            "Title": "Test Job",
-            "Description": "Test description",
-            "Requirements": "Test requirements",
-            "Location": "Test location",
-            "SalaryMin": 40000.0,
-            "SalaryMax": 60000.0,
-            "Status": "active",
-            "EmployeeId": 2,
+            "title": "Test Job",
+            "description": "Test description",
+            "requirements": "Test requirements",
+            "location": "Test location",
+            "salary_min": 40000.0,
+            "salary_max": 60000.0,
+            "status": "active",
+            "employee_id": 2,
         }
 
         create_response = client.post("/jobs/", json=job_data, headers=auth_headers)
         assert create_response.status_code == 200
-        job_id = create_response.json()["JobId"]
+        job_id = create_response.json()["job_id"]
 
         response = client.get(f"/jobs/{job_id}", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["JobId"] == job_id
-        assert data["Title"] == "Test Job"
-        assert data["Status"] == "active"
+        assert data["job_id"] == job_id
+        assert data["title"] == "Test Job"
+        assert data["status"] == "active"
 
     def test_get_job_not_found(self, client, auth_headers) -> None:
         """Test GET /jobs/{job_id} returns 404 for non-existent job."""
@@ -79,25 +79,25 @@ class TestJobsAPI:
         """Test GET /jobs/status/{status} returns jobs by status."""
         # Create test data using the API
         job_data_1 = {
-            "Title": "Active Job",
-            "Description": "Test description",
-            "Requirements": "Test requirements",
-            "Location": "Test location",
-            "SalaryMin": 40000.0,
-            "SalaryMax": 60000.0,
-            "Status": "active",
-            "EmployeeId": 2,
+            "title": "Active Job",
+            "description": "Test description",
+            "requirements": "Test requirements",
+            "location": "Test location",
+            "salary_min": 40000.0,
+            "salary_max": 60000.0,
+            "status": "active",
+            "employee_id": 2,
         }
 
         job_data_2 = {
-            "Title": "Closed Job",
-            "Description": "Test description",
-            "Requirements": "Test requirements",
-            "Location": "Test location",
-            "SalaryMin": 40000.0,
-            "SalaryMax": 60000.0,
-            "Status": "closed",
-            "EmployeeId": 2,
+            "title": "Closed Job",
+            "description": "Test description",
+            "requirements": "Test requirements",
+            "location": "Test location",
+            "salary_min": 40000.0,
+            "salary_max": 60000.0,
+            "status": "closed",
+            "employee_id": 2,
         }
 
         client.post("/jobs/", json=job_data_1, headers=auth_headers)
@@ -109,61 +109,61 @@ class TestJobsAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-        assert all(j["Status"] == "active" for j in data)
+        assert all(j["status"] == "active" for j in data)
 
     def test_update_job(self, client, auth_headers) -> None:
         """Test PUT /jobs/{job_id} updates job."""
         # Create test data using the API
         job_data = {
-            "Title": "Test Job",
-            "Description": "Test description",
-            "Requirements": "Test requirements",
-            "Location": "Test location",
-            "SalaryMin": 40000.0,
-            "SalaryMax": 60000.0,
-            "Status": "active",
-            "EmployeeId": 2,
+            "title": "Test Job",
+            "description": "Test description",
+            "requirements": "Test requirements",
+            "location": "Test location",
+            "salary_min": 40000.0,
+            "salary_max": 60000.0,
+            "status": "active",
+            "employee_id": 2,
         }
 
         create_response = client.post("/jobs/", json=job_data, headers=auth_headers)
         assert create_response.status_code == 200
-        job_id = create_response.json()["JobId"]
+        job_id = create_response.json()["job_id"]
 
         update_data = {
-            "Title": "Senior Software Developer",
-            "Description": "Updated description",
-            "Status": "closed",
-            "SalaryMin": 60000.0,
-            "SalaryMax": 80000.0,
+            "title": "Senior Software Developer",
+            "description": "Updated description",
+            "status": "closed",
+            "salary_min": 60000.0,
+            "salary_max": 80000.0,
         }
 
         response = client.put(f"/jobs/{job_id}", json=update_data, headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["Title"] == "Senior Software Developer"
-        assert data["Description"] == "Updated description"
-        assert data["Status"] == "closed"
-        assert data["SalaryMin"] == 60000.0  # noqa: RUF069
-        assert data["SalaryMax"] == 80000.0  # noqa: RUF069
+        assert data["title"] == "Senior Software Developer"
+        assert data["description"] == "Updated description"
+        assert data["status"] == "closed"
+        assert data["salary_min"] == 60000.0  # noqa: RUF069
+        assert data["salary_max"] == 80000.0  # noqa: RUF069
 
     def test_delete_job(self, client, auth_headers) -> None:
         """Test DELETE /jobs/{job_id} deletes job."""
         # Create test data using the API
         job_data = {
-            "Title": "Test Job",
-            "Description": "Test description",
-            "Requirements": "Test requirements",
-            "Location": "Test location",
-            "SalaryMin": 40000.0,
-            "SalaryMax": 60000.0,
-            "Status": "active",
-            "EmployeeId": 2,
+            "title": "Test Job",
+            "description": "Test description",
+            "requirements": "Test requirements",
+            "location": "Test location",
+            "salary_min": 40000.0,
+            "salary_max": 60000.0,
+            "status": "active",
+            "employee_id": 2,
         }
 
         create_response = client.post("/jobs/", json=job_data, headers=auth_headers)
         assert create_response.status_code == 200
-        job_id = create_response.json()["JobId"]
+        job_id = create_response.json()["job_id"]
 
         # Verify job exists
         response = client.get(f"/jobs/{job_id}", headers=auth_headers)

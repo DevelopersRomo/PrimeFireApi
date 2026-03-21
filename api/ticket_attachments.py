@@ -38,20 +38,20 @@ router = APIRouter()
 
 def attachment_to_schema(db_att: TicketAttachments) -> TicketAttachment:
     return TicketAttachment(
-        TicketAttachmentId=db_att.TicketAttachmentId,
-        TicketId=db_att.TicketId,
-        TicketMessageId=db_att.TicketMessageId,
-        FileName=db_att.FileName,
-        FileType=db_att.FileType,
-        FilePath=db_att.FilePath,
-        CreatedAt=db_att.CreatedAt,
+        ticket_attachment_id=db_att.ticket_attachment_id,
+        ticket_id=db_att.ticket_id,
+        ticket_message_id=db_att.ticket_message_id,
+        file_name=db_att.file_name,
+        file_type=db_att.file_type,
+        file_path=db_att.file_path,
+        created_at=db_att.created_at,
     )
 
 
 @router.get("/tickets/{ticket_id}/attachments", response_model=list[TicketAttachment])
 def list_attachments_for_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     atts = db.exec(
-        select(TicketAttachments).where(TicketAttachments.TicketId == ticket_id).order_by(TicketAttachments.CreatedAt)
+        select(TicketAttachments).where(TicketAttachments.ticket_id == ticket_id).order_by(TicketAttachments.created_at)
     ).all()
     return [attachment_to_schema(a) for a in atts]
 
@@ -62,27 +62,27 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
     if not db_att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    # If file exists on disk (FilePath set), return the file directly
-    if db_att.FilePath:
+    # If file exists on disk (file_path set), return the file directly
+    if db_att.file_path:
         # Check if path in DB is absolute or relative
-        saved_path = Path(db_att.FilePath)
+        saved_path = Path(db_att.file_path)
 
         # If path starts with uploads/ but UPLOAD_DIR is different, we might fail to find it if we just join.
-        # But if we assume db_att.FilePath is the full relative path from app root as stored previously:
+        # But if we assume db_att.file_path is the full relative path from app root as stored previously:
         storage_path = saved_path
 
         # If not absolute, try joining with current working directory or check if it exists as is
         if not storage_path.is_absolute() and not storage_path.exists():
             # Fallback: maybe it's relative to UPLOAD_DIR but stored as relative string?
-            # For now, rely on FilePath being what was returned by create_attachment
+            # For now, rely on file_path being what was returned by create_attachment
             pass
 
         if storage_path.exists():
             # Use original filename for Content-Disposition
             return FileResponse(
                 path=str(storage_path),
-                filename=db_att.FileName or storage_path.name,
-                media_type=db_att.FileType or "application/octet-stream",
+                filename=db_att.file_name or storage_path.name,
+                media_type=db_att.file_type or "application/octet-stream",
             )
         # if file missing, fall back to metadata
     return attachment_to_schema(db_att)
@@ -91,7 +91,7 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
 @router.post("/tickets/{ticket_id}/attachments", response_model=TicketAttachment)
 def create_attachment(
     ticket_id: int,
-    TicketMessageId: int | None = Form(None),  # noqa: N803
+    ticket_message_id: int | None = Form(None),
     file: UploadFile | None = File(None),
     file_name: str | None = Form(None),
     file_type: str | None = Form(None),
@@ -99,7 +99,7 @@ def create_attachment(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
-    # If an UploadFile is provided, save it to UPLOAD_DIR/{ticket_id}/ and set FilePath
+    # If an UploadFile is provided, save it to UPLOAD_DIR/{ticket_id}/ and set file_path
     rel_path = None
     final_file_name = file_name
     final_file_type = file_type
@@ -125,12 +125,12 @@ def create_attachment(
         rel_path = file_path
 
     db_att = TicketAttachments(
-        TicketId=ticket_id,
-        TicketMessageId=TicketMessageId,
-        FileName=final_file_name,
-        FileType=final_file_type,
-        FilePath=rel_path,
-        CreatedAt=datetime.now(UTC),
+        ticket_id=ticket_id,
+        ticket_message_id=ticket_message_id,
+        file_name=final_file_name,
+        file_type=final_file_type,
+        file_path=rel_path,
+        created_at=datetime.now(UTC),
     )
     db.add(db_att)
     db.commit()
@@ -152,7 +152,7 @@ def delete_attachment(
     has_admin = False
     for perm in user_permissions.get("permissions", []):
         if perm.get("module_key") == "tickets":
-            has_admin = perm.get("permissions", {}).get("AdminActions", False)
+            has_admin = perm.get("permissions", {}).get("admin_actions", False)
     if not has_admin:
         raise HTTPException(status_code=403, detail="Not allowed to delete attachment")
 

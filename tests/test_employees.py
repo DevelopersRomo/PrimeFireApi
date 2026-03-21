@@ -23,16 +23,16 @@ class TestEmployeesAPI:
 
     def test_create_and_get_employee(self, client, auth_headers, db_session) -> None:
         """Test GET /employees/{id} successfully returns an employee."""
-        emp = Employees(FirstName="Test", LastName="User", Email="test@primefire.com")
+        emp = Employees(first_name="Test", last_name="User", email="test@primefire.com")
         db_session.add(emp)
         db_session.commit()
         db_session.refresh(emp)
 
-        response = client.get(f"/employees/{emp.EmployeeId}", headers=auth_headers)
+        response = client.get(f"/employees/{emp.employee_id}", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["FirstName"] == "Test"
-        assert data["Email"] == "test@primefire.com"
+        assert data["first_name"] == "Test"
+        assert data["email"] == "test@primefire.com"
 
     def test_get_employee_not_found(self, client, auth_headers) -> None:
         """Test GET /employees/{id} returns 404 when not found."""
@@ -41,27 +41,27 @@ class TestEmployeesAPI:
 
     @patch("api.employees.graph_client")
     def test_update_employee(self, mock_graph, client, auth_headers, db_session) -> None:
-        """Test PATCH /employees/{id} updates employee and pushes to Microsoft Graph if AzureOid exists."""
+        """Test PATCH /employees/{id} updates employee and pushes to Microsoft Graph if azure_oid exists."""
         mock_graph.map_employee_to_graph_user.return_value = {"givenName": "Updated"}
         mock_graph.update_user = AsyncMock()
 
-        emp = Employees(FirstName="Old", LastName="Name", Email="update@primefire.com", AzureOid="some-oid-123")
+        emp = Employees(first_name="Old", last_name="Name", email="update@primefire.com", azure_oid="some-oid-123")
         db_session.add(emp)
         db_session.commit()
         db_session.refresh(emp)
 
-        update_data = {"FirstName": "Updated"}
-        response = client.patch(f"/employees/{emp.EmployeeId}", json=update_data, headers=auth_headers)
+        update_data = {"first_name": "Updated"}
+        response = client.patch(f"/employees/{emp.employee_id}", json=update_data, headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
-        assert data["FirstName"] == "Updated"
+        assert data["first_name"] == "Updated"
         mock_graph.update_user.assert_called_once()
 
     def test_assign_and_remove_role(self, client, auth_headers, db_session) -> None:
         """Test assigning a role, getting roles, and removing a role."""
-        emp = Employees(FirstName="Role", LastName="Test")
-        role = Roles(RoleName="MockRole", Description="A mock role")
+        emp = Employees(first_name="Role", last_name="Test")
+        role = Roles(role_name="MockRole", description="A mock role")
         db_session.add(emp)
         db_session.add(role)
         db_session.commit()
@@ -69,29 +69,29 @@ class TestEmployeesAPI:
         db_session.refresh(role)
 
         # 1. Assign role
-        assignment_data = {"RoleId": role.RoleId}
-        res_assign = client.post(f"/employees/{emp.EmployeeId}/roles", json=assignment_data, headers=auth_headers)
+        assignment_data = {"role_id": role.role_id}
+        res_assign = client.post(f"/employees/{emp.employee_id}/roles", json=assignment_data, headers=auth_headers)
         assert res_assign.status_code == 200
 
         # 2. Prevent duplicate role assignment
         res_assign_duplicate = client.post(
-            f"/employees/{emp.EmployeeId}/roles", json=assignment_data, headers=auth_headers
+            f"/employees/{emp.employee_id}/roles", json=assignment_data, headers=auth_headers
         )
         assert res_assign_duplicate.status_code == 400
 
         # 3. Verify roles collection
-        res_roles = client.get(f"/employees/{emp.EmployeeId}/roles", headers=auth_headers)
+        res_roles = client.get(f"/employees/{emp.employee_id}/roles", headers=auth_headers)
         assert res_roles.status_code == 200
         roles_data = res_roles.json()
         assert len(roles_data) == 1
-        assert roles_data[0]["RoleName"] == "MockRole"
+        assert roles_data[0]["role_name"] == "MockRole"
 
         # 4. Remove role
-        res_remove = client.delete(f"/employees/{emp.EmployeeId}/roles/{role.RoleId}", headers=auth_headers)
+        res_remove = client.delete(f"/employees/{emp.employee_id}/roles/{role.role_id}", headers=auth_headers)
         assert res_remove.status_code == 200
 
         # 5. Verify role was removed
-        res_empty = client.get(f"/employees/{emp.EmployeeId}/roles", headers=auth_headers)
+        res_empty = client.get(f"/employees/{emp.employee_id}/roles", headers=auth_headers)
         assert len(res_empty.json()) == 0
 
     @patch("api.employees.graph_client")
@@ -111,12 +111,12 @@ class TestEmployeesAPI:
 
         mock_graph.get_all_users = AsyncMock(return_value=mock_ms_users)
         mock_graph.map_graph_user_to_employee.return_value = {
-            "AzureOid": "mock-oid-abc",
-            "AzureUpn": "testsync@primefire.com",
-            "Email": "testsync@primefire.com",
-            "DisplayName": "Sync User",
-            "FirstName": "Sync",
-            "LastName": "User",
+            "azure_oid": "mock-oid-abc",
+            "azure_upn": "testsync@primefire.com",
+            "email": "testsync@primefire.com",
+            "display_name": "Sync User",
+            "first_name": "Sync",
+            "last_name": "User",
         }
 
         response = client.get("/employees/sync/from-microsoft", headers=auth_headers)
@@ -124,14 +124,14 @@ class TestEmployeesAPI:
 
         data = response.json()
         # Verify that only the user we successfully parsed is returned
-        sync_user = next((u for u in data if u["AzureOid"] == "mock-oid-abc"), None)
+        sync_user = next((u for u in data if u["azure_oid"] == "mock-oid-abc"), None)
         assert sync_user is not None
-        assert sync_user["Email"] == "testsync@primefire.com"
+        assert sync_user["email"] == "testsync@primefire.com"
 
     @patch("api.employees.graph_client")
     def test_sync_employee_to_microsoft(self, mock_graph, client, auth_headers, db_session) -> None:
         """Test PUT /employees/{id}/sync-to-microsoft."""
-        emp = Employees(FirstName="Old", LastName="Name", Email="update@primefire.com", AzureOid="some-oid-456")
+        emp = Employees(first_name="Old", last_name="Name", email="update@primefire.com", azure_oid="some-oid-456")
         db_session.add(emp)
         db_session.commit()
         db_session.refresh(emp)
@@ -139,27 +139,27 @@ class TestEmployeesAPI:
         mock_graph.map_employee_to_graph_user.return_value = {"givenName": "Old"}
         mock_graph.update_user = AsyncMock()
 
-        response = client.put(f"/employees/{emp.EmployeeId}/sync-to-microsoft", headers=auth_headers)
+        response = client.put(f"/employees/{emp.employee_id}/sync-to-microsoft", headers=auth_headers)
         assert response.status_code == 200
         mock_graph.update_user.assert_called_once()
 
     @patch("api.employees.graph_client")
     def test_sync_single_employee_from_microsoft(self, mock_graph, client, auth_headers, db_session) -> None:
         """Test GET /employees/{id}/sync-from-microsoft."""
-        emp = Employees(FirstName="Old", LastName="Name", Email="update@primefire.com", AzureOid="some-oid-789")
+        emp = Employees(first_name="Old", last_name="Name", email="update@primefire.com", azure_oid="some-oid-789")
         db_session.add(emp)
         db_session.commit()
         db_session.refresh(emp)
 
         mock_ms_user = {"id": "some-oid-789", "givenName": "NewName"}
         mock_graph.get_user = AsyncMock(return_value=mock_ms_user)
-        mock_graph.map_graph_user_to_employee.return_value = {"FirstName": "NewName"}
+        mock_graph.map_graph_user_to_employee.return_value = {"first_name": "NewName"}
 
-        response = client.get(f"/employees/{emp.EmployeeId}/sync-from-microsoft", headers=auth_headers)
+        response = client.get(f"/employees/{emp.employee_id}/sync-from-microsoft", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["FirstName"] == "NewName"
+        assert data["first_name"] == "NewName"
 
     def test_trigger_sync(self, client, auth_headers) -> None:
         """Test POST /employees/sync/trigger."""

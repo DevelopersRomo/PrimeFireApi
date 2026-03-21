@@ -16,65 +16,65 @@ class TimeSheetPunchStatusEnum(enum.StrEnum):
 
 
 class TimeSheetPunch(SQLModel, table=True):
-    __tablename__ = "TimeSheetPunches"
+    __tablename__ = "time_sheet_punches"
     __table_args__ = (
-        CheckConstraint("Status IN ('open','closed','approved','rejected')"),
+        CheckConstraint("status IN ('open','closed','approved','rejected')"),
         {"schema": "dbo"},
     )
 
-    PunchId: int | None = Field(default=None, primary_key=True)
-    EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", nullable=False)
-    CustomerId: int = Field(foreign_key="dbo.Customers.CustomerId", nullable=False)
-    ClockInAt: str = Field(nullable=False, max_length=19)
-    ClockOutAt: str | None = Field(default=None, max_length=19)
-    Timezone: str | None = Field(default=None, max_length=80)
-    IpAddress: str | None = Field(default=None, max_length=45)
-    Latitude: str | None = Field(default=None, max_length=20)
-    Longitude: str | None = Field(default=None, max_length=20)
-    GpsAccuracy: str | None = Field(default=None, max_length=20)
-    City: str | None = Field(default=None, max_length=100)
-    Region: str | None = Field(default=None, max_length=100)
-    Country: str | None = Field(default=None, max_length=100)
-    LocationRaw: str | None = Field(default=None)
-    WorkedMinutes: int = Field(default=0, nullable=False)
-    Status: str = Field(default=TimeSheetPunchStatusEnum.OPEN.value, max_length=20)
-    Note: str | None = Field(default=None, max_length=2000)
-    ApprovedBy: int | None = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
-    ApprovedAt: str | None = Field(default=None, max_length=19)
-    CreatedAt: str = Field(nullable=False, max_length=19)
-    UpdatedAt: str = Field(nullable=False, max_length=19)
+    punch_id: int | None = Field(default=None, primary_key=True)
+    employee_id: int = Field(foreign_key="dbo.employees.employee_id", nullable=False)
+    customer_id: int = Field(foreign_key="dbo.customers.customer_id", nullable=False)
+    clock_in_at: str = Field(nullable=False, max_length=19)
+    clock_out_at: str | None = Field(default=None, max_length=19)
+    timezone: str | None = Field(default=None, max_length=80)
+    ip_address: str | None = Field(default=None, max_length=45)
+    latitude: str | None = Field(default=None, max_length=20)
+    longitude: str | None = Field(default=None, max_length=20)
+    gps_accuracy: str | None = Field(default=None, max_length=20)
+    city: str | None = Field(default=None, max_length=100)
+    region: str | None = Field(default=None, max_length=100)
+    country: str | None = Field(default=None, max_length=100)
+    location_raw: str | None = Field(default=None)
+    worked_minutes: int = Field(default=0, nullable=False)
+    status: str = Field(default=TimeSheetPunchStatusEnum.OPEN.value, max_length=20)
+    note: str | None = Field(default=None, max_length=2000)
+    approved_by: int | None = Field(default=None, foreign_key="dbo.employees.employee_id")
+    approved_at: str | None = Field(default=None, max_length=19)
+    created_at: str = Field(nullable=False, max_length=19)
+    updated_at: str = Field(nullable=False, max_length=19)
 
-    Customer: Optional["Customers"] = Relationship(sa_relationship_kwargs={"lazy": "joined"})
+    customer: Optional["Customers"] = Relationship(sa_relationship_kwargs={"lazy": "joined"})
 
 
 class TimeSheetLocationSnapshot(SQLModel, table=True):
-    __tablename__ = "TimeSheetLocationSnapshots"
+    __tablename__ = "time_sheet_location_snapshots"
     __table_args__ = {"schema": "dbo"}
 
-    SnapshotId: int | None = Field(default=None, primary_key=True)
-    EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", nullable=False)
-    CustomerId: int | None = Field(default=None, foreign_key="dbo.Customers.CustomerId")
-    IpAddress: str | None = Field(default=None, max_length=45)
-    Latitude: str | None = Field(default=None, max_length=20)
-    Longitude: str | None = Field(default=None, max_length=20)
-    GpsAccuracy: str | None = Field(default=None, max_length=20)
-    City: str | None = Field(default=None, max_length=100)
-    Region: str | None = Field(default=None, max_length=100)
-    Country: str | None = Field(default=None, max_length=100)
-    Timezone: str | None = Field(default=None, max_length=80)
-    LocationRaw: str | None = Field(default=None)
-    CapturedAt: str = Field(nullable=False, max_length=19)
+    snapshot_id: int | None = Field(default=None, primary_key=True)
+    employee_id: int = Field(foreign_key="dbo.employees.employee_id", nullable=False)
+    customer_id: int | None = Field(default=None, foreign_key="dbo.customers.customer_id")
+    ip_address: str | None = Field(default=None, max_length=45)
+    latitude: str | None = Field(default=None, max_length=20)
+    longitude: str | None = Field(default=None, max_length=20)
+    gps_accuracy: str | None = Field(default=None, max_length=20)
+    city: str | None = Field(default=None, max_length=100)
+    region: str | None = Field(default=None, max_length=100)
+    country: str | None = Field(default=None, max_length=100)
+    timezone: str | None = Field(default=None, max_length=80)
+    location_raw: str | None = Field(default=None)
+    captured_at: str = Field(nullable=False, max_length=19)
 
 
 class TimeSheetSettings(SQLModel, table=True):
-    __tablename__ = "TimeSheetSettings"
+    __tablename__ = "time_sheet_settings"
     __table_args__ = {"schema": "dbo"}
 
-    SettingId: int | None = Field(default=None, primary_key=True)
-    OvertimeDailyHours: str = Field(default="8.00", max_length=10)
-    OvertimeWeeklyHours: str | None = Field(default="40.00", max_length=10)
-    MaxOvertimeDailyHours: str | None = Field(default="8.00", max_length=10)  # Max overtime hours before auto clock out
-    RoundToMinutes: int | None = Field(default=None)
-    IsActive: bool = Field(default=True)
-    CreatedAt: str = Field(nullable=False, max_length=19)
-    UpdatedAt: str = Field(nullable=False, max_length=19)
+    setting_id: int | None = Field(default=None, primary_key=True)
+    overtime_daily_hours: str = Field(default="8.00", max_length=10)
+    overtime_weekly_hours: str | None = Field(default="40.00", max_length=10)
+    max_overtime_daily_hours: str | None = Field(default="8.00", max_length=10)
+    round_to_minutes: int | None = Field(default=None)
+    is_active: bool = Field(default=True)
+    created_at: str = Field(nullable=False, max_length=19)
+    updated_at: str = Field(nullable=False, max_length=19)

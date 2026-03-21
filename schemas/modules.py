@@ -7,14 +7,14 @@ from pydantic import BaseModel, Field
 # 📌 MODULE SCHEMAS
 # ----------------------------
 class ModuleBase(BaseModel):
-    ModuleName: str = Field(..., max_length=50, description="Name of the module")
-    ModuleKey: str = Field(..., max_length=50, description="Unique key identifier for the module")
-    Description: str | None = Field(None, max_length=200, description="Module description")
-    Icon: str | None = Field(None, max_length=50, description="Material icon name")
-    RouteUrl: str | None = Field(None, max_length=100, description="Angular route URL")
-    DisplayOrder: int | None = Field(0, description="Display order in menu")
-    IsActive: bool = Field(True, description="Whether the module is active")
-    ParentModuleId: int | None = Field(None, description="Parent module ID for hierarchical structure")
+    module_name: str = Field(..., max_length=50, description="Name of the module")
+    module_key: str = Field(..., max_length=50, description="Unique key identifier for the module")
+    description: str | None = Field(None, max_length=200, description="Module description")
+    icon: str | None = Field(None, max_length=50, description="Material icon name")
+    route_url: str | None = Field(None, max_length=100, description="Angular route URL")
+    display_order: int | None = Field(0, description="Display order in menu")
+    is_active: bool = Field(True, description="Whether the module is active")
+    parent_module_id: int | None = Field(None, description="Parent module ID for hierarchical structure")
 
 
 class ModuleCreate(ModuleBase):
@@ -22,19 +22,19 @@ class ModuleCreate(ModuleBase):
 
 
 class ModuleUpdate(BaseModel):
-    ModuleName: str | None = Field(None, max_length=50)
-    ModuleKey: str | None = Field(None, max_length=50)
-    Description: str | None = Field(None, max_length=200)
-    Icon: str | None = Field(None, max_length=50)
-    RouteUrl: str | None = Field(None, max_length=100)
-    DisplayOrder: int | None = None
-    IsActive: bool | None = None
-    ParentModuleId: int | None = None
+    module_name: str | None = Field(None, max_length=50)
+    module_key: str | None = Field(None, max_length=50)
+    description: str | None = Field(None, max_length=200)
+    icon: str | None = Field(None, max_length=50)
+    route_url: str | None = Field(None, max_length=100)
+    display_order: int | None = None
+    is_active: bool | None = None
+    parent_module_id: int | None = None
 
 
 class Module(ModuleBase):
-    ModuleId: int
-    CreatedAt: datetime
+    module_id: int
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -44,15 +44,15 @@ class Module(ModuleBase):
 # 📌 PERMISSION SCHEMAS (RoleModules)
 # ----------------------------
 class PermissionBase(BaseModel):
-    RoleId: int = Field(..., description="Role ID")
-    ModuleId: int = Field(..., description="Module ID")
-    CanView: bool = Field(True, description="Can view the module")
-    CanCreate: bool = Field(False, description="Can create records")
-    CanEdit: bool = Field(False, description="Can edit records")
-    CanDelete: bool = Field(False, description="Can delete records")
-    CanExport: bool = Field(False, description="Can export data")
-    AdminActions: bool = Field(False, description="Can perform administrative actions")
-    OtherActions: bool = Field(False, description="Can perform other actions")
+    role_id: int = Field(..., description="Role ID")
+    module_id: int = Field(..., description="Module ID")
+    can_view: bool = Field(True, description="Can view the module")
+    can_create: bool = Field(False, description="Can create records")
+    can_edit: bool = Field(False, description="Can edit records")
+    can_delete: bool = Field(False, description="Can delete records")
+    can_export: bool = Field(False, description="Can export data")
+    admin_actions: bool = Field(False, description="Can perform administrative actions")
+    other_actions: bool = Field(False, description="Can perform other actions")
 
 
 class PermissionCreate(PermissionBase):
@@ -60,17 +60,17 @@ class PermissionCreate(PermissionBase):
 
 
 class PermissionUpdate(BaseModel):
-    CanView: bool | None = None
-    CanCreate: bool | None = None
-    CanEdit: bool | None = None
-    CanDelete: bool | None = None
-    CanExport: bool | None = None
-    AdminActions: bool | None = None
-    OtherActions: bool | None = None
+    can_view: bool | None = None
+    can_create: bool | None = None
+    can_edit: bool | None = None
+    can_delete: bool | None = None
+    can_export: bool | None = None
+    admin_actions: bool | None = None
+    other_actions: bool | None = None
 
 
 class Permission(PermissionBase):
-    AssignedAt: datetime | None = None
+    assigned_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -96,13 +96,13 @@ class PermissionWithDetails(Permission):
 class RolePermissionsResponse(BaseModel):
     """Response for getting all permissions of a role."""
 
-    RoleId: int
-    RoleName: str
+    role_id: int
+    role_name: str
     permissions: list[PermissionWithDetails]
 
 
 class BulkPermissionUpdate(BaseModel):
     """Bulk update permissions for a role."""
 
-    RoleId: int
+    role_id: int
     permissions: list[PermissionCreate]

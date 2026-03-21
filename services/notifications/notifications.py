@@ -82,19 +82,19 @@ def _resolve_email_branding(tenant_key: str | None) -> dict:
 
     db = SessionLocal()
     try:
-        tenant = db.exec(select(Tenants).where(Tenants.DbConnectionKey == tenant_key)).first()
+        tenant = db.exec(select(Tenants).where(Tenants.db_connection_key == tenant_key)).first()
         if not tenant:
             return branding
 
         logo = db.exec(
-            select(TenantLogos).where(TenantLogos.TenantId == tenant.TenantId).order_by(TenantLogos.LogoId.desc())
+            select(TenantLogos).where(TenantLogos.tenant_id == tenant.tenant_id).order_by(TenantLogos.logo_id.desc())
         ).first()
         if not logo:
             return branding
 
-        app_name = (logo.Title or "").strip() or branding["app_name"]
-        app_url = _normalize_app_url((logo.Url or "").strip()) or branding["app_url"]
-        support_email = (logo.Email or "").strip() or None
+        app_name = (logo.title or "").strip() or branding["app_name"]
+        app_url = _normalize_app_url((logo.url or "").strip()) or branding["app_url"]
+        support_email = (logo.email or "").strip() or None
 
         return {
             "app_name": app_name,

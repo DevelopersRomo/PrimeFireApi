@@ -1,20 +1,23 @@
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
-# Forward reference
+if TYPE_CHECKING:
+    from models.employees import EmployeeRoles
+    from models.tenants import TenantEmployees, TenantLogos
 
 
 class Tenants(SQLModel, table=True):
-    __tablename__ = "Tenants"
+    __tablename__ = "tenants"
     __table_args__ = {"schema": "dbo"}
 
-    TenantId: int | None = Field(default=None, primary_key=True, index=True)
-    Name: str = Field(max_length=100)
-    DbConnectionKey: str = Field(max_length=50)  # Key to find connection string in env
-    Description: str | None = Field(default=None, max_length=255)
-    IsActive: bool = Field(default=True)
-    CreatedAt: datetime = Field(default_factory=datetime.now)
+    tenant_id: int | None = Field(default=None, primary_key=True, index=True)
+    name: str = Field(max_length=100)
+    db_connection_key: str = Field(max_length=50)
+    description: str | None = Field(default=None, max_length=255)
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.now)
 
     # Relationships
     tenant_employees: list["TenantEmployees"] = Relationship(back_populates="tenant")
@@ -22,34 +25,34 @@ class Tenants(SQLModel, table=True):
 
 
 class TenantEmployees(SQLModel, table=True):
-    __tablename__ = "TenantEmployees"
+    __tablename__ = "tenant_employees"
     __table_args__ = {"schema": "dbo"}
 
-    Id: int | None = Field(default=None, primary_key=True)
-    Email: str | None = Field(default=None, max_length=100, unique=True)
-    PasswordHash: str | None = Field(default=None, max_length=255)
-    TenantId: int | None = Field(default=None, foreign_key="dbo.Tenants.TenantId")
-    CreatedAt: datetime = Field(default_factory=datetime.now)
+    id: int | None = Field(default=None, primary_key=True)
+    email: str | None = Field(default=None, max_length=100, unique=True)
+    password_hash: str | None = Field(default=None, max_length=255)
+    tenant_id: int | None = Field(default=None, foreign_key="dbo.tenants.tenant_id")
+    created_at: datetime = Field(default_factory=datetime.now)
 
     tenant: Tenants = Relationship(back_populates="tenant_employees")
 
 
 class TenantLogos(SQLModel, table=True):
-    __tablename__ = "TenantLogos"
+    __tablename__ = "tenant_logos"
     __table_args__ = {"schema": "dbo"}
 
-    LogoId: int | None = Field(default=None, primary_key=True, index=True)
-    TenantId: int = Field(foreign_key="dbo.Tenants.TenantId")
-    Title: str = Field(max_length=100)
-    Description: str | None = Field(default=None, max_length=500)
-    Path: str = Field(max_length=500)  # Path used by frontend to identify logo
-    Url: str = Field(max_length=500, unique=True, index=True)  # URL identifier for frontend to fetch logo config
-    PathBackground: str | None = Field(default=None, max_length=500)
-    PrimaryColor: str | None = Field(default=None, max_length=50)
-    SecondaryColor: str | None = Field(default=None, max_length=50)
-    TertiaryColor: str | None = Field(default=None, max_length=50)
-    FavIcon: str | None = Field(default=None, max_length=500)
-    CreatedAt: datetime = Field(default_factory=datetime.now)
-    UpdatedAt: datetime | None = Field(default=None)
+    logo_id: int | None = Field(default=None, primary_key=True, index=True)
+    tenant_id: int = Field(foreign_key="dbo.tenants.tenant_id")
+    title: str = Field(max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    path: str = Field(max_length=500)
+    url: str = Field(max_length=500, unique=True, index=True)
+    path_background: str | None = Field(default=None, max_length=500)
+    primary_color: str | None = Field(default=None, max_length=50)
+    secondary_color: str | None = Field(default=None, max_length=50)
+    tertiary_color: str | None = Field(default=None, max_length=50)
+    fav_icon: str | None = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime | None = Field(default=None)
 
     tenant: Tenants = Relationship(back_populates="logos")

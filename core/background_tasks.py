@@ -124,27 +124,27 @@ def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees
     """Create or update an employee in SQL from a Microsoft Graph user and return the SQL employee."""
     employee_data = graph_client.map_graph_user_to_employee(ms_user)
 
-    graph_country = employee_data.pop("Country", None)
+    graph_country = employee_data.pop("country", None)
     country_id, _ = get_or_create_country_id(db, graph_country) if graph_country else (None, False)
-    employee_data["CountryId"] = country_id
-    employee_data["LastSyncedAt"] = datetime.now()  # noqa: DTZ005
+    employee_data["country_id"] = country_id
+    employee_data["last_synced_at"] = datetime.now()  # noqa: DTZ005
 
-    azure_oid = employee_data.get("AzureOid")
-    email = employee_data.get("Email")
-    azure_upn = employee_data.get("AzureUpn")
+    azure_oid = employee_data.get("azure_oid")
+    email = employee_data.get("email")
+    azure_upn = employee_data.get("azure_upn")
 
     existing = None
     if azure_oid:
-        existing = db.exec(select(Employees).where(Employees.AzureOid == azure_oid)).first()
+        existing = db.exec(select(Employees).where(Employees.azure_oid == azure_oid)).first()
 
     if not existing and (email or azure_upn):
         existing = db.exec(
             select(Employees).where(
                 or_(
-                    Employees.Email == email,  # type: ignore[arg-type]
-                    Employees.AzureUpn == azure_upn,  # type: ignore[arg-type]
-                    Employees.Email == azure_upn,  # type: ignore[arg-type]
-                    Employees.AzureUpn == email,  # type: ignore[arg-type]
+                    Employees.email == email,  # type: ignore[arg-type]
+                    Employees.azure_upn == azure_upn,  # type: ignore[arg-type]
+                    Employees.email == azure_upn,  # type: ignore[arg-type]
+                    Employees.azure_upn == email,  # type: ignore[arg-type]
                 )
             )
         ).first()
@@ -173,19 +173,19 @@ async def resolve_manager_employee_id(
 
     if manager_email:
         sql_manager = db.exec(
-            select(Employees).where(or_(Employees.Email == manager_email, Employees.AzureUpn == manager_email))  # type: ignore[arg-type]
+            select(Employees).where(or_(Employees.email == manager_email, Employees.azure_upn == manager_email))  # type: ignore[arg-type]
         ).first()
         if sql_manager:
-            return sql_manager.EmployeeId
+            return sql_manager.employee_id
 
         ms_manager: dict[str, Any] | None = await graph_client.get_user(manager_email)
         sql_manager = upsert_employee_from_microsoft_user(db, ms_manager)  # type: ignore[arg-type]
-        return sql_manager.EmployeeId
+        return sql_manager.employee_id
 
     if manager_name:
-        sql_manager = db.exec(select(Employees).where(Employees.DisplayName == manager_name)).first()
+        sql_manager = db.exec(select(Employees).where(Employees.display_name == manager_name)).first()
         if sql_manager:
-            return sql_manager.EmployeeId
+            return sql_manager.employee_id
 
         ms_manager = await graph_client.find_user_by_display_name(manager_name)
         if not ms_manager:
@@ -255,19 +255,19 @@ class EmployeeSyncScheduler:
                             stats["countries_created"] += 1
 
                         employee_data = graph_client.map_graph_user_to_employee(ms_user)
-                        employee_data["LastSyncedAt"] = datetime.now()  # noqa: DTZ005
-                        employee_data["CountryId"] = country_id
-                        employee_data["ManagerEmployeeId"] = await resolve_manager_employee_id(
+                        employee_data["last_synced_at"] = datetime.now()  # noqa: DTZ005
+                        employee_data["country_id"] = country_id
+                        employee_data["manager_employee_id"] = await resolve_manager_employee_id(
                             db,
-                            manager_email=employee_data.get("ManagerEmail"),
-                            manager_name=employee_data.get("Manager"),
+                            manager_email=employee_data.get("manager_email"),
+                            manager_name=employee_data.get("manager"),
                         )
 
                         stats["processed"] += 1
 
-                        # Check if employee exists by AzureOid
+                        # Check if employee exists by azure_oid
                         existing = db.exec(
-                            select(Employees).filter(Employees.AzureOid == employee_data["AzureOid"])
+                            select(Employees).filter(Employees.azure_oid == employee_data["azure_oid"])
                         ).first()
 
                         if existing:

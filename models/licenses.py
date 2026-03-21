@@ -8,19 +8,19 @@ if TYPE_CHECKING:
 
 
 class Licenses(SQLModel, table=True):
-    __tablename__ = "Licenses"
+    __tablename__ = "licenses"
     __table_args__ = {"schema": "dbo"}
 
-    LicenseId: int | None = Field(default=None, primary_key=True)
-    Software: str | None = None
-    Version: str | None = None
-    CreatedAt: date | None = None
-    ExpiryDate: date | None = None
-    Key: str | None = None
-    Account: str | None = None
-    Password: str | None = None
-    Notes: str | None = None
+    license_id: int | None = Field(default=None, primary_key=True)
+    software: str | None = None
+    version: str | None = None
+    created_at: date | None = None
+    expiry_date: date | None = None
+    key: str | None = None
+    account: str | None = None
+    password: str | None = None
+    notes: str | None = None
 
-    EmployeeId: int | None = Field(foreign_key="dbo.Employees.EmployeeId")
+    employee_id: int | None = Field(foreign_key="dbo.employees.employee_id")
 
-    Employee: Optional["Employees"] = Relationship(back_populates="Licenses")
+    employee: Optional["Employees"] = Relationship(back_populates="licenses")

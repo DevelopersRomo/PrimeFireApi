@@ -36,40 +36,40 @@ router = APIRouter()
 def customer_to_schema(db_customer: Customers) -> Customer:
     """Convert Customers model to Customer schema with related data."""
     return Customer(
-        CustomerId=db_customer.CustomerId,
-        CustomerType=db_customer.CustomerType,
-        CompanyName=db_customer.CompanyName,
-        FirstName=db_customer.FirstName,
-        LastName=db_customer.LastName,
-        AdditionalName=db_customer.AdditionalName,
-        Market=db_customer.Market,
-        DtdPotential=db_customer.DtdPotential,
-        PrimaryEmail=db_customer.PrimaryEmail,
-        PrimaryPhone=db_customer.PrimaryPhone,
-        PrimaryAddressId=db_customer.PrimaryAddressId,
-        PrimaryAddress=AddressSchema(
-            AddressId=db_customer.primary_address.AddressId,
-            Address1=db_customer.primary_address.Address1,
-            Address2=db_customer.primary_address.Address2,
-            City=db_customer.primary_address.City,
-            State=db_customer.primary_address.State,
-            ZipCode=db_customer.primary_address.ZipCode,
-            CountryId=db_customer.primary_address.CountryId,
-            GooglePlaceId=db_customer.primary_address.GooglePlaceId,
-            IsValidated=db_customer.primary_address.IsValidated,
-            ValidatedAt=db_customer.primary_address.ValidatedAt,
-            CreatedAt=db_customer.primary_address.CreatedAt,
+        customer_id=db_customer.customer_id,
+        customer_type=db_customer.customer_type,
+        company_name=db_customer.company_name,
+        first_name=db_customer.first_name,
+        last_name=db_customer.last_name,
+        additional_name=db_customer.additional_name,
+        market=db_customer.market,
+        dtd_potential=db_customer.dtd_potential,
+        primary_email=db_customer.primary_email,
+        primary_phone=db_customer.primary_phone,
+        primary_address_id=db_customer.primary_address_id,
+        primary_address=AddressSchema(
+            address_id=db_customer.primary_address.address_id,
+            address_1=db_customer.primary_address.address_1,
+            address_2=db_customer.primary_address.address_2,
+            city=db_customer.primary_address.city,
+            state=db_customer.primary_address.state,
+            zip_code=db_customer.primary_address.zip_code,
+            country_id=db_customer.primary_address.country_id,
+            google_place_id=db_customer.primary_address.google_place_id,
+            is_validated=db_customer.primary_address.is_validated,
+            validated_at=db_customer.primary_address.validated_at,
+            created_at=db_customer.primary_address.created_at,
         )
         if db_customer.primary_address
         else None,
-        CreatedAt=db_customer.CreatedAt,
-        UpdatedAt=db_customer.UpdatedAt,
-        CreatedBy=db_customer.CreatedBy,
+        created_at=db_customer.created_at,
+        updated_at=db_customer.updated_at,
+        created_by=db_customer.created_by,
         creator=CustomerEmployee(
-            EmployeeId=db_customer.creator.EmployeeId,
-            DisplayName=db_customer.creator.DisplayName,
-            Email=db_customer.creator.Email,
-            Title=db_customer.creator.Title,
+            employee_id=db_customer.creator.employee_id,
+            display_name=db_customer.creator.display_name,
+            email=db_customer.creator.email,
+            title=db_customer.creator.title,
         )
         if db_customer.creator
         else None,
@@ -92,26 +92,26 @@ def get_customers(
 
     filters = []
     if customer_type:
-        filters.append(Customers.CustomerType == customer_type)
+        filters.append(Customers.customer_type == customer_type)
     if market:
-        filters.append(Customers.Market == market)
+        filters.append(Customers.market == market)
     if dtd_potential:
-        filters.append(Customers.DtdPotential == dtd_potential)
+        filters.append(Customers.dtd_potential == dtd_potential)
     if search:
         search_filter = f"%{search}%"
         filters.append(
             or_(
-                Customers.CompanyName.ilike(search_filter),
-                Customers.FirstName.ilike(search_filter),
-                Customers.LastName.ilike(search_filter),
-                Customers.PrimaryEmail.ilike(search_filter),
+                Customers.company_name.ilike(search_filter),
+                Customers.first_name.ilike(search_filter),
+                Customers.last_name.ilike(search_filter),
+                Customers.primary_email.ilike(search_filter),
             )
         )
 
     if filters:
         query = query.where(and_(*filters))
 
-    query = query.order_by(Customers.CreatedAt.desc()).offset(skip).limit(limit)
+    query = query.order_by(Customers.created_at.desc()).offset(skip).limit(limit)
 
     customers = db.exec(query).all()
     return [customer_to_schema(customer) for customer in customers]
@@ -123,7 +123,7 @@ def get_customer(customer_id: int, db: Session = Depends(get_db), _auth=Depends(
     db_customer = db.exec(
         select(Customers)
         .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
-        .filter(Customers.CustomerId == customer_id)
+        .filter(Customers.customer_id == customer_id)
     ).first()
 
     if not db_customer:
@@ -144,7 +144,7 @@ def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=D
             selectinload(Customers.alternate_contacts),
             selectinload(Customers.attachments).selectinload(CustomerAttachments.creator),
         )
-        .filter(Customers.CustomerId == customer_id)
+        .filter(Customers.customer_id == customer_id)
     ).first()
 
     if not db_customer:
@@ -152,17 +152,17 @@ def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=D
 
     notes = [
         CustomerNote(
-            CustomerNoteId=note.CustomerNoteId,
-            CustomerId=note.CustomerId,
-            NoteText=note.NoteText,
-            CreatedAt=note.CreatedAt,
-            UpdatedAt=note.UpdatedAt,
-            CreatedBy=note.CreatedBy,
+            customer_note_id=note.customer_note_id,
+            customer_id=note.customer_id,
+            note_text=note.note_text,
+            created_at=note.created_at,
+            updated_at=note.updated_at,
+            created_by=note.created_by,
             creator=CustomerEmployee(
-                EmployeeId=note.creator.EmployeeId,
-                DisplayName=note.creator.DisplayName,
-                Email=note.creator.Email,
-                Title=note.creator.Title,
+                employee_id=note.creator.employee_id,
+                display_name=note.creator.display_name,
+                email=note.creator.email,
+                title=note.creator.title,
             )
             if note.creator
             else None,
@@ -172,31 +172,31 @@ def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=D
 
     contacts = [
         CustomerAlternateContact(
-            CustomerAlternateContactId=contact.CustomerAlternateContactId,
-            CustomerId=contact.CustomerId,
-            Name=contact.Name,
-            Email=contact.Email,
-            Phone=contact.Phone,
-            CreatedAt=contact.CreatedAt,
-            UpdatedAt=contact.UpdatedAt,
+            customer_alternate_contact_id=contact.customer_alternate_contact_id,
+            customer_id=contact.customer_id,
+            name=contact.name,
+            email=contact.email,
+            phone=contact.phone,
+            created_at=contact.created_at,
+            updated_at=contact.updated_at,
         )
         for contact in db_customer.alternate_contacts
     ]
 
     attachments = [
         CustomerAttachment(
-            CustomerAttachmentId=att.CustomerAttachmentId,
-            CustomerId=att.CustomerId,
-            FileName=att.FileName,
-            FileType=att.FileType,
-            FilePath=att.FilePath,
-            CreatedAt=att.CreatedAt,
-            CreatedBy=att.CreatedBy,
+            customer_attachment_id=att.customer_attachment_id,
+            customer_id=att.customer_id,
+            file_name=att.file_name,
+            file_type=att.file_type,
+            file_path=att.file_path,
+            created_at=att.created_at,
+            created_by=att.created_by,
             creator=CustomerEmployee(
-                EmployeeId=att.creator.EmployeeId,
-                DisplayName=att.creator.DisplayName,
-                Email=att.creator.Email,
-                Title=att.creator.Title,
+                employee_id=att.creator.employee_id,
+                display_name=att.creator.display_name,
+                email=att.creator.email,
+                title=att.creator.title,
             )
             if att.creator
             else None,
@@ -205,7 +205,7 @@ def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=D
     ]
 
     return CustomerMerged(
-        Customer=customer_to_schema(db_customer), Notes=notes, Contacts=contacts, Attachments=attachments
+        customer=customer_to_schema(db_customer), notes=notes, contacts=contacts, attachments=attachments
     )
 
 
@@ -216,38 +216,38 @@ def create_customer(
     """Create a new customer."""
     primary_address_id = None
 
-    if customer.PrimaryAddress:
+    if customer.primary_address:
         db_address = Addresses(
-            Address1=customer.PrimaryAddress.Address1,
-            Address2=customer.PrimaryAddress.Address2,
-            City=customer.PrimaryAddress.City,
-            State=customer.PrimaryAddress.State,
-            ZipCode=customer.PrimaryAddress.ZipCode,
-            CountryId=customer.PrimaryAddress.CountryId,
-            GooglePlaceId=customer.PrimaryAddress.GooglePlaceId,
+            address_1=customer.primary_address.address_1,
+            address_2=customer.primary_address.address_2,
+            city=customer.primary_address.city,
+            state=customer.primary_address.state,
+            zip_code=customer.primary_address.zip_code,
+            country_id=customer.primary_address.country_id,
+            google_place_id=customer.primary_address.google_place_id,
         )
         db.add(db_address)
         db.flush()
-        primary_address_id = db_address.AddressId
-    elif customer.PrimaryAddressId:
-        address_exists = db.get(Addresses, customer.PrimaryAddressId)
+        primary_address_id = db_address.address_id
+    elif customer.primary_address_id:
+        address_exists = db.get(Addresses, customer.primary_address_id)
         if not address_exists:
             raise HTTPException(status_code=404, detail="Address not found")
-        primary_address_id = customer.PrimaryAddressId
+        primary_address_id = customer.primary_address_id
 
     db_customer = Customers(
-        CustomerType=customer.CustomerType,
-        CompanyName=customer.CompanyName,
-        FirstName=customer.FirstName,
-        LastName=customer.LastName,
-        AdditionalName=customer.AdditionalName,
-        Market=customer.Market,
-        DtdPotential=customer.DtdPotential,
-        PrimaryEmail=customer.PrimaryEmail,
-        PrimaryPhone=customer.PrimaryPhone,
-        PrimaryAddressId=primary_address_id,
-        CreatedBy=current_employee.EmployeeId,
-        CreatedAt=datetime.now(UTC),
+        customer_type=customer.customer_type,
+        company_name=customer.company_name,
+        first_name=customer.first_name,
+        last_name=customer.last_name,
+        additional_name=customer.additional_name,
+        market=customer.market,
+        dtd_potential=customer.dtd_potential,
+        primary_email=customer.primary_email,
+        primary_phone=customer.primary_phone,
+        primary_address_id=primary_address_id,
+        created_by=current_employee.employee_id,
+        created_at=datetime.now(UTC),
     )
 
     db.add(db_customer)
@@ -257,7 +257,7 @@ def create_customer(
     db_customer = db.exec(
         select(Customers)
         .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
-        .filter(Customers.CustomerId == db_customer.CustomerId)
+        .filter(Customers.customer_id == db_customer.customer_id)
     ).first()
 
     return customer_to_schema(db_customer)
@@ -274,45 +274,45 @@ def update_customer(
     db_customer = db.exec(
         select(Customers)
         .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
-        .filter(Customers.CustomerId == customer_id)
+        .filter(Customers.customer_id == customer_id)
     ).first()
 
     if not db_customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    update_data = customer_update.model_dump(exclude_unset=True, exclude={"PrimaryAddress"})
+    update_data = customer_update.model_dump(exclude_unset=True, exclude={"primary_address"})
 
-    if customer_update.PrimaryAddress:
-        if db_customer.PrimaryAddressId:
-            db_address = db.get(Addresses, db_customer.PrimaryAddressId)
+    if customer_update.primary_address:
+        if db_customer.primary_address_id:
+            db_address = db.get(Addresses, db_customer.primary_address_id)
             if db_address:
-                address_update = customer_update.PrimaryAddress.model_dump(exclude_unset=True)
+                address_update = customer_update.primary_address.model_dump(exclude_unset=True)
                 for key, value in address_update.items():
                     setattr(db_address, key, value)
         else:
             db_address = Addresses(
-                Address1=customer_update.PrimaryAddress.Address1 or "",
-                Address2=customer_update.PrimaryAddress.Address2,
-                City=customer_update.PrimaryAddress.City or "",
-                State=customer_update.PrimaryAddress.State or "",
-                ZipCode=customer_update.PrimaryAddress.ZipCode or "",
-                CountryId=customer_update.PrimaryAddress.CountryId or 0,
+                address_1=customer_update.primary_address.address_1 or "",
+                address_2=customer_update.primary_address.address_2,
+                city=customer_update.primary_address.city or "",
+                state=customer_update.primary_address.state or "",
+                zip_code=customer_update.primary_address.zip_code or "",
+                country_id=customer_update.primary_address.country_id or 0,
             )
             db.add(db_address)
             db.flush()
-            update_data["PrimaryAddressId"] = db_address.AddressId
+            update_data["primary_address_id"] = db_address.address_id
 
     for key, value in update_data.items():
         setattr(db_customer, key, value)
 
-    db_customer.UpdatedAt = datetime.now(UTC)
+    db_customer.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(db_customer)
 
     db_customer = db.exec(
         select(Customers)
         .options(selectinload(Customers.primary_address), selectinload(Customers.creator))
-        .filter(Customers.CustomerId == customer_id)
+        .filter(Customers.customer_id == customer_id)
     ).first()
 
     return customer_to_schema(db_customer)

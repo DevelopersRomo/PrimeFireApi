@@ -37,7 +37,8 @@ class TimeSheetCustomerRead(SQLModel):
 class TimeSheetPunchRead(SQLModel):
     punch_id: int
     employee_id: int
-    customer_id: int
+    employee_name: str | None = None
+    customer_id: int | None = None
     customer: TimeSheetCustomerRead | None = None
     clock_in_at: str
     clock_out_at: str | None = None

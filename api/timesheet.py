@@ -30,6 +30,7 @@ from models.timesheet import (
 from schemas.timesheet import (
     TimeSheetClockInCreate,
     TimeSheetClockOutCreate,
+    TimeSheetCustomerRead,
     TimeSheetLocationRead,
     TimeSheetNotificationCheckResponse,
     TimeSheetOpenRead,
@@ -847,7 +848,65 @@ def list_punches_admin(
     if filters:
         query = query.where(and_(*filters))
     query = query.order_by(TimeSheetPunch.clock_in_at.desc()).offset(skip).limit(limit)
-    return db.exec(query).all()
+    punches = db.exec(query).all()
+
+    # Fetch employee and customer names
+    employee_ids = {p.employee_id for p in punches}
+    customer_ids = {p.customer_id for p in punches if p.customer_id}
+
+    employee_map = {}
+    if employee_ids:
+        employees = db.exec(select(Employees).where(Employees.employee_id.in_(list(employee_ids)))).all()
+        employee_map = {emp.employee_id: emp for emp in employees}
+
+    customer_map = {}
+    if customer_ids:
+        customers = db.exec(select(Customers).where(Customers.customer_id.in_(list(customer_ids)))).all()
+        customer_map = {cust.customer_id: cust for cust in customers}
+
+    # Build response with names
+    result: list[TimeSheetPunchRead] = []
+    for punch in punches:
+        emp = employee_map.get(punch.employee_id)
+        employee_name = " ".join(filter(None, [emp.first_name, emp.last_name])) if emp else None
+
+        cust = customer_map.get(punch.customer_id) if punch.customer_id else None
+        customer_data = None
+        if cust:
+            customer_data = TimeSheetCustomerRead(
+                customer_id=cust.customer_id,
+                customer_type=cust.customer_type,
+                company_name=cust.company_name,
+                first_name=cust.first_name,
+                last_name=cust.last_name,
+            )
+
+        result.append(TimeSheetPunchRead(
+            punch_id=punch.punch_id,
+            employee_id=punch.employee_id,
+            employee_name=employee_name,
+            customer_id=punch.customer_id,
+            customer=customer_data,
+            clock_in_at=punch.clock_in_at,
+            clock_out_at=punch.clock_out_at,
+            worked_minutes=punch.worked_minutes,
+            status=punch.status,
+            note=punch.note,
+            timezone=punch.timezone,
+            ip_address=punch.ip_address,
+            latitude=punch.latitude,
+            longitude=punch.longitude,
+            gps_accuracy=punch.gps_accuracy,
+            city=punch.city,
+            region=punch.region,
+            country=punch.country,
+            approved_by=punch.approved_by,
+            approved_at=punch.approved_at,
+            created_at=punch.created_at,
+            updated_at=punch.updated_at,
+        ))
+
+    return result
 
 
 @router.get("/timesheet/admin/export")

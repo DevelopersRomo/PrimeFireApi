@@ -13,8 +13,8 @@ class Addresses(SQLModel, table=True):
     __table_args__ = {"schema": "dbo"}
 
     address_id: int | None = Field(default=None, primary_key=True, index=True)
-    address_1: str = Field(sa_column=Column("Address1", String(200)), max_length=200)
-    address_2: str | None = Field(sa_column=Column("Address2", String(200), nullable=True, default=None), max_length=200)
+    address_1: str = Field(sa_column=Column("address_1", String(200)), max_length=200)
+    address_2: str | None = Field(sa_column=Column("address_2", String(200), nullable=True, default=None), max_length=200)
     city: str = Field(max_length=100)
     state: str = Field(max_length=100)
     zip_code: str = Field(max_length=20)

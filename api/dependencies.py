@@ -114,13 +114,13 @@ async def get_current_employee(
 
         main_db = SessionLocal()
         try:
-            tenant = main_db.exec(select(Tenants).where(Tenants.DbConnectionKey == tenant_key)).first()
+            tenant = main_db.exec(select(Tenants).where(Tenants.db_connection_key == tenant_key)).first()
             if not tenant:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Invalid tenant assignment. Please contact an administrator.",
                 )
-            if tenant.DbConnectionKey == "PENDING" or not tenant.IsActive:
+            if tenant.db_connection_key == "PENDING" or not tenant.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Your account is pending approval. Please wait for an administrator to assign you to an active tenant.",
@@ -132,7 +132,7 @@ async def get_current_employee(
         tenant_db = ConnectionManager.get_session(tenant_key)
         try:
             email = token_data.get("sub")
-            employee = tenant_db.exec(select(Employees).where(Employees.Email == email)).first()
+            employee = tenant_db.exec(select(Employees).where(Employees.email == email)).first()
             if not employee:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in tenant database")
             return employee
@@ -143,22 +143,22 @@ async def get_current_employee(
     if token_data.get("type") == "internal":
         email = token_data.get("sub")
         # Check pending external user (no tenant_key, present in TenantEmployees)
-        external_user = db.exec(select(TenantEmployees).where(TenantEmployees.Email == email)).first()
+        external_user = db.exec(select(TenantEmployees).where(TenantEmployees.email == email)).first()
         if external_user:
             # Usuario externo sin tenant asignado o pendiente
-            if not external_user.TenantId:
+            if not external_user.tenant_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Your account is pending approval. Please wait for an administrator to assign you to a tenant.",
                 )
-            tenant = db.get(Tenants, external_user.TenantId)
-            if not tenant or tenant.DbConnectionKey == "PENDING" or not tenant.IsActive:
+            tenant = db.get(Tenants, external_user.tenant_id)
+            if not tenant or tenant.db_connection_key == "PENDING" or not tenant.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Your account is pending approval. Please wait for an administrator to assign you to an active tenant.",
                 )
 
-        employee = db.exec(select(Employees).where(Employees.Email == email)).first()
+        employee = db.exec(select(Employees).where(Employees.email == email)).first()
     else:
         # Azure AD - Buscar en BD de Sincronización (PrimeFire)
         from bd.connection import SessionSync
@@ -167,7 +167,7 @@ async def get_current_employee(
 
         # Usar una sesión separada para la BD de sincronización
         with SessionSync() as sync_db:
-            employee = sync_db.exec(select(Employees).where(Employees.AzureOid == azure_oid)).first()
+            employee = sync_db.exec(select(Employees).where(Employees.azure_oid == azure_oid)).first()
             if employee:
                 # Desvincular el objeto de la sesión para poder usarlo fuera del bloque with
                 sync_db.expunge(employee)
@@ -216,8 +216,8 @@ async def get_current_employee_with_permissions(
         # Get employee's roles
         employee_roles_query = (
             select(EmployeeRoles, Roles)
-            .join(Roles, EmployeeRoles.RoleId == Roles.RoleId)  # type: ignore[arg-type]
-            .where(EmployeeRoles.EmployeeId == current_employee.EmployeeId)
+            .join(Roles, EmployeeRoles.role_id == Roles.role_id)  # type: ignore[arg-type]
+            .where(EmployeeRoles.employee_id == current_employee.employee_id)
         )
 
         employee_roles_data = session.exec(employee_roles_query).all()
@@ -226,8 +226,8 @@ async def get_current_employee_with_permissions(
         role_ids = []
 
         for _emp_role, role in employee_roles_data:
-            roles_list.append({"RoleId": role.RoleId, "RoleName": role.RoleName, "Description": role.Description})
-            role_ids.append(role.RoleId)
+            roles_list.append({"role_id": role.role_id, "role_name": role.role_name, "description": role.description})
+            role_ids.append(role.role_id)
 
         # Get permissions for all roles (combine with OR logic)
         permissions_by_module: dict[str, dict[str, Any]] = {}
@@ -235,62 +235,62 @@ async def get_current_employee_with_permissions(
         if role_ids:
             permissions_query = (
                 select(RoleModules, Modules)
-                .join(Modules, RoleModules.ModuleId == Modules.ModuleId)  # type: ignore[arg-type]
-                .where(RoleModules.RoleId.in_(role_ids))  # type: ignore[attr-defined]
+                .join(Modules, RoleModules.module_id == Modules.module_id)  # type: ignore[arg-type]
+                .where(RoleModules.role_id.in_(role_ids))  # type: ignore[attr-defined]
             )
 
             permissions_data = session.exec(permissions_query).all()
 
             for role_module, module in permissions_data:
-                module_key = module.ModuleKey
+                module_key = module.module_key
 
                 if module_key not in permissions_by_module:
                     permissions_by_module[module_key] = {
                         "module_key": module_key,
                         "module_info": {
-                            "ModuleId": module.ModuleId,
-                            "ModuleName": module.ModuleName,
-                            "ModuleKey": module.ModuleKey,
-                            "RouteUrl": module.RouteUrl,
-                            "Icon": module.Icon,
-                            "DisplayOrder": module.DisplayOrder,
-                            "IsActive": module.IsActive,
+                            "module_id": module.module_id,
+                            "module_name": module.module_name,
+                            "module_key": module.module_key,
+                            "route_url": module.route_url,
+                            "icon": module.icon,
+                            "display_order": module.display_order,
+                            "is_active": module.is_active,
                         },
                         "permissions": {
-                            "CanView": False,
-                            "CanCreate": False,
-                            "CanEdit": False,
-                            "CanDelete": False,
-                            "CanExport": False,
-                            "AdminActions": False,
-                            "OtherActions": False,
+                            "can_view": False,
+                            "can_create": False,
+                            "can_edit": False,
+                            "can_delete": False,
+                            "can_export": False,
+                            "admin_actions": False,
+                            "other_actions": False,
                         },
                     }
 
                 # Combine permissions with OR logic (if any role has permission, user has it)
                 perms = permissions_by_module[module_key]["permissions"]
-                perms["CanView"] = perms["CanView"] or role_module.CanView
-                perms["CanCreate"] = perms["CanCreate"] or role_module.CanCreate
-                perms["CanEdit"] = perms["CanEdit"] or role_module.CanEdit
-                perms["CanDelete"] = perms["CanDelete"] or role_module.CanDelete
-                perms["CanExport"] = perms["CanExport"] or role_module.CanExport
-                perms["AdminActions"] = perms["AdminActions"] or role_module.AdminActions
-                perms["OtherActions"] = perms["OtherActions"] or role_module.OtherActions
+                perms["can_view"] = perms["can_view"] or role_module.can_view
+                perms["can_create"] = perms["can_create"] or role_module.can_create
+                perms["can_edit"] = perms["can_edit"] or role_module.can_edit
+                perms["can_delete"] = perms["can_delete"] or role_module.can_delete
+                perms["can_export"] = perms["can_export"] or role_module.can_export
+                perms["admin_actions"] = perms["admin_actions"] or role_module.admin_actions
+                perms["other_actions"] = perms["other_actions"] or role_module.other_actions
 
         # Build response
         permissions_list = list(permissions_by_module.values())
-        accessible_modules = [p["module_key"] for p in permissions_list if p["permissions"]["CanView"]]
+        accessible_modules = [p["module_key"] for p in permissions_list if p["permissions"]["can_view"]]
 
         return {
             "employee": {
-                "EmployeeId": current_employee.EmployeeId,
-                "FirstName": current_employee.FirstName,
-                "LastName": current_employee.LastName,
-                "DisplayName": current_employee.DisplayName,
-                "Title": current_employee.Title,
-                "Email": current_employee.Email,
-                "Department": current_employee.Department,
-                "Office": current_employee.Office,
+                "employee_id": current_employee.employee_id,
+                "first_name": current_employee.first_name,
+                "last_name": current_employee.last_name,
+                "display_name": current_employee.display_name,
+                "title": current_employee.title,
+                "email": current_employee.email,
+                "department": current_employee.department,
+                "office": current_employee.office,
             },
             "roles": roles_list,
             "permissions": permissions_list,

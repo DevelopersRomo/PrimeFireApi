@@ -7,148 +7,146 @@ from schemas.time_off import TimeOffRequestRead
 
 
 class TimeSheetClockInCreate(SQLModel):
-    CustomerId: int
-    Note: str | None = None
-    UseLocation: bool = True
-    Latitude: str | None = None
-    Longitude: str | None = None
-    GpsAccuracy: str | None = None
+    customer_id: int
+    note: str | None = None
+    use_location: bool = True
+    latitude: str | None = None
+    longitude: str | None = None
+    gps_accuracy: str | None = None
 
 
 class TimeSheetClockOutCreate(SQLModel):
-    Note: str | None = None
-    UseLocation: bool = True
-    Latitude: str | None = None
-    Longitude: str | None = None
-    GpsAccuracy: str | None = None
+    note: str | None = None
+    use_location: bool = True
+    latitude: str | None = None
+    longitude: str | None = None
+    gps_accuracy: str | None = None
 
 
 class TimeSheetCustomerRead(SQLModel):
-    CustomerId: int
-    CustomerType: str
-    CompanyName: str | None = None
-    FirstName: str | None = None
-    LastName: str | None = None
+    customer_id: int
+    customer_type: str
+    company_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
     class Config:
         from_attributes = True
 
 
 class TimeSheetPunchRead(SQLModel):
-    PunchId: int
-    EmployeeId: int
-    CustomerId: int
-    Customer: TimeSheetCustomerRead | None = None
-    ClockInAt: str
-    ClockOutAt: str | None = None
-    WorkedMinutes: int
-    Status: TimeSheetPunchStatusEnum
-    Note: str | None = None
-    Timezone: str | None = None
-    IpAddress: str | None = None
-    Latitude: str | None = None
-    Longitude: str | None = None
-    GpsAccuracy: str | None = None
-    City: str | None = None
-    Region: str | None = None
-    Country: str | None = None
-    ApprovedBy: int | None = None
-    ApprovedAt: str | None = None
-    CreatedAt: str
-    UpdatedAt: str
+    punch_id: int
+    employee_id: int
+    customer_id: int
+    customer: TimeSheetCustomerRead | None = None
+    clock_in_at: str
+    clock_out_at: str | None = None
+    worked_minutes: int
+    status: TimeSheetPunchStatusEnum
+    note: str | None = None
+    timezone: str | None = None
+    ip_address: str | None = None
+    latitude: str | None = None
+    longitude: str | None = None
+    gps_accuracy: str | None = None
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    approved_by: int | None = None
+    approved_at: str | None = None
+    created_at: str
+    updated_at: str
 
     class Config:
         from_attributes = True
 
 
 class TimeSheetPunchUpdate(SQLModel):
-    CustomerId: int | None = None
-    ClockInAt: datetime | None = None
-    ClockOutAt: datetime | None = None
-    Note: str | None = None
-    Status: TimeSheetPunchStatusEnum | None = None
+    customer_id: int | None = None
+    clock_in_at: datetime | None = None
+    clock_out_at: datetime | None = None
+    note: str | None = None
+    status: TimeSheetPunchStatusEnum | None = None
 
 
 class TimeSheetSummaryItem(SQLModel):
-    PeriodStart: str
-    PeriodEnd: str
-    RegularHours: float = 0
-    OvertimeHours: float = 0
-    VacationHours: float = 0
-    HolidayHours: float = 0
-    SickHours: float = 0
-    TotalHours: float = 0
-    Punches: list["TimeSheetPunchRead"] | None = None
-    TimeOffRequests: list[TimeOffRequestRead] | None = None
+    period_start: str
+    period_end: str
+    regular_hours: float = 0
+    overtime_hours: float = 0
+    vacation_hours: float = 0
+    holiday_hours: float = 0
+    sick_hours: float = 0
+    total_hours: float = 0
+    punches: list["TimeSheetPunchRead"] | None = None
+    time_off_requests: list[TimeOffRequestRead] | None = None
 
 
 class TimeSheetSummaryTotals(SQLModel):
-    RegularHours: float = 0
-    OvertimeHours: float = 0
-    VacationHours: float = 0
-    HolidayHours: float = 0
-    SickHours: float = 0
-    TotalHours: float = 0
+    regular_hours: float = 0
+    overtime_hours: float = 0
+    vacation_hours: float = 0
+    holiday_hours: float = 0
+    sick_hours: float = 0
+    total_hours: float = 0
 
 
 class TimeSheetSummaryResponse(SQLModel):
-    Items: list[TimeSheetSummaryItem]
-    Totals: TimeSheetSummaryTotals
-    Skip: int
-    Limit: int
-    Total: int
+    items: list[TimeSheetSummaryItem]
+    totals: TimeSheetSummaryTotals
+    skip: int
+    limit: int
+    total: int
 
 
 class TimeSheetLocationRead(SQLModel):
-    IpAddress: str | None = None
-    Latitude: str | None = None
-    Longitude: str | None = None
-    GpsAccuracy: str | None = None
-    City: str | None = None
-    Region: str | None = None
-    Country: str | None = None
-    Timezone: str | None = None
-    CapturedAt: str
+    ip_address: str | None = None
+    latitude: str | None = None
+    longitude: str | None = None
+    gps_accuracy: str | None = None
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    timezone: str | None = None
+    captured_at: str
 
 
 class TimeSheetOpenRead(SQLModel):
-    Punch: TimeSheetPunchRead | None = None
-    ElapsedMinutes: int = 0
-    ElapsedHours: float = 0
+    punch: TimeSheetPunchRead | None = None
+    elapsed_minutes: int = 0
+    elapsed_hours: float = 0
 
 
 class TimeSheetSettingsRead(SQLModel):
-    SettingId: int
-    OvertimeDailyHours: str
-    OvertimeWeeklyHours: str | None = None
-    MaxOvertimeDailyHours: str | None = None
-    RoundToMinutes: int | None = None
-    IsActive: bool
-    CreatedAt: str
-    UpdatedAt: str
+    setting_id: int
+    overtime_daily_hours: str
+    overtime_weekly_hours: str | None = None
+    max_overtime_daily_hours: str | None = None
+    round_to_minutes: int | None = None
+    is_active: bool
+    created_at: str
+    updated_at: str
 
     class Config:
         from_attributes = True
 
 
 class TimeSheetSettingsUpdate(SQLModel):
-    OvertimeDailyHours: float | None = None
-    OvertimeWeeklyHours: float | None = None
-    MaxOvertimeDailyHours: float | None = None
-    RoundToMinutes: int | None = None
-    IsActive: bool | None = None
+    overtime_daily_hours: float | None = None
+    overtime_weekly_hours: float | None = None
+    max_overtime_daily_hours: float | None = None
+    round_to_minutes: int | None = None
+    is_active: bool | None = None
 
 
 class TimeSheetNotificationCheckResponse(SQLModel):
-    """Response for timesheet notification check."""
-
     has_open_punch: bool = False
     elapsed_minutes: int = 0
     elapsed_hours: float = 0
     regular_hours_limit: float = 8.0
     overtime_hours_limit: float = 8.0
-    max_overtime_hours_limit: float = 8.0  # Max overtime before auto clock out
-    total_hours_limit: float = 16.0  # regular + max overtime
+    max_overtime_hours_limit: float = 8.0
+    total_hours_limit: float = 16.0
     weekly_hours_limit: float = 40.0
     should_notify_regular: bool = False
     should_notify_overtime: bool = False

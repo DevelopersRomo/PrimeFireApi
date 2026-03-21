@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
@@ -17,18 +19,19 @@ async def create_module(
     module: ModuleCreate, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
 ):
     """Create a new module."""
-    # Check if ModuleKey already exists
-    existing = db.exec(select(Modules).where(Modules.ModuleKey == module.ModuleKey)).first()
+    # Check if module_key already exists
+    existing = db.exec(select(Modules).where(Modules.module_key == module.module_key)).first()
     if existing:
-        raise HTTPException(status_code=400, detail=f"Module with key '{module.ModuleKey}' already exists")
+        raise HTTPException(status_code=400, detail=f"Module with key '{module.module_key}' already exists")
 
-    # Validate ParentModuleId if provided
-    if module.ParentModuleId:
-        parent = db.exec(select(Modules).where(Modules.ModuleId == module.ParentModuleId)).first()
+    # Validate parent_module_id if provided
+    if module.parent_module_id:
+        parent = db.exec(select(Modules).where(Modules.module_id == module.parent_module_id)).first()
         if not parent:
-            raise HTTPException(status_code=404, detail=f"Parent module with ID {module.ParentModuleId} not found")
+            raise HTTPException(status_code=404, detail=f"Parent module with ID {module.parent_module_id} not found")
 
-    db_module = Modules(**module.model_dump())
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ003
+    db_module = Modules(**module.model_dump(), created_at=now_str, updated_at=now_str)
     db.add(db_module)
     db.commit()
     db.refresh(db_module)
@@ -45,8 +48,8 @@ async def get_modules(
     """Get all modules. By default, only active modules are returned."""
     query = select(Modules)
     if not include_inactive:
-        query = query.where(Modules.IsActive)
-    query = query.order_by(Modules.DisplayOrder, Modules.ModuleName)
+        query = query.where(Modules.is_active)
+    query = query.order_by(Modules.display_order, Modules.module_name)
     return db.exec(query).all()
 
 
@@ -58,7 +61,7 @@ async def get_module(
     module_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
 ):
     """Get a specific module by ID."""
-    db_module = db.exec(select(Modules).where(Modules.ModuleId == module_id)).first()
+    db_module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()
     if not db_module:
         raise HTTPException(status_code=404, detail="Module not found")
     return db_module
@@ -72,7 +75,7 @@ async def get_module_by_key(
     module_key: str, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
 ):
     """Get a specific module by its unique key."""
-    db_module = db.exec(select(Modules).where(Modules.ModuleKey == module_key)).first()
+    db_module = db.exec(select(Modules).where(Modules.module_key == module_key)).first()
     if not db_module:
         raise HTTPException(status_code=404, detail=f"Module with key '{module_key}' not found")
     return db_module
@@ -88,8 +91,8 @@ async def get_child_modules(
     """Get all child modules of a parent module."""
     query = (
         select(Modules)
-        .where(Modules.ParentModuleId == module_id, Modules.IsActive)
-        .order_by(Modules.DisplayOrder, Modules.ModuleName)
+        .where(Modules.parent_module_id == module_id, Modules.is_active)
+        .order_by(Modules.display_order, Modules.module_name)
     )
     return db.exec(query).all()
 
@@ -102,8 +105,8 @@ async def get_root_modules(db: Session = Depends(get_db), current_user: dict = D
     """Get all root modules (modules without parent)."""
     query = (
         select(Modules)
-        .where(Modules.ParentModuleId is None, Modules.IsActive)
-        .order_by(Modules.DisplayOrder, Modules.ModuleName)
+        .where(Modules.parent_module_id is None, Modules.is_active)
+        .order_by(Modules.display_order, Modules.module_name)
     )
     return db.exec(query).all()
 
@@ -119,23 +122,23 @@ async def update_module(
     current_user: dict = Depends(require_authentication),
 ):
     """Update a module."""
-    db_module = db.exec(select(Modules).where(Modules.ModuleId == module_id)).first()
+    db_module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()
     if not db_module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    # Check if ModuleKey is being changed and if it already exists
-    if module.ModuleKey and module.ModuleKey != db_module.ModuleKey:
-        existing = db.exec(select(Modules).where(Modules.ModuleKey == module.ModuleKey)).first()
+    # Check if module_key is being changed and if it already exists
+    if module.module_key and module.module_key != db_module.module_key:
+        existing = db.exec(select(Modules).where(Modules.module_key == module.module_key)).first()
         if existing:
-            raise HTTPException(status_code=400, detail=f"Module with key '{module.ModuleKey}' already exists")
+            raise HTTPException(status_code=400, detail=f"Module with key '{module.module_key}' already exists")
 
-    # Validate ParentModuleId if being changed
-    if module.ParentModuleId is not None:
-        if module.ParentModuleId == module_id:
+    # Validate parent_module_id if being changed
+    if module.parent_module_id is not None:
+        if module.parent_module_id == module_id:
             raise HTTPException(status_code=400, detail="A module cannot be its own parent")
-        parent = db.exec(select(Modules).where(Modules.ModuleId == module.ParentModuleId)).first()
+        parent = db.exec(select(Modules).where(Modules.module_id == module.parent_module_id)).first()
         if not parent:
-            raise HTTPException(status_code=404, detail=f"Parent module with ID {module.ParentModuleId} not found")
+            raise HTTPException(status_code=404, detail=f"Parent module with ID {module.parent_module_id} not found")
 
     for key, value in module.model_dump(exclude_unset=True).items():
         setattr(db_module, key, value)
@@ -153,12 +156,12 @@ async def delete_module(
     module_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
 ):
     """Delete a module. This will also delete all associated permissions."""
-    db_module = db.exec(select(Modules).where(Modules.ModuleId == module_id)).first()
+    db_module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()
     if not db_module:
         raise HTTPException(status_code=404, detail="Module not found")
 
     # Check if module has children
-    children = db.exec(select(Modules).where(Modules.ParentModuleId == module_id)).first()
+    children = db.exec(select(Modules).where(Modules.parent_module_id == module_id)).first()
     if children:
         raise HTTPException(
             status_code=400, detail="Cannot delete module with child modules. Delete or reassign children first."
@@ -177,11 +180,11 @@ async def toggle_module_active(
     module_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
 ):
     """Toggle the active status of a module."""
-    db_module = db.exec(select(Modules).where(Modules.ModuleId == module_id)).first()
+    db_module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()
     if not db_module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    db_module.IsActive = not db_module.IsActive
+    db_module.is_active = not db_module.is_active
     db.commit()
     db.refresh(db_module)
     return db_module

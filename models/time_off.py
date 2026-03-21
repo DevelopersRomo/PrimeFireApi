@@ -24,65 +24,65 @@ class TimeUnitEnum(enum.StrEnum):
 
 
 class TimeOffRequest(SQLModel, table=True):
-    __tablename__ = "TimeOffRequests"
+    __tablename__ = "time_off_requests"
     __table_args__ = (
-        CheckConstraint("AbsenceType IN ('vacation','personal','sick')"),
-        CheckConstraint("Status IN ('pending','approved','rejected','cancelled')"),
-        CheckConstraint("TimeUnit IN ('full_day','half_day','hours')"),
+        CheckConstraint("absence_type IN ('vacation','personal','sick')"),
+        CheckConstraint("status IN ('pending','approved','rejected','cancelled')"),
+        CheckConstraint("time_unit IN ('full_day','half_day','hours')"),
         {"schema": "dbo"},
     )
 
-    RequestId: int | None = Field(default=None, primary_key=True)
-    EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", nullable=False)
-    AbsenceType: str = Field(nullable=False, max_length=20)
-    Status: str = Field(default="pending", nullable=False, max_length=20)
-    TimeUnit: str = Field(nullable=False, max_length=20)
-    StartDate: str = Field(nullable=False, max_length=10)
-    EndDate: str = Field(nullable=False, max_length=10)
-    StartTime: str | None = Field(default=None, max_length=8)
-    EndTime: str | None = Field(default=None, max_length=8)
-    TotalHours: str | None = Field(default=None, max_length=10)
-    TotalDays: str = Field(nullable=False, max_length=10)
-    Reason: str | None = Field(default=None, max_length=2000)
-    ReviewedBy: int | None = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
-    ReviewedAt: str | None = Field(default=None, max_length=19)
-    ReviewNotes: str | None = Field(default=None, max_length=2000)
-    CreatedAt: str = Field(nullable=False, max_length=19)
-    UpdatedAt: str = Field(nullable=False, max_length=19)
+    request_id: int | None = Field(default=None, primary_key=True)
+    employee_id: int = Field(foreign_key="dbo.employees.employee_id", nullable=False)
+    absence_type: str = Field(nullable=False, max_length=20)
+    status: str = Field(default="pending", nullable=False, max_length=20)
+    time_unit: str = Field(nullable=False, max_length=20)
+    start_date: str = Field(nullable=False, max_length=10)
+    end_date: str = Field(nullable=False, max_length=10)
+    start_time: str | None = Field(default=None, max_length=8)
+    end_time: str | None = Field(default=None, max_length=8)
+    total_hours: str | None = Field(default=None, max_length=10)
+    total_days: str = Field(nullable=False, max_length=10)
+    reason: str | None = Field(default=None, max_length=2000)
+    reviewed_by: int | None = Field(default=None, foreign_key="dbo.employees.employee_id")
+    reviewed_at: str | None = Field(default=None, max_length=19)
+    review_notes: str | None = Field(default=None, max_length=2000)
+    created_at: str = Field(nullable=False, max_length=19)
+    updated_at: str = Field(nullable=False, max_length=19)
 
 
 class TimeOffBalance(SQLModel, table=True):
-    __tablename__ = "TimeOffBalances"
+    __tablename__ = "time_off_balances"
     __table_args__ = (
-        CheckConstraint("AbsenceType IN ('vacation','personal','sick')"),
-        UniqueConstraint("EmployeeId", "AbsenceType", "Year"),
+        CheckConstraint("absence_type IN ('vacation','personal','sick')"),
+        UniqueConstraint("employee_id", "absence_type", "year"),
         {"schema": "dbo"},
     )
 
-    BalanceId: int | None = Field(default=None, primary_key=True)
-    EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", nullable=False)
-    AbsenceType: str = Field(nullable=False, max_length=20)
-    Year: int = Field(nullable=False)
-    EntitledDays: str = Field(default="0.00", nullable=False, max_length=10)
-    UsedDays: str = Field(default="0.00", nullable=False, max_length=10)
-    PendingDays: str = Field(default="0.00", nullable=False, max_length=10)
-    CarryoverDays: str = Field(default="0.00", nullable=False, max_length=10)
+    balance_id: int | None = Field(default=None, primary_key=True)
+    employee_id: int = Field(foreign_key="dbo.employees.employee_id", nullable=False)
+    absence_type: str = Field(nullable=False, max_length=20)
+    year: int = Field(nullable=False)
+    entitled_days: str = Field(default="0.00", nullable=False, max_length=10)
+    used_days: str = Field(default="0.00", nullable=False, max_length=10)
+    pending_days: str = Field(default="0.00", nullable=False, max_length=10)
+    carryover_days: str = Field(default="0.00", nullable=False, max_length=10)
 
 
 class Holiday(SQLModel, table=True):
-    __tablename__ = "Holidays"
+    __tablename__ = "holidays"
     __table_args__ = {"schema": "dbo"}
 
-    HolidayId: int | None = Field(default=None, primary_key=True)
-    Name: str = Field(max_length=100, nullable=False)
-    Date: str = Field(nullable=False, max_length=10)
-    Year: int = Field(nullable=False)
+    holiday_id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100, nullable=False)
+    date: str = Field(nullable=False, max_length=10)
+    year: int = Field(nullable=False)
 
 
 class Department(SQLModel, table=True):
-    __tablename__ = "Departments"
+    __tablename__ = "departments"
     __table_args__ = {"schema": "dbo"}
 
-    DepartmentId: int | None = Field(default=None, primary_key=True)
-    Name: str = Field(max_length=100, nullable=False, unique=True)
-    Code: str | None = Field(default=None, max_length=20)
+    department_id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100, nullable=False, unique=True)
+    code: str | None = Field(default=None, max_length=20)

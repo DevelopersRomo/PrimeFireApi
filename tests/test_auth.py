@@ -25,15 +25,15 @@ def test_register_pending_user(client: TestClient, db_session: Session):
     assert response.status_code == 202
     assert "pending approval" in response.json()["detail"].lower()
 
-    user = db_session.exec(select(TenantEmployees).where(TenantEmployees.Email == "pending@example.com")).first()
+    user = db_session.exec(select(TenantEmployees).where(TenantEmployees.email == "pending@example.com")).first()
     assert user is not None
-    assert user.TenantId is None
+    assert user.tenant_id is None
 
 
 def test_register_user_with_tenant(client: TestClient, db_session: Session):
     """Test registering a user with a valid tenant."""
     # Setup Tenant
-    tenant = Tenants(Name="Test Tenant", DbConnectionKey="TEST_TENANT", IsActive=True)
+    tenant = Tenants(name="Test Tenant", db_connection_key="TEST_TENANT", is_active=True)
     db_session.add(tenant)
     db_session.commit()
     db_session.refresh(tenant)
@@ -74,7 +74,7 @@ def test_register_with_invalid_tenant(client: TestClient, db_session: Session):
 
 
 def test_token_login_success(client: TestClient, db_session: Session):
-    tenant = Tenants(Name="Active Tenant", DbConnectionKey="ACTIVE", IsActive=True)
+    tenant = Tenants(name="Active Tenant", db_connection_key="ACTIVE", is_active=True)
     db_session.add(tenant)
     db_session.commit()
     db_session.refresh(tenant)
@@ -82,7 +82,7 @@ def test_token_login_success(client: TestClient, db_session: Session):
     from api.auth import get_password_hash
 
     hashed_pw = get_password_hash("securepassword")
-    user = TenantEmployees(Email="login_user@example.com", PasswordHash=hashed_pw, TenantId=tenant.TenantId)
+    user = TenantEmployees(email="login_user@example.com", password_hash=hashed_pw, tenant_id=tenant.tenant_id)
     db_session.add(user)
     db_session.commit()
 
@@ -97,7 +97,7 @@ def test_token_login_success(client: TestClient, db_session: Session):
 def test_token_login_pending_user(client: TestClient, db_session: Session):
     from api.auth import get_password_hash
 
-    user = TenantEmployees(Email="pend_login@example.com", PasswordHash=get_password_hash("pass"), TenantId=None)
+    user = TenantEmployees(email="pend_login@example.com", password_hash=get_password_hash("pass"), tenant_id=None)
     db_session.add(user)
     db_session.commit()
 
@@ -110,7 +110,7 @@ def test_token_login_pending_user(client: TestClient, db_session: Session):
 def test_token_login_invalid_password(client: TestClient, db_session: Session):
     from api.auth import get_password_hash
 
-    user = TenantEmployees(Email="wrong_pw@example.com", PasswordHash=get_password_hash("pass"), TenantId=None)
+    user = TenantEmployees(email="wrong_pw@example.com", password_hash=get_password_hash("pass"), tenant_id=None)
     db_session.add(user)
     db_session.commit()
 
@@ -121,7 +121,7 @@ def test_token_login_invalid_password(client: TestClient, db_session: Session):
 
 def test_refresh_token_success(client: TestClient, db_session: Session):
     # Setup Tenant and directly generate token to test refresh
-    tenant = Tenants(Name="Refresh Tenant", DbConnectionKey="REFRESH_T", IsActive=True)
+    tenant = Tenants(name="Refresh Tenant", db_connection_key="REFRESH_T", is_active=True)
     db_session.add(tenant)
     db_session.commit()
 

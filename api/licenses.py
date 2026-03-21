@@ -35,7 +35,7 @@ def get_licenses(db: Session = Depends(get_db), _auth=Depends(require_authentica
 # ----------------------------
 @router.get("/{license_id}", response_model=License)
 def get_license(license_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    db_license = db.exec(select(Licenses).filter(Licenses.LicenseId == license_id)).first()
+    db_license = db.exec(select(Licenses).filter(Licenses.license_id == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")
     return db_license
@@ -48,7 +48,7 @@ def get_license(license_id: int, db: Session = Depends(get_db), _auth=Depends(re
 def update_license(
     license_id: int, license: LicenseCreate, db: Session = Depends(get_db), _auth=Depends(require_authentication)
 ):
-    db_license = db.exec(select(Licenses).filter(Licenses.LicenseId == license_id)).first()
+    db_license = db.exec(select(Licenses).filter(Licenses.license_id == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")
 
@@ -67,7 +67,7 @@ def update_license(
 def patch_license(
     license_id: int, license: LicenseUpdate, db: Session = Depends(get_db), _auth=Depends(require_authentication)
 ):
-    db_license = db.exec(select(Licenses).filter(Licenses.LicenseId == license_id)).first()
+    db_license = db.exec(select(Licenses).filter(Licenses.license_id == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")
 
@@ -85,7 +85,7 @@ def patch_license(
 # ----------------------------
 @router.delete("/{license_id}")
 def delete_license(license_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    db_license = db.exec(select(Licenses).filter(Licenses.LicenseId == license_id)).first()
+    db_license = db.exec(select(Licenses).filter(Licenses.license_id == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")
 

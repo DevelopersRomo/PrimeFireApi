@@ -16,17 +16,17 @@ router = APIRouter()
 def note_to_schema(db_note: CustomerNotes) -> CustomerNote:
     """Convert CustomerNotes model to CustomerNote schema."""
     return CustomerNote(
-        CustomerNoteId=db_note.CustomerNoteId,
-        CustomerId=db_note.CustomerId,
-        NoteText=db_note.NoteText,
-        CreatedAt=db_note.CreatedAt,
-        UpdatedAt=db_note.UpdatedAt,
-        CreatedBy=db_note.CreatedBy,
+        customer_note_id=db_note.customer_note_id,
+        customer_id=db_note.customer_id,
+        note_text=db_note.note_text,
+        created_at=db_note.created_at,
+        updated_at=db_note.updated_at,
+        created_by=db_note.created_by,
         creator=CustomerEmployee(
-            EmployeeId=db_note.creator.EmployeeId,
-            DisplayName=db_note.creator.DisplayName,
-            Email=db_note.creator.Email,
-            Title=db_note.creator.Title,
+            employee_id=db_note.creator.employee_id,
+            display_name=db_note.creator.display_name,
+            email=db_note.creator.email,
+            title=db_note.creator.title,
         )
         if db_note.creator
         else None,
@@ -43,8 +43,8 @@ def get_customer_notes(customer_id: int, db: Session = Depends(get_db), _auth=De
     notes = db.exec(
         select(CustomerNotes)
         .options(selectinload(CustomerNotes.creator))
-        .filter(CustomerNotes.CustomerId == customer_id)
-        .order_by(CustomerNotes.CreatedAt.desc())
+        .filter(CustomerNotes.customer_id == customer_id)
+        .order_by(CustomerNotes.created_at.desc())
     ).all()
 
     return [note_to_schema(note) for note in notes]
@@ -63,10 +63,10 @@ def create_customer_note(
         raise HTTPException(status_code=404, detail="Customer not found")
 
     db_note = CustomerNotes(
-        CustomerId=customer_id,
-        NoteText=note.NoteText,
-        CreatedBy=current_employee.EmployeeId,
-        CreatedAt=datetime.now(UTC),
+        customer_id=customer_id,
+        note_text=note.note_text,
+        created_by=current_employee.employee_id,
+        created_at=datetime.now(UTC),
     )
 
     db.add(db_note)
@@ -76,7 +76,7 @@ def create_customer_note(
     db_note = db.exec(
         select(CustomerNotes)
         .options(selectinload(CustomerNotes.creator))
-        .filter(CustomerNotes.CustomerNoteId == db_note.CustomerNoteId)
+        .filter(CustomerNotes.customer_note_id == db_note.customer_note_id)
     ).first()
 
     return note_to_schema(db_note)
@@ -94,7 +94,7 @@ def update_customer_note(
     db_note = db.exec(
         select(CustomerNotes)
         .options(selectinload(CustomerNotes.creator))
-        .filter(CustomerNotes.CustomerNoteId == note_id, CustomerNotes.CustomerId == customer_id)
+        .filter(CustomerNotes.customer_note_id == note_id, CustomerNotes.customer_id == customer_id)
     ).first()
 
     if not db_note:
@@ -104,14 +104,14 @@ def update_customer_note(
     for key, value in update_data.items():
         setattr(db_note, key, value)
 
-    db_note.UpdatedAt = datetime.now(UTC)
+    db_note.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(db_note)
 
     db_note = db.exec(
         select(CustomerNotes)
         .options(selectinload(CustomerNotes.creator))
-        .filter(CustomerNotes.CustomerNoteId == note_id)
+        .filter(CustomerNotes.customer_note_id == note_id)
     ).first()
 
     return note_to_schema(db_note)
@@ -123,7 +123,7 @@ def delete_customer_note(
 ):
     """Delete a customer note."""
     db_note = db.exec(
-        select(CustomerNotes).filter(CustomerNotes.CustomerNoteId == note_id, CustomerNotes.CustomerId == customer_id)
+        select(CustomerNotes).filter(CustomerNotes.customer_note_id == note_id, CustomerNotes.customer_id == customer_id)
     ).first()
 
     if not db_note:

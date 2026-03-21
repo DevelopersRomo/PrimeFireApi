@@ -20,50 +20,50 @@ class TestLicensesAPI:
     def test_create_license(self, client, auth_headers) -> None:
         """Test POST /licenses/ creates a new license."""
         license_data = {
-            "Software": "Visual Studio Code",
-            "Version": "1.85.0",
-            "ExpiryDate": "2024-12-31",
-            "Key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
-            "Account": "license@company.com",
-            "Password": "password123",
-            "EmployeeId": 1,
+            "software": "Visual Studio Code",
+            "version": "1.85.0",
+            "expiry_date": "2024-12-31",
+            "key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
+            "account": "license@company.com",
+            "password": "password123",
+            "employee_id": 1,
         }
 
         response = client.post("/licenses/", json=license_data, headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["Software"] == "Visual Studio Code"
-        assert data["Version"] == "1.85.0"
-        assert data["Key"] == "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
-        assert data["Account"] == "license@company.com"
-        assert data["EmployeeId"] == 1
-        assert "LicenseId" in data
-        assert "CreatedAt" in data
+        assert data["software"] == "Visual Studio Code"
+        assert data["version"] == "1.85.0"
+        assert data["key"] == "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+        assert data["account"] == "license@company.com"
+        assert data["employee_id"] == 1
+        assert "license_id" in data
+        assert "created_at" in data
 
     def test_get_license_by_id(self, client, auth_headers) -> None:
         """Test GET /licenses/{license_id} returns specific license."""
         # Create test data using the API
         license_data = {
-            "Software": "Visual Studio Code",
-            "Version": "1.85.0",
-            "ExpiryDate": "2024-12-31",
-            "Key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
-            "Account": "license@company.com",
-            "Password": "password123",
-            "EmployeeId": 1,
+            "software": "Visual Studio Code",
+            "version": "1.85.0",
+            "expiry_date": "2024-12-31",
+            "key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
+            "account": "license@company.com",
+            "password": "password123",
+            "employee_id": 1,
         }
 
         create_response = client.post("/licenses/", json=license_data, headers=auth_headers)
         assert create_response.status_code == 200
-        license_id = create_response.json()["LicenseId"]
+        license_id = create_response.json()["license_id"]
 
         response = client.get(f"/licenses/{license_id}", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["LicenseId"] == license_id
-        assert data["Software"] == "Visual Studio Code"
+        assert data["license_id"] == license_id
+        assert data["software"] == "Visual Studio Code"
 
     def test_get_license_not_found(self, client, auth_headers) -> None:
         """Test GET /licenses/{license_id} returns 404 for non-existent license."""
@@ -76,23 +76,23 @@ class TestLicensesAPI:
         """Test GET /licenses/ returns all licenses."""
         # Create test data using the API
         license_data_1 = {
-            "Software": "Visual Studio Code",
-            "Version": "1.85.0",
-            "ExpiryDate": "2024-12-31",
-            "Key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
-            "Account": "license@company.com",
-            "Password": "password123",
-            "EmployeeId": 1,
+            "software": "Visual Studio Code",
+            "version": "1.85.0",
+            "expiry_date": "2024-12-31",
+            "key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
+            "account": "license@company.com",
+            "password": "password123",
+            "employee_id": 1,
         }
 
         license_data_2 = {
-            "Software": "Office 365",
-            "Version": "2024",
-            "ExpiryDate": "2025-12-31",
-            "Key": "YYYYY-YYYYY-YYYYY-YYYYY-YYYYY",
-            "Account": "office@company.com",
-            "Password": "password456",
-            "EmployeeId": 1,
+            "software": "Office 365",
+            "version": "2024",
+            "expiry_date": "2025-12-31",
+            "key": "YYYYY-YYYYY-YYYYY-YYYYY-YYYYY",
+            "account": "office@company.com",
+            "password": "password456",
+            "employee_id": 1,
         }
 
         client.post("/licenses/", json=license_data_1, headers=auth_headers)
@@ -105,7 +105,7 @@ class TestLicensesAPI:
         assert isinstance(data, list)
         assert len(data) == 2
 
-        software_names = [license["Software"] for license in data]  # noqa: A001
+        software_names = [license["software"] for license in data]  # noqa: A001
         assert "Visual Studio Code" in software_names
         assert "Office 365" in software_names
 
@@ -113,45 +113,45 @@ class TestLicensesAPI:
         """Test PUT /licenses/{license_id} updates license."""
         # Create test data using the API
         license_data = {
-            "Software": "Visual Studio Code",
-            "Version": "1.85.0",
-            "ExpiryDate": "2024-12-31",
-            "Key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
-            "Account": "license@company.com",
-            "Password": "password123",
-            "EmployeeId": 1,
+            "software": "Visual Studio Code",
+            "version": "1.85.0",
+            "expiry_date": "2024-12-31",
+            "key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
+            "account": "license@company.com",
+            "password": "password123",
+            "employee_id": 1,
         }
 
         create_response = client.post("/licenses/", json=license_data, headers=auth_headers)
         assert create_response.status_code == 200
-        license_id = create_response.json()["LicenseId"]
+        license_id = create_response.json()["license_id"]
 
         update_data = {
-            "Software": "Updated Software",
-            "Version": "2.0.0",
-            "Key": "YYYYY-YYYYY-YYYYY-YYYYY-YYYYY",
-            "Account": "updated@company.com",
-            "Password": "newpassword",
-            "EmployeeId": 1,
+            "software": "Updated Software",
+            "version": "2.0.0",
+            "key": "YYYYY-YYYYY-YYYYY-YYYYY-YYYYY",
+            "account": "updated@company.com",
+            "password": "newpassword",
+            "employee_id": 1,
         }
 
         response = client.put(f"/licenses/{license_id}", json=update_data, headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["Software"] == "Updated Software"
-        assert data["Version"] == "2.0.0"
-        assert data["Key"] == "YYYYY-YYYYY-YYYYY-YYYYY-YYYYY"
+        assert data["software"] == "Updated Software"
+        assert data["version"] == "2.0.0"
+        assert data["key"] == "YYYYY-YYYYY-YYYYY-YYYYY-YYYYY"
 
     def test_update_license_not_found(self, client, auth_headers) -> None:
         """Test PUT /licenses/{license_id} returns 404 for non-existent license."""
         update_data = {
-            "Software": "Test",
-            "Version": "1.0",
-            "Key": "TEST-KEY",
-            "Account": "test@test.com",
-            "Password": "test",
-            "EmployeeId": 1,
+            "software": "Test",
+            "version": "1.0",
+            "key": "TEST-KEY",
+            "account": "test@test.com",
+            "password": "test",
+            "employee_id": 1,
         }
 
         response = client.put("/licenses/999", json=update_data, headers=auth_headers)
@@ -163,18 +163,18 @@ class TestLicensesAPI:
         """Test DELETE /licenses/{license_id} deletes license."""
         # Create test data using the API
         license_data = {
-            "Software": "Visual Studio Code",
-            "Version": "1.85.0",
-            "ExpiryDate": "2024-12-31",
-            "Key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
-            "Account": "license@company.com",
-            "Password": "password123",
-            "EmployeeId": 1,
+            "software": "Visual Studio Code",
+            "version": "1.85.0",
+            "expiry_date": "2024-12-31",
+            "key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
+            "account": "license@company.com",
+            "password": "password123",
+            "employee_id": 1,
         }
 
         create_response = client.post("/licenses/", json=license_data, headers=auth_headers)
         assert create_response.status_code == 200
-        license_id = create_response.json()["LicenseId"]
+        license_id = create_response.json()["license_id"]
 
         # Verify license exists
         response = client.get(f"/licenses/{license_id}", headers=auth_headers)
@@ -200,12 +200,12 @@ class TestLicensesAPI:
     def test_create_license_invalid_data(self, client, auth_headers) -> None:
         """Test POST /licenses/ with invalid data."""
         invalid_data = {
-            "Software": "",  # Empty software name
-            "Version": "1.0",
-            "Key": "TEST",
-            "Account": "test@test.com",
-            "Password": "test",
-            # Missing EmployeeId
+            "software": "",  # Empty software name
+            "version": "1.0",
+            "key": "TEST",
+            "account": "test@test.com",
+            "password": "test",
+            # Missing employee_id
         }
 
         response = client.post("/licenses/", json=invalid_data, headers=auth_headers)

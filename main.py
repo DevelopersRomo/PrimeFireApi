@@ -273,11 +273,10 @@ async def debug_token(current_user: Employees = Depends(require_authentication))
     return {
         "message": "Token validation successful!",
         "user": {
-            "id": current_user.EmployeeId,
-            "name": current_user.Name,
-            "email": current_user.Email,
-            "title": current_user.Title,
-            "azure_oid": current_user.AzureOid,
-            "role_id": current_user.RoleId,
+            "id": current_user.employee_id,
+            "name": current_user.display_name,
+            "email": current_user.email,
+            "title": current_user.title,
+            "azure_oid": current_user.azure_oid,
         },
     }

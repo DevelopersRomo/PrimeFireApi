@@ -4,19 +4,19 @@ import pathlib
 import sys
 from datetime import datetime
 
-sys.path.append(pathlib.Path(pathlib.Path(__file__).parent).parent)
+project_root = pathlib.Path(pathlib.Path(__file__).parent).parent
+sys.path.insert(0, str(project_root / "bd"))
+sys.path.insert(0, str(project_root))
 
 # Crear carpeta de backups si no existe
-backup_dir = os.path.join(pathlib.Path(pathlib.Path(__file__).parent).parent, "bd", "sql", "backups")  # noqa: PTH118
+backup_dir = os.path.join(project_root, "bd", "sql", "backups")  # noqa: PTH118
 pathlib.Path(backup_dir).mkdir(exist_ok=True, parents=True)
-
-import pathlib
 
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 
-from bd.connection import create_engine_from_env
+from connection import create_engine_from_env
 
 
 def get_session_local(db_prefix="DB"):

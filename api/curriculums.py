@@ -70,7 +70,7 @@ def create_curriculum_with_file(
     _auth=Depends(require_authentication),
 ):
     # Validate job exists
-    job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
+    job = db.exec(select(Jobs).filter(Jobs.job_id == job_id)).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -87,16 +87,16 @@ def create_curriculum_with_file(
 
     # Create Curriculum in database
     curriculum_data = CurriculumCreate(
-        JobId=job_id,
-        Name=name,
-        Email=email,
-        Phone=phone,
-        CoverLetter=cover_letter,
-        Status=status,
-        EmployeeId=employee_id,
+        job_id=job_id,
+        name=name,
+        email=email,
+        phone=phone,
+        cover_letter=cover_letter,
+        status=status,
+        employee_id=employee_id,
     )
 
-    db_curriculum = Curriculums(**curriculum_data.model_dump(), CurriculumPath=resume_path)
+    db_curriculum = Curriculums(**curriculum_data.model_dump(), curriculum_path=resume_path)
     db.add(db_curriculum)
     db.commit()
     db.refresh(db_curriculum)
@@ -111,7 +111,7 @@ def create_curriculum(
     curriculum: CurriculumCreate, db: Session = Depends(get_db), _auth=Depends(require_authentication)
 ):
     # Validate job exists
-    job = db.exec(select(Jobs).filter(Jobs.JobId == curriculum.JobId)).first()
+    job = db.exec(select(Jobs).filter(Jobs.job_id == curriculum.job_id)).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -135,7 +135,7 @@ def get_curriculums(db: Session = Depends(get_db), _auth=Depends(require_authent
 # ----------------------------
 @router.get("/{curriculum_id}", response_model=Curriculum)
 def get_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
+    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
     return db_curriculum
@@ -146,7 +146,7 @@ def get_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depe
 # ----------------------------
 @router.get("/job/{job_id}", response_model=list[Curriculum])
 def get_curriculums_by_job(job_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    return db.exec(select(Curriculums).filter(Curriculums.JobId == job_id)).all()
+    return db.exec(select(Curriculums).filter(Curriculums.job_id == job_id)).all()
 
 
 # ----------------------------
@@ -154,7 +154,7 @@ def get_curriculums_by_job(job_id: int, db: Session = Depends(get_db), _auth=Dep
 # ----------------------------
 @router.get("/status/{status}", response_model=list[Curriculum])
 def get_curriculums_by_status(status: str, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    return db.exec(select(Curriculums).filter(Curriculums.Status == status)).all()
+    return db.exec(select(Curriculums).filter(Curriculums.status == status)).all()
 
 
 # ----------------------------
@@ -167,7 +167,7 @@ def update_curriculum(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
+    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
     for key, value in curriculum.model_dump(exclude_unset=True).items():
@@ -183,16 +183,16 @@ def update_curriculum(
 @router.get("/{curriculum_id}/download")
 def download_curriculum_file(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     """Download the curriculum file."""
-    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
+    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
 
-    if not db_curriculum.CurriculumPath or not Path(db_curriculum.CurriculumPath).exists():
+    if not db_curriculum.curriculum_path or not Path(db_curriculum.curriculum_path).exists():
         raise HTTPException(status_code=404, detail="Curriculum file not found")
 
     return FileResponse(
-        path=db_curriculum.CurriculumPath,
-        filename=f"{db_curriculum.Name.replace(' ', '_')}_Curriculum{Path(db_curriculum.CurriculumPath).suffix}",
+        path=db_curriculum.curriculum_path,
+        filename=f"{db_curriculum.name.replace(' ', '_')}_Curriculum{Path(db_curriculum.curriculum_path).suffix}",
         media_type="application/octet-stream",
     )
 
@@ -202,13 +202,13 @@ def download_curriculum_file(curriculum_id: int, db: Session = Depends(get_db), 
 # ----------------------------
 @router.delete("/{curriculum_id}")
 def delete_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.CurriculumId == curriculum_id)).first()
+    db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
 
     # Delete physical file if it exists
-    if db_curriculum.CurriculumPath and Path(db_curriculum.CurriculumPath).exists():
-        Path(db_curriculum.CurriculumPath).unlink()
+    if db_curriculum.curriculum_path and Path(db_curriculum.curriculum_path).exists():
+        Path(db_curriculum.curriculum_path).unlink()
 
     db.delete(db_curriculum)
     db.commit()

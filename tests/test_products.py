@@ -6,37 +6,37 @@ from models.products import Products
 def test_create_product(client, auth_headers, db_session: Session):
     """Test creating a new product."""
     payload = {
-        "Name": "Test Product",
-        "Description": "Test product description",
-        "Type": "Product",
-        "SKU": "TEST-001",
-        "UnitPrice": 100.00,
-        "Cost": 50.00,
-        "TaxRate": 10.0,
-        "Unit": "pieza",
-        "StockQuantity": 10,
-        "IsActive": True,
+        "name": "Test Product",
+        "description": "Test product description",
+        "type": "Product",
+        "sku": "TEST-001",
+        "unit_price": 100.00,
+        "cost": 50.00,
+        "tax_rate": 10.0,
+        "unit": "pieza",
+        "stock_quantity": 10,
+        "is_active": True,
     }
 
     response = client.post("/products", json=payload, headers=auth_headers)
     assert response.status_code in {200, 201}
 
     data = response.json()
-    assert data["Name"] == "Test Product"
-    assert data["Type"] == "Product"
-    assert data["SKU"] == "TEST-001"
+    assert data["name"] == "Test Product"
+    assert data["type"] == "Product"
+    assert data["sku"] == "TEST-001"
 
 
 def test_list_products(client, auth_headers, db_session: Session):
     """Test listing all products."""
     # Create a product first
     product = Products(
-        Name="Test Product",
-        Description="Test description",
-        Type="Product",
-        SKU="LIST-001",
-        UnitPrice=100.00,
-        Cost=50.00,
+        name="Test Product",
+        description="Test description",
+        type="Product",
+        sku="LIST-001",
+        unit_price=100.00,
+        cost=50.00,
     )
     db_session.add(product)
     db_session.commit()
@@ -53,35 +53,35 @@ def test_get_product_by_id(client, auth_headers, db_session: Session):
     """Test getting a specific product by ID."""
     # Create a product first
     product = Products(
-        Name="Get Test Product",
-        Description="Get test description",
-        Type="Product",
-        SKU="GET-001",
-        UnitPrice=200.00,
-        Cost=100.00,
+        name="Get Test Product",
+        description="Get test description",
+        type="Product",
+        sku="GET-001",
+        unit_price=200.00,
+        cost=100.00,
     )
     db_session.add(product)
     db_session.commit()
     db_session.refresh(product)
 
-    response = client.get(f"/products/{product.Id}", headers=auth_headers)
+    response = client.get(f"/products/{product.id}", headers=auth_headers)
     assert response.status_code == 200
 
     data = response.json()
-    assert data["Id"] == product.Id
-    assert data["Name"] == "Get Test Product"
+    assert data["id"] == product.id
+    assert data["name"] == "Get Test Product"
 
 
 def test_update_product(client, auth_headers, db_session: Session):
     """Test updating a product."""
     # Create a product first
     product = Products(
-        Name="Update Test Product",
-        Description="Original description",
-        Type="Product",
-        SKU="UPDATE-001",
-        UnitPrice=100.00,
-        Cost=50.00,
+        name="Update Test Product",
+        description="Original description",
+        type="Product",
+        sku="UPDATE-001",
+        unit_price=100.00,
+        cost=50.00,
     )
     db_session.add(product)
     db_session.commit()
@@ -89,33 +89,33 @@ def test_update_product(client, auth_headers, db_session: Session):
 
     # Update the product
     payload = {
-        "Name": "Updated Product Name",
-        "UnitPrice": 150.00,
+        "name": "Updated Product Name",
+        "unit_price": 150.00,
     }
 
-    response = client.patch(f"/products/{product.Id}", json=payload, headers=auth_headers)
+    response = client.patch(f"/products/{product.id}", json=payload, headers=auth_headers)
     assert response.status_code == 200
 
     data = response.json()
-    assert data["Name"] == "Updated Product Name"
-    assert data["UnitPrice"] == 150.00
+    assert data["name"] == "Updated Product Name"
+    assert data["unit_price"] == 150.00
 
 
 def test_delete_product(client, auth_headers, db_session: Session):
     """Test deleting a product."""
     # Create a product first
     product = Products(
-        Name="Delete Test Product",
-        Description="To be deleted",
-        Type="Product",
-        SKU="DELETE-001",
-        UnitPrice=50.00,
-        Cost=25.00,
+        name="Delete Test Product",
+        description="To be deleted",
+        type="Product",
+        sku="DELETE-001",
+        unit_price=50.00,
+        cost=25.00,
     )
     db_session.add(product)
     db_session.commit()
     db_session.refresh(product)
-    product_id = product.Id
+    product_id = product.id
 
     response = client.delete(f"/products/{product_id}", headers=auth_headers)
     assert response.status_code in {200, 204}

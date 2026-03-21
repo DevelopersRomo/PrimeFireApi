@@ -5,43 +5,42 @@ from sqlmodel import SQLModel
 from schemas.employees import EmployeeRead
 
 
-# Schema for creating licenses (without auto-generated fields)
 class LicenseCreate(SQLModel):
-    Software: str
-    Version: str
-    CreatedAt: date | None = None
-    ExpiryDate: date | None = None
-    Key: str
-    Account: str
-    Password: str
-    Notes: str | None = None
-    EmployeeId: int
+    software: str
+    version: str
+    created_at: date | None = None
+    expiry_date: date | None = None
+    key: str
+    account: str
+    password: str
+    notes: str | None = None
+    employee_id: int
 
 
 class LicenseUpdate(SQLModel):
-    Software: str | None = None
-    Version: str | None = None
-    CreatedAt: date | None = None
-    ExpiryDate: date | None = None
-    Key: str | None = None
-    Account: str | None = None
-    Password: str | None = None
-    Notes: str | None = None
-    EmployeeId: int | None = None
+    software: str | None = None
+    version: str | None = None
+    created_at: date | None = None
+    expiry_date: date | None = None
+    key: str | None = None
+    account: str | None = None
+    password: str | None = None
+    notes: str | None = None
+    employee_id: int | None = None
 
 
 class LicenseRead(SQLModel):
-    LicenseId: int
-    Software: str | None
-    Version: str | None
-    CreatedAt: date | None
-    ExpiryDate: date | None
-    Key: str | None
-    Account: str | None
-    Password: str | None
-    Notes: str | None
-    EmployeeId: int | None
-    Employee: EmployeeRead | None
+    license_id: int
+    software: str | None
+    version: str | None
+    created_at: date | None
+    expiry_date: date | None
+    key: str | None
+    account: str | None
+    password: str | None
+    notes: str | None
+    employee_id: int | None
+    employee: EmployeeRead | None
 
 
 class License(LicenseRead):

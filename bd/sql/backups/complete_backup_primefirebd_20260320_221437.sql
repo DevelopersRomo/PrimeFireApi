@@ -2,7 +2,7 @@ USE [primefirebd]
 GO
 
 /****** COMPLETE DATABASE BACKUP WITH ALL DATA ******/
-/****** Generated: 2026-03-08 19:02:38 ******/
+/****** Generated: 2026-03-20 22:14:37 ******/
 /****** Database: primefirebd on server-primefiredb.database.windows.net ******/
 /****** This script contains ALL table structures and ALL data ******/
 
@@ -875,9 +875,9 @@ INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], 
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (3, N'Jose Alberto', N'Rodriguez', N'Jose Alberto Rodriguez', N'President & CEO', N'President', N'Trujillo Alto, Puerto Rico', N'arodriguez@primefire.us', NULL, N'+1 7872212121', N'+1 7877613180', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'b826abb3-30c8-4369-8d87-ce0d648e7fba', N'arodriguez@primefire.us', '2025-11-06 18:15:59', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (4, N'Baxter', N'Jayuya', N'Baxter Jayuya', N'Engineering Alarm', N'Engineering Alarm Designer', N'Guaynabo, Puerto Rico', N'bjayuya@primefire.us', NULL, NULL, N'+1 7877613180', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'b9de2f69-4aba-42f3-87eb-da0e1dcf2cfa', N'bjayuya@primefire.us', '2025-11-06 18:16:00', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (5, N'Christopher', N'Carballo Rosado', N'Christopher Carballo Rosado', N'Fire Alarm Manager', N'Alarm Project Manager', N'Guaynabo, Puerto Rico', N'ccarballo@primefire.us', NULL, N'+1 7872017346', N'+1 7876303000', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'd63e397b-31e7-424e-a2c3-993562347b04', N'ccarballo@primefire.us', '2025-11-06 18:16:00', NULL, NULL, N'Giovanni Velez', N'gvelez@primefire.us', NULL)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (6, N'Cesar', N'Figueroa Cruzado', N'Cesar Figueroa Cruzado', N'Group Leader', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'cfigueroa@primefire.us', NULL, N'+1 9398919203 ', N'+1 7876303000 ', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', NULL, N'b5ff98b3-be60-4693-aa6e-2553b941faff', N'cfigueroa@primefire.us', '2026-03-08 19:01:43', NULL, NULL, N'Santiago Rodriguez', N'srodriguez@primefire.do', 42)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (7, N'Jose Daniel', N'Agosto Rivera', N'Jose Daniel Agosto Rivera', NULL, NULL, NULL, N'dagosto@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'a5c57db5-230b-41c2-a0e7-0747f4512d2d', N'dagosto@primefire.us', '2026-03-08 19:01:43', NULL, NULL, N'Geurys Medrano', N'gmedrano@primefire.do', 16)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (8, NULL, NULL, N'Dominicana', NULL, NULL, NULL, N'dominicana@primefire.do', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'405c6850-50aa-490a-91f0-b666e016f12e', N'dominicana@primefire.do', '2026-03-08 19:01:44', NULL, NULL, NULL, NULL, NULL)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (6, N'Cesar', N'Figueroa Cruzado', N'Cesar Figueroa Cruzado', N'Group Leader', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'cfigueroa@primefire.us', NULL, N'+1 9398919203 ', N'+1 7876303000 ', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', NULL, N'b5ff98b3-be60-4693-aa6e-2553b941faff', N'cfigueroa@primefire.us', '2026-03-14 22:39:27', NULL, NULL, N'Santiago Rodriguez', N'srodriguez@primefire.do', 42)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (7, N'Jose Daniel', N'Agosto Rivera', N'Jose Daniel Agosto Rivera', NULL, NULL, NULL, N'dagosto@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'a5c57db5-230b-41c2-a0e7-0747f4512d2d', N'dagosto@primefire.us', '2026-03-14 22:39:27', NULL, NULL, N'Geurys Medrano', N'gmedrano@primefire.do', 16)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (8, NULL, NULL, N'Dominicana', NULL, NULL, NULL, N'dominicana@primefire.do', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'405c6850-50aa-490a-91f0-b666e016f12e', N'dominicana@primefire.do', '2026-03-14 22:39:27', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (9, N'Edwin', N'De Jesus', N'Edwin De Jesus', N'Field Tech II', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'edejesus@primefire.us', NULL, N'+1 7876433660', N'+1 7877613180', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'1efe087c-1bd7-4e77-9ec3-5577519a9871', N'edejesus@primefire.us', '2025-11-06 18:16:01', NULL, NULL, N'Edwin De Jesus', N'edejesus@primefire.us', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (10, N'Emmanuel', N'Desueza', N'Enmanuel Desueza', N'Project Coordinator', N'Field Technician, Office Assistant ', N'Santo Domingo, República Dominicana', N'edesueza@primefire.do', NULL, N'+1 8095011901', N'+1 8095011900', N'Abraham Lincoln Ave, Lincoln Plaza Suite 12', N'Santo Domingo', N'Distrito Nacional (D.N.)', N'10124', 3, N'b0241d3b-03a7-45bf-a2fa-f06a76b9317d', N'edesueza@primefire.do', '2025-11-06 18:16:02', NULL, NULL, N'Jose Alberto Rodriguez', N'arodriguez@primefire.us', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (11, N'Edwin', N'Guilloty', N'Edwin Guilloty', N'Project Manager', N'Operations', N'Guaynabo, Puerto Rico', N'eguilloty@primefire.us', NULL, N'+1 7876433660', N'+1 7876303000 ', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'76025b90-b5a8-4ba7-809b-0da6685492f8', N'eguilloty@primefire.us', '2025-11-06 18:16:03', NULL, NULL, N'Jose Alberto Rodriguez', N'arodriguez@primefire.us', NULL)
@@ -888,9 +888,9 @@ INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], 
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (16, N'Geurys Jabbart', N'Medrano Montero', N'Geurys Medrano', N'Global Inventory Manager', N'Engineering Alarm & Sprinkler', N'Santo Domingo, República Dominicana', N'gmedrano@primefire.do', NULL, N'+1 8295594355', N'+1 8095011901', N'Abraham Lincoln Ave, Lincoln Plaza Suite 12', N'Santo Domingo', N'Distrito Nacional (D.N.)', N'10124', 3, N'6dc58092-0b27-431c-a2b6-353e2fcf4c49', N'gmedrano@primefire.do', '2025-11-06 18:16:05', NULL, NULL, N'Enmanuel Desueza', N'edesueza@primefire.do', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (17, N'Gustavo', N'Vazquez', N'Gustavo Vazquez', N'Field Tech II', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'gvazquez@primefire.us', NULL, N'1 (787) 312-7679', N'+1 7876303000 ', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR', N'00969', 2, N'07e0c48e-bc49-4f58-9e3b-c391b4fe12c2', N'gvazquez@primefire.us', '2025-11-06 18:16:05', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (18, N'Giovanni', N'Velez', N'Giovanni Velez', N'Fire Alarm Manager', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'gvelez@primefire.us', NULL, N'+1 7873700568', N'+1 7876303000', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'8b6db431-ee49-46c2-be9a-2e89a493130a', N'gvelez@primefire.us', '2025-11-06 18:16:05', NULL, NULL, N'Jose Alberto Rodriguez', N'arodriguez@primefire.us', NULL)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (19, NULL, NULL, N'Info', NULL, NULL, NULL, N'info@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'53172d9b-ad7e-49e4-81ce-25c1c7656a3e', N'info@primefire.us', '2026-03-08 19:01:49', NULL, NULL, NULL, NULL, NULL)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (19, NULL, NULL, N'Info', NULL, NULL, NULL, N'info@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'53172d9b-ad7e-49e4-81ce-25c1c7656a3e', N'info@primefire.us', '2026-03-14 22:39:29', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (20, N'Israel', N'Nieves', N'Israel Nieves', N'Field Tech II', N'Suppression, Special  Hazards & ITM', N'Trujillo Alto, Puerto Rico', N'inieves@primefire.us', NULL, N'+1 7872047807', N'+1 7877613180', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'396751cd-b9ac-40e9-8122-dffb9341f319', N'inieves@primefire.us', '2025-11-06 18:16:06', NULL, NULL, N'Edwin Guilloty', N'eguilloty@primefire.us', NULL)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (21, N'Jonathan', N'Romo', N'Jonathan Romo', N'Admin Systems', N'IT', N'Home Office, Mexico', N'it@primefire.us', NULL, N'+528125356287', N'+528125356287', N'Arturo B de la Garza #4613', N'Monterrey', NULL, NULL, 4, N'8c882f2c-19f8-4f17-a1e8-d5644456ea65', N'it@primefire.us', '2026-01-14 02:32:28', NULL, NULL, N'Jose Alberto Rodriguez', N'arodriguez@primefire.us', NULL)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (21, N'Jonathan', N'Romo', N'Jonathan Romo', N'Admin Systems', N'IT', N'Home Office, Mexico', N'it@primefire.us', NULL, N'+528125356287', N'+528125356287', N'Arturo B de la Garza #4613', N'Monterrey', NULL, NULL, 4, N'8c882f2c-19f8-4f17-a1e8-d5644456ea65', N'it@primefire.us', '2026-03-12 14:18:55', NULL, NULL, N'Rosa M Rivera', N'rmrivera@primefire.us', 49)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (22, N'Juan', N'Aybar', N'Juan Lehtenin', N'Fire Alarm Division', N'PrimeFire DO', N'República Dominica', N'jaybar@primefire.do', NULL, NULL, N'+1 8095011901', N'Av. Abraham Lincoln', N'Santo Domingo', N'Republica Dominicana', N'10109', 3, N'2a9640a5-897f-49c0-94f7-15a6f4d642c9', N'jaybar@primefire.do', '2025-11-06 18:16:07', NULL, NULL, N'Santiago Rodriguez', N'srodriguez@primefire.do', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (23, N'Joskayra', N'de Jesus Medina', N'Joskayra de Jesus Medina', N'Engineering Alarm Designer & Accountant', N'Engineering Alarm Designer', N'Santo Domingo, República Dominicana', N'jdejesus@primefire.do', NULL, N'+1 809-499-5821', N'+1 8095011900', N'Abraham Lincoln Ave, Lincoln Plaza Suite 12', N'Santo Domingo', N'Distrito Nacional (D.N.)', N'10124', 3, N'df97493e-56d4-45fb-8a18-25a60dead4b5', N'jdejesus@primefire.do', '2025-11-06 18:16:08', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (24, N'Javier', N'Lopez Rivera', N'Javier Lopez Rivera', N'Field tech II', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'jlopez@primefire.us', NULL, N'+1 9393399185', N'+1 7876303000 ', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'e809702b-2fb2-45d3-b486-04f66b89d725', N'jlopez@primefire.us', '2025-11-06 18:16:08', NULL, NULL, N'Giovanni Velez', N'gvelez@primefire.us', NULL)
@@ -905,20 +905,20 @@ INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], 
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (33, N'Max', N'Oliveras', N'Max Oliveras', N'Project Manager', N'Field Engineering', N'Trujillo Alto', N'moliveras@primefire.us', NULL, N'+ 787 607 7402', N'+1 7876303000', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'41b65f97-f746-46c2-b03a-9f0dffaefb19', N'moliveras@primefire.us', '2025-11-06 18:16:12', NULL, NULL, N'Jose Alberto Rodriguez', N'arodriguez@primefire.us', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (34, N'Marcos', N'Quiles', N'Marcos Quiles', N'Fire Protection Designer', N'Protection Designer', N'Trujillo Alto, Puerto Rico', N'mquiles@primefire.us', NULL, N'+1 7875257965', N'+1 7877613180', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'0f46165b-1617-4d70-82f4-f4768b01f90c', N'mquiles@primefire.us', '2025-11-06 18:16:12', NULL, NULL, N'Adolfo Martinez', N'amartinez@primefire.us', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (35, N'Nathan', N'Gonzalez', N'Nathan Gonzalez', N'Engineering Alarm Designers', N'Engineering Alarm', N'Trujillo Alto, Puerto Rico', N'ngonzalez@primefire.us', NULL, N'+1 7879819444', N'+1 7877613180', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'c9d2250f-2b79-403f-9c13-fe11212f4ebb', N'ngonzalez@primefire.us', '2025-11-06 18:16:13', NULL, NULL, N'Adolfo Martinez', N'amartinez@primefire.us', NULL)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (36, NULL, NULL, N'Printer Guaynabo', NULL, NULL, NULL, N'Printer-Guaynabo@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'5719f4d2-8092-48f8-a53a-d6f0e28bf8ea', N'Printer-Guaynabo@primefire.us', '2026-03-08 19:01:57', NULL, NULL, NULL, NULL, NULL)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (36, NULL, NULL, N'Printer Guaynabo', NULL, NULL, NULL, N'Printer-Guaynabo@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'5719f4d2-8092-48f8-a53a-d6f0e28bf8ea', N'Printer-Guaynabo@primefire.us', '2026-03-14 22:39:31', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (37, N'Rayneé', N'Fúnez Heredia', N'Rayneé Fúnez Heredia', N'Account Manager', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'rfunez@primefire.us', NULL, N'+1 9392350216', N'+1 7876303000 ', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'ab01cd10-bff4-4620-b55e-0d0f1ab1d151', N'rfunez@primefire.us', '2025-11-06 18:16:13', NULL, NULL, N'Giovanni Velez', N'gvelez@primefire.us', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (38, N'Rolando', N'Rivera', N'Rolando Rivera', N'Alarm Designer', NULL, N'Guaynabo, Puerto Rico', N'rrivera@primefire.us', NULL, N'+1 7872377217', N'+1 7876303000', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR (Puerto Rico)', N'00969', 2, N'706337f9-ef71-47cb-982f-2ca206383da3', N'rrivera@primefire.us', '2025-11-06 18:16:14', NULL, NULL, N'Adolfo Martinez', N'amartinez@primefire.us', NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (39, N'Sigfredo', N'Carrero', N'Sigfredo Carrero', N'General Manager / Sprinkler Division', N'SubDirection', N'Trujillo Alto, Puerto Rico', N'scarrero@primefire.us', NULL, N'+1 7876475955', N' +1 7877613180', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'b7d6932d-8c4c-411f-ab87-1547f9c07391', N'scarrero@primefire.us', '2025-11-06 18:16:14', NULL, NULL, N'Jose Alberto Rodriguez', N'arodriguez@primefire.us', NULL)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (40, NULL, NULL, N'service', NULL, NULL, NULL, N'service@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'f1228614-b6eb-4c3e-bbae-869139b6736e', N'service@primefire.us', '2026-03-08 19:01:59', NULL, NULL, NULL, NULL, NULL)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (40, NULL, NULL, N'service', NULL, NULL, NULL, N'service@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'f1228614-b6eb-4c3e-bbae-869139b6736e', N'service@primefire.us', '2026-03-14 22:39:32', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (41, N'Stephanie', N'Martinez', N'Stephanie Martinez', N'HR Analyst', N'Hiuman Resource', N'Trujillo Alto, Puerto Rico', N'smartinez@primefire.us', NULL, N'+1 8292485211', N'+1 8095011901', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'9cfcf921-1266-468c-a7de-0ee20fd472cb', N'smartinez@primefire.us', '2025-11-06 18:16:15', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (42, N'Santiago', N'Rodriguez', N'Santiago Rodriguez', N'Operation Manager', N'Field Engineering ', N'Santo Domingo, República Dominicana', N'srodriguez@primefire.do', NULL, N'+1 7876077402', N'+1 7877613180', N'Abraham Lincoln Ave, Lincoln Plaza Suite 12', N'Santo Domingo', N'Distrito Nacional (D.N.)', N'10124', 3, N'635af9c2-ca37-4e5a-bfdd-989e0f7d14a9', N'srodriguez@primefire.do', '2025-11-06 18:16:15', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (43, N'Willian', N'Bencosme', N'Willian Bencosme', N'Engineering Alarm & FireSpronkler', N'Engineering Alarm Designer', N'Santo Domingo, República Dominicana', N'wbencosme@primefire.do', NULL, N'+1 8297653844', N'+1 8095011901', N'Abraham Lincoln Ave, Lincoln Plaza Suite 12', N'Santo Domingo', N'Distrito Nacional (D.N.)', N'10124', 3, N'6987d8c8-0423-43bb-be3e-6601476147ab', N'wbencosme@primefire.do', '2025-11-06 18:16:16', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (44, N'Wilnelia', N'Santos', N'Wilnelia Santos', N'HR Analyst', N'Hiuman Resource', N'Republica Dominicana', N'wsantos@primefire.us', NULL, N'+1 7877613180', N'+1 8608413625', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'be4788a5-f480-442d-ab40-209e317e54ac', N'wsantos@primefire.us', '2025-12-22 18:25:48', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (45, N'Luis', N'Belliard', N'Luis Belliard', N'Fire Sprinklers Designer', N'Engineering Alarm & Sprinkler', N'Santo Domingo, República Dominicana', N'lbelliard@primefire.do', NULL, N'+1 8292222869', N'+1 8095011901', N'Abraham Lincoln Ave, Lincoln Plaza Suite 12', N'Santo Domingo', N'Distrito Nacional (D.N.)', N'10124', 3, N'6e029e87-b520-4def-8aed-9484162bee13', N'lbelliard@primefire.do', '2025-11-13 18:05:51', NULL, NULL, N'Geurys Medrano', N'gmedrano@primefire.do', NULL)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (46, N'Kevin', N'Lopez', N'Kevin Lopez', NULL, NULL, NULL, N'klopez@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'ac51c4f9-269a-44a8-99b9-aae4220a7e4e', N'klopez@primefire.us', '2026-03-08 19:01:52', NULL, NULL, NULL, NULL, NULL)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (46, N'Kevin', N'Lopez', N'Kevin Lopez', NULL, NULL, NULL, N'klopez@primefire.us', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'ac51c4f9-269a-44a8-99b9-aae4220a7e4e', N'klopez@primefire.us', '2026-03-14 22:39:30', NULL, NULL, NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (47, N'Juan', N'Villa', N'Juan Villa', N'External User', NULL, NULL, N'jcarlos.villa.rivera@gmail.com', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, N'$2b$12$fiPTctfjmqCHlsIKwhYdGeTCs3f8WyZIrJfgTaFHM0mLKtCjqr1BW', NULL, NULL, NULL)
 INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (48, N'Luis D', N'Lugo', N'Luis D Lugo', N'Field tech II', N'Fire Alarm Division', N'Guaynabo, Puerto Rico', N'llugo@primefire.us', NULL, N'+1 7879514104', N'+1 7876306000', N'PR1 Km 22.3 Bo, Rio Solar Los Santa', N'Guaynabo', N'PR', N'00969', 2, N'542a5a99-aa6a-4ce9-8435-e42f587444b6', N'llugo@primefire.us', '2026-02-26 02:49:09', NULL, NULL, NULL, NULL, NULL)
-INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (49, N'Rosa M', N'Rivera', N'Rosa M Rivera', N'Project Manager - Ai Strategic Efficiency', N'Administration', N'Guaynabo', N'rmrivera@primefire.us', NULL, N'(787)975-9127', N'787-630-6000', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'aa1aafd1-f175-4595-9dc1-d018b8069d66', N'rmrivera@primefire.us', '2026-03-08 22:11:22', NULL, NULL, NULL, NULL, NULL)
+INSERT [dbo].[Employees] ([EmployeeId], [FirstName], [LastName], [DisplayName], [Title], [Department], [Office], [Email], [Phone], [MobilePhone], [OfficePhone], [StreetAddress], [City], [State], [PostalCode], [CountryId], [AzureOid], [AzureUpn], [LastSyncedAt], [Anydesk], [PasswordHash], [Manager], [ManagerEmail], [ManagerEmployeeId]) VALUES (49, N'Rosa M', N'Rivera', N'Rosa M Rivera', N'Project Manager - Ai Strategic Efficiency', N'Administration', N'Guaynabo', N'rmrivera@primefire.us', NULL, N'(787)975-9127', N'787-630-6000', N'Highway 8860 KM 1.2', N'Trujillo Alto', N'PR (Puerto Rico)', N'00976', 2, N'aa1aafd1-f175-4595-9dc1-d018b8069d66', N'rmrivera@primefire.us', '2026-03-12 14:44:19', NULL, NULL, NULL, NULL, NULL)
 
 SET IDENTITY_INSERT [dbo].[Employees] OFF
 GO
@@ -974,7 +974,7 @@ SET IDENTITY_INSERT [dbo].[Roles] OFF
 GO
 
 
--- Data for EmployeeRoles (58 records)
+-- Data for EmployeeRoles (61 records)
 INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (1, 3)
 INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (2, 2)
 INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (2, 3)
@@ -1033,6 +1033,9 @@ INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (44, 2)
 INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (44, 3)
 INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (45, 3)
 INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (46, 3)
+INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (49, 1)
+INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (49, 3)
+INSERT [dbo].[EmployeeRoles] ([EmployeeId], [RoleId]) VALUES (49, 5)
 GO
 
 
@@ -1058,7 +1061,7 @@ SET IDENTITY_INSERT [dbo].[ExternalUsers] OFF
 GO
 
 
--- Data for HardwareInventory (25 records)
+-- Data for HardwareInventory (26 records)
 SET IDENTITY_INSERT [dbo].[HardwareInventory] ON
 GO
 
@@ -1094,6 +1097,7 @@ Product ID	00330-81498-17796-AA315
 Serial number	MP2MQHB1', '2026-01-23 15:30:27', '2026-01-23 00:00:00')
 INSERT [dbo].[HardwareInventory] ([HardwareID], [SerialNumber], [Brand], [Model], [DeviceType], [Processor], [RAM_GB], [StorageType], [StorageSize_GB], [GPU], [OperatingSystem], [WarrantyStartDate], [WarrantyEndDate], [PurchaseDate], [EmployeeId], [Location], [Status], [Notes], [CreatedAt], [UpdatedAt]) VALUES (33, N'93OOKC6', N'HP', N'HP-Envy TE01-3xxx', N'Laptop', N'12th Generation Intel (R) Core(TM) i7-1270F', NULL, N'SSD', 932, NULL, N'Windows 11 Pro', '2025-10-13', '2026-10-13', '2025-10-13', 18, N'Guaynabo', N'Active', N'Laptop de Giovanni ', '2026-01-28 17:04:31', NULL)
 INSERT [dbo].[HardwareInventory] ([HardwareID], [SerialNumber], [Brand], [Model], [DeviceType], [Processor], [RAM_GB], [StorageType], [StorageSize_GB], [GPU], [OperatingSystem], [WarrantyStartDate], [WarrantyEndDate], [PurchaseDate], [EmployeeId], [Location], [Status], [Notes], [CreatedAt], [UpdatedAt]) VALUES (34, N'405QCLH568488', N'LG', N'15Z90S-H.AAB6U1', N'Laptop', N'Intel Core Ultra 7 155h', NULL, N'NVMe', 954, NULL, N'Windows 11 Pro', '2024-04-02', '2025-04-02', '2024-04-02', 33, N'Trujillo', N'Active', N'Laptop Max Oliveras', '2026-03-02 15:29:22', NULL)
+INSERT [dbo].[HardwareInventory] ([HardwareID], [SerialNumber], [Brand], [Model], [DeviceType], [Processor], [RAM_GB], [StorageType], [StorageSize_GB], [GPU], [OperatingSystem], [WarrantyStartDate], [WarrantyEndDate], [PurchaseDate], [EmployeeId], [Location], [Status], [Notes], [CreatedAt], [UpdatedAt]) VALUES (35, N'7RV3G4', N'Dell', N'Dell 16 Plus DB16250', N'Laptop', N'Intel(R) Core(TM) Ultra 9 288V (3.30 GHz)', NULL, N'SSD', 954, NULL, N'Windows 11 Pro', '2026-03-09', '2029-03-09', '2026-03-09', 49, N'Guaynabo', N'Active', N'Laptop de Rosa Maria', '2026-03-18 19:41:55', NULL)
 
 SET IDENTITY_INSERT [dbo].[HardwareInventory] OFF
 GO
@@ -1105,7 +1109,7 @@ GO
 -- Jobs: No data to insert
 
 
--- Data for Licenses (63 records)
+-- Data for Licenses (64 records)
 SET IDENTITY_INSERT [dbo].[Licenses] ON
 GO
 
@@ -1123,7 +1127,7 @@ INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [Expir
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (14, N'Office Hogar y Empresas', N'2016', '2025-11-01', '2030-12-31', N'6C3H9-NF4XV-M7B9T-2FKMJ-Q69VX', N'NA', N'NA', 19, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (15, N'Office Hogar y Empresas', N'2016', '2025-11-01', '2030-12-31', N'NBRB7-DXRTG-78F3J-6DH6H-X767X', N'NA', N'NA', 19, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (16, N'Office Hogar y Empresas', N'2016', '2025-11-01', '2030-12-31', N'6YPF7-NVQTX-CFRFY-K8H8K-V22MK', N'NA', N'NA', 19, NULL)
-INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (17, N'Office Hogar y Empresas', N'2016', '2025-11-01', '2030-12-31', N'PTNYH-C3K4Y-R2V4Y-FVK7G-KTPMK', N'NA', N'NA', 19, NULL)
+INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (17, N'Office Hogar y Empresas', N'2016', '2025-11-01', '2026-11-01', N'PTNYH-C3K4Y-R2V4Y-FVK7G-KTPMK', N'NA', N'NA', 29, N'')
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (18, N'Office Hogar y Empresas', N'2016', '2025-11-01', '2030-12-31', N'JW2N2-VY84G-7B4WQ-F8TRG-TJGBK', N'NA', N'NA', 43, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (19, N'Office Hogar y Empresas', N'2016', '2025-11-01', '2030-12-31', N'X3NXY-WQF6G-6TYHP-VGMR4-JHV39', N'NA', N'NA', 16, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (20, N'Project Professional', N'2016', '2025-01-01', '2030-12-31', N'NA', N'.exe', N'NA', 33, NULL)
@@ -1156,7 +1160,7 @@ INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [Expir
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (48, N'Adobe Acribat Pro', N'2025', '2025-12-17', '2030-12-31', N'1118-1780-2264-9622-2021-5546', N'NA', N'NA', 25, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (49, N'AlarmCAD', N'2023', '2025-02-28', '2026-02-28', N'EGBC4-CJLTC-64K8C- FA9BX-6NXUJ-9', N'Amartinez@primefire.us', N'', 2, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (50, N'AutoSPRINK Platinum', N'2024', '2026-02-03', '2027-02-03', N'9WVCN-X5X63-3TYME-GMTYJ-NMJP4-4', N'lbusert@primefire.us', N'Na', 30, N'')
-INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (51, N'AutoSPRINK Lite', N'2024', '2025-02-04', '2026-02-04', N'ZFHG6-JYC26-X2K9A-UWQN5-9A8VK-6', N'Lnieves@primefire.us', N'NA', 32, NULL)
+INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (51, N'AutoSPRINK Lite', N'2024', '2025-02-04', '2026-02-04', N'ZFHG6-JYC26-X2K9A-UWQN5-9A8VK-6', N'Lnieves@primefire.us', N'NA', 32, N'La licencia ya no se va a actualizar por que es perpetua solo se quedara sin mtto')
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (52, N'AutoSPRINK Lite', N'2024', '2025-02-04', '2026-02-04', N'ZFHG6-JYC26-X2K9A-UWQN5-9A8VK-6', N'Lbilleard@primefire.us', N'NA', 45, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (53, N'AlarmCAD ', N'2023', '2024-05-31', '2025-05-31', N'7HPVU-ZS2L3-Q8YA9-ZZHC7-26PPB-2 ', N'Jmedina@primefire.us', N'NA', 23, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (54, N'AlarmCAD', N'2023', '2024-03-03', '2025-03-03', N'ARFQH-LQ9N5-JMRJB-QR5NJ-C58FT-4', N'Wbencosme@primefire.us', N'NA', 43, NULL)
@@ -1170,8 +1174,9 @@ INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [Expir
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (68, N'AutoCAD ', N'Full Version ', '2025-06-10', '2026-06-10', N'NA', N'Arodriguez@promefire.us', N'NA', 34, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (69, N'ZenFire', N'Subscription CRM', '2026-01-05', '2027-01-05', N'Subscription', N'ALL ', N'NA', 21, NULL)
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (70, N'Godaddy Dominio PrimeFire.us', N'Dominio', '2025-10-29', '2027-10-29', N'Subscription', N'30916342', N'Alberto2016', 21, NULL)
-INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (71, N'Godaddy eliteyachtscharter.com', N'Dominio', '2025-01-19', '2026-01-19', N'Subscription', N'PrimeFirePR', N'PFP2@25!@#', 21, NULL)
+INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (71, N'Godaddy eliteyachtscharter.com', N'Dominio', '2026-01-18', '2027-01-18', N'Subscription', N'PrimeFirePR', N'PFP2@25!@#', 21, N'')
 INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (72, N'Godaddy haciendapallares.com', N'Dominio', '2026-05-01', '2029-05-01', N'Subscription ', N'PrimeFirePR', N'PFP2@25!@#', 21, NULL)
+INSERT [dbo].[Licenses] ([LicenseId], [Software], [Version], [CreatedAt], [ExpiryDate], [Key], [Account], [Password], [EmployeeId], [Notes]) VALUES (74, N'Windows 11 ', N'Pro', '2026-03-16', '2039-12-16', N'FDHVN-XCPCG-77YDX-TTYYQ-T6PKG', N'Rmrivera@primefire.us', N'Na', 49, N'Key Rosa Maria')
 
 SET IDENTITY_INSERT [dbo].[Licenses] OFF
 GO
@@ -1256,7 +1261,7 @@ SET IDENTITY_INSERT [dbo].[TenantLogos] OFF
 GO
 
 
--- Data for Tickets (92 records)
+-- Data for Tickets (98 records)
 SET IDENTITY_INSERT [dbo].[Tickets] ON
 GO
 
@@ -1437,15 +1442,25 @@ Técnico Servicio Nivel II
 (787)951-4104 celular
 Oficina de Guaynabo', N'CLOSED', N'HIGH', N'4h', 44, 27, '2026-02-24 16:21:00', '2026-03-06 12:30:50')
 INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (101, N'Issue Load Menu ', N'El Menu no Carga ahi que darle refresh algunas veces ', N'CLOSED', N'NORMAL', N'8h', 21, 27, '2026-02-24 23:58:31', '2026-03-08 22:20:59')
-INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (102, N'Boton con el tema Blanco ', N'el boton create se ve el del tema negro cuando aun cuando cambiamos a tema blanco', N'TODO', N'NORMAL', N'4h', 21, 27, '2026-03-03 01:16:34', '2026-03-03 01:16:34')
+INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (102, N'Boton con el tema Blanco ', N'el boton create se ve el del tema negro cuando aun cuando cambiamos a tema blanco', N'CLOSED', N'NORMAL', N'4h', 21, 27, '2026-03-03 01:16:34', '2026-03-09 02:50:03')
 INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (103, N'installation all programs ', N'install all programs Max Machine', N'CLOSED', N'MEDIUM', N'4h', 33, 21, '2026-03-04 12:45:01', '2026-03-05 19:09:15')
 INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (104, N'New Hire!', N'Tenemos una empleada nueva que empezara a trabajar en la oficina de Guaynabo el lunes, 9 de marzo. Su nombre es Rosa M. Rivera Rivera. Su posición es Project Manager - Ai Strategic Efficiency. Necesito le crees email y accesos necesarios - one drive, proyectos, etc. Cualquier duda o pregunta contactarme al (860)841-3625. Gracias. ', N'CLOSED', N'HIGH', N'24h', 44, 21, '2026-03-04 14:11:52', '2026-03-06 01:24:11')
+INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (105, N'Configuracion apps computadora', N'Instalar aplicaciones y servicios', N'TODO', N'NORMAL', N'4h', 49, 21, '2026-03-09 17:27:42', '2026-03-09 17:27:42')
+INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (106, N'Add emails to forms ', N'Agregar a Giovanni y Wilnelia al form de la webpage PR 
+
+Agregar a Enmanuel a la webpage DO ', N'TODO', N'NORMAL', N'4h', 21, 47, '2026-03-10 19:21:14', '2026-03-10 19:21:14')
+INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (107, N'Mejora de time sheet', N'cuando el usuario le da click en Clock in automáticamente debe aparecer reflejado en start time ', N'TODO', N'NORMAL', N'4h', 21, 27, '2026-03-12 14:53:59', '2026-03-13 00:27:25')
+INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (108, N'Mejoras TimeOFF', N'time off: no puedes pedir permisos si no existe un manager -- validacion del manager 
+time off: Halliday automatico por países y enrolar a un employee por país para mostrar sus hollidays
+verificar por que no funciona servicio cuando el correo no es de un dominio empresarial', N'TODO', N'NORMAL', N'4w', 21, 21, '2026-03-13 00:28:50', '2026-03-13 00:28:50')
+INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (109, N'Issue Correo Outlook', N'Correos borrados vuelven al bandeja de inbox', N'TODO', N'NORMAL', N'4h', 28, 21, '2026-03-17 15:49:38', '2026-03-17 15:49:38')
+INSERT [dbo].[Tickets] ([TicketId], [Title], [Description], [Status], [Priority], [SLA], [CreatedBy], [AssignedTo], [CreatedAt], [UpdatedAt]) VALUES (110, N'Ticket para JR', N'Excel', N'TODO', N'MEDIUM', N'1h', 29, 21, '2026-03-18 16:58:58', '2026-03-18 16:58:58')
 
 SET IDENTITY_INSERT [dbo].[Tickets] OFF
 GO
 
 
--- Data for ticketMessages (35 records)
+-- Data for ticketMessages (37 records)
 SET IDENTITY_INSERT [dbo].[ticketMessages] ON
 GO
 
@@ -1486,12 +1501,14 @@ INSERT [dbo].[ticketMessages] ([TicketMessageId], [TicketId], [UserId], [Message
 INSERT [dbo].[ticketMessages] ([TicketMessageId], [TicketId], [UserId], [MessageTxt], [CreatedAt], [UpdatedAt], [EditedAt]) VALUES (36, 104, 21, N'Ya quedo listo solo faltara la licencia de Windows 11 pro para poder ingresar a Rosa a la red de prime', '2026-03-06 01:22:04', NULL, NULL)
 INSERT [dbo].[ticketMessages] ([TicketMessageId], [TicketId], [UserId], [MessageTxt], [CreatedAt], [UpdatedAt], [EditedAt]) VALUES (37, 104, 21, N'Ya quedo listo solo faltara la licencia de Windows 11 pro para poder ingresar a Rosa a la red de prime', '2026-03-06 01:22:04', NULL, NULL)
 INSERT [dbo].[ticketMessages] ([TicketMessageId], [TicketId], [UserId], [MessageTxt], [CreatedAt], [UpdatedAt], [EditedAt]) VALUES (38, 104, 21, N'Ya quedo listo solo faltara la licencia de Windows 11 pro para poder ingresar a Rosa a la red de prime', '2026-03-06 01:22:04', NULL, NULL)
+INSERT [dbo].[ticketMessages] ([TicketMessageId], [TicketId], [UserId], [MessageTxt], [CreatedAt], [UpdatedAt], [EditedAt]) VALUES (40, 102, 27, N'result', '2026-03-09 02:47:45', NULL, NULL)
+INSERT [dbo].[ticketMessages] ([TicketMessageId], [TicketId], [UserId], [MessageTxt], [CreatedAt], [UpdatedAt], [EditedAt]) VALUES (41, 107, 21, N'mostrar names no ids', '2026-03-13 00:56:20', NULL, NULL)
 
 SET IDENTITY_INSERT [dbo].[ticketMessages] OFF
 GO
 
 
--- Data for ticketAttachments (4 records)
+-- Data for ticketAttachments (6 records)
 SET IDENTITY_INSERT [dbo].[ticketAttachments] ON
 GO
 
@@ -1499,6 +1516,8 @@ INSERT [dbo].[ticketAttachments] ([TicketAttachmentId], [TicketId], [TicketMessa
 INSERT [dbo].[ticketAttachments] ([TicketAttachmentId], [TicketId], [TicketMessageId], [FileName], [FileType], [FilePath], [CreatedAt]) VALUES (5, 27, 6, N'VacationsImproves.png', N'image/png', N'tickets/27/0d56d010084d4dd78de4e732c3d4bccd.png', '2025-12-15 23:19:29')
 INSERT [dbo].[ticketAttachments] ([TicketAttachmentId], [TicketId], [TicketMessageId], [FileName], [FileType], [FilePath], [CreatedAt]) VALUES (6, 76, 17, N'sumas.jpg', N'image/jpeg', N'tickets/76/f49e6b762cac49f5ad4548465caf0131.jpg', '2025-12-30 17:20:50')
 INSERT [dbo].[ticketAttachments] ([TicketAttachmentId], [TicketId], [TicketMessageId], [FileName], [FileType], [FilePath], [CreatedAt]) VALUES (7, 77, 19, N'nfpa-logo-1.png', N'image/png', N'D:/home/uploads/tickets/77/995695a047bd4734bf9a65ceaeb25021.png', '2026-01-08 03:25:59')
+INSERT [dbo].[ticketAttachments] ([TicketAttachmentId], [TicketId], [TicketMessageId], [FileName], [FileType], [FilePath], [CreatedAt]) VALUES (8, 102, 40, N'Untitled.png', N'image/png', N'/home/home/uploads/tickets/102/716543f9c6894ac7b1808cc2a547ea66.png', '2026-03-09 02:47:46')
+INSERT [dbo].[ticketAttachments] ([TicketAttachmentId], [TicketId], [TicketMessageId], [FileName], [FileType], [FilePath], [CreatedAt]) VALUES (9, 107, 41, N'Screenshot 2026-03-12 185238.png', N'image/png', N'/home/home/uploads/tickets/107/c7c0f56614184af5b11c25375ac0baf9.png', '2026-03-13 00:56:21')
 
 SET IDENTITY_INSERT [dbo].[ticketAttachments] OFF
 GO
@@ -1509,27 +1528,45 @@ SET IDENTITY_INSERT [dbo].[TimeOffBalances] ON
 GO
 
 INSERT [dbo].[TimeOffBalances] ([BalanceId], [EmployeeId], [AbsenceType], [Year], [EntitledDays], [UsedDays], [PendingDays], [CarryoverDays]) VALUES (1, 21, N'sick', 2026, N'0', N'0.50', N'0.00', N'0')
-INSERT [dbo].[TimeOffBalances] ([BalanceId], [EmployeeId], [AbsenceType], [Year], [EntitledDays], [UsedDays], [PendingDays], [CarryoverDays]) VALUES (2, 21, N'vacation', 2026, N'0', N'2.00', N'0.00', N'0')
+INSERT [dbo].[TimeOffBalances] ([BalanceId], [EmployeeId], [AbsenceType], [Year], [EntitledDays], [UsedDays], [PendingDays], [CarryoverDays]) VALUES (2, 21, N'vacation', 2026, N'0', N'3.00', N'0.00', N'0')
 
 SET IDENTITY_INSERT [dbo].[TimeOffBalances] OFF
 GO
 
 
--- Data for TimeOffRequests (2 records)
+-- Data for TimeOffRequests (3 records)
 SET IDENTITY_INSERT [dbo].[TimeOffRequests] ON
 GO
 
 INSERT [dbo].[TimeOffRequests] ([RequestId], [EmployeeId], [AbsenceType], [Status], [TimeUnit], [StartDate], [EndDate], [StartTime], [EndTime], [TotalHours], [TotalDays], [Reason], [ReviewedBy], [ReviewedAt], [ReviewNotes], [CreatedAt], [UpdatedAt]) VALUES (1, 21, N'sick', N'approved', N'half_day', N'2026-02-12', N'2026-02-12', NULL, NULL, NULL, N'0.50', N'I feel sick ', 21, N'2026-02-19 15:58:01', NULL, N'2026-02-12 21:01:46', N'2026-02-19 15:58:01')
 INSERT [dbo].[TimeOffRequests] ([RequestId], [EmployeeId], [AbsenceType], [Status], [TimeUnit], [StartDate], [EndDate], [StartTime], [EndTime], [TotalHours], [TotalDays], [Reason], [ReviewedBy], [ReviewedAt], [ReviewNotes], [CreatedAt], [UpdatedAt]) VALUES (2, 21, N'vacation', N'approved', N'full_day', N'2026-02-26', N'2026-02-27', NULL, NULL, NULL, N'2.00', N'Pido este dia de vacaciones por que necesito salir ', 21, N'2026-02-19 16:12:25', NULL, N'2026-02-19 16:11:29', N'2026-02-19 16:12:25')
+INSERT [dbo].[TimeOffRequests] ([RequestId], [EmployeeId], [AbsenceType], [Status], [TimeUnit], [StartDate], [EndDate], [StartTime], [EndTime], [TotalHours], [TotalDays], [Reason], [ReviewedBy], [ReviewedAt], [ReviewNotes], [CreatedAt], [UpdatedAt]) VALUES (3, 21, N'vacation', N'approved', N'full_day', N'2026-03-16', N'2026-03-16', NULL, NULL, NULL, N'1.00', N'That day is holliday in mexico', 49, N'2026-03-12 14:48:59', NULL, N'2026-03-12 14:45:10', N'2026-03-12 14:48:59')
 
 SET IDENTITY_INSERT [dbo].[TimeOffRequests] OFF
 GO
 
 
--- TimeSheetLocationSnapshots: No data to insert
+-- Data for TimeSheetLocationSnapshots (3 records)
+SET IDENTITY_INSERT [dbo].[TimeSheetLocationSnapshots] ON
+GO
+
+INSERT [dbo].[TimeSheetLocationSnapshots] ([SnapshotId], [EmployeeId], [CustomerId], [IpAddress], [Latitude], [Longitude], [GpsAccuracy], [City], [Region], [Country], [Timezone], [LocationRaw], [CapturedAt]) VALUES (1, 21, 1, N'200.68.164.16:9945', N'25.72012410070058', N'-100.52835521338724', N'10.507418291305687', NULL, NULL, NULL, N'America/Monterrey', NULL, N'2026-03-12 14:50:55')
+INSERT [dbo].[TimeSheetLocationSnapshots] ([SnapshotId], [EmployeeId], [CustomerId], [IpAddress], [Latitude], [Longitude], [GpsAccuracy], [City], [Region], [Country], [Timezone], [LocationRaw], [CapturedAt]) VALUES (2, 21, 1, N'201.172.175.223:57914', N'25.769168838556393', N'-100.45509983015337', N'12.757271574563367', NULL, NULL, NULL, N'America/Monterrey', NULL, N'2026-03-13 00:22:48')
+INSERT [dbo].[TimeSheetLocationSnapshots] ([SnapshotId], [EmployeeId], [CustomerId], [IpAddress], [Latitude], [Longitude], [GpsAccuracy], [City], [Region], [Country], [Timezone], [LocationRaw], [CapturedAt]) VALUES (3, 49, 1, N'173.211.173.139:64306', N'18.317721496001777', N'-66.09618346379386', N'129', NULL, NULL, NULL, N'America/New_York', NULL, N'2026-03-17 11:42:49')
+
+SET IDENTITY_INSERT [dbo].[TimeSheetLocationSnapshots] OFF
+GO
 
 
--- TimeSheetPunches: No data to insert
+-- Data for TimeSheetPunches (2 records)
+SET IDENTITY_INSERT [dbo].[TimeSheetPunches] ON
+GO
+
+INSERT [dbo].[TimeSheetPunches] ([PunchId], [EmployeeId], [CustomerId], [ClockInAt], [ClockOutAt], [Timezone], [IpAddress], [Latitude], [Longitude], [GpsAccuracy], [City], [Region], [Country], [LocationRaw], [WorkedMinutes], [Status], [Note], [ApprovedBy], [ApprovedAt], [CreatedAt], [UpdatedAt]) VALUES (1, 21, 1, N'2026-03-12 14:50:56', N'2026-03-13 00:22:48', N'America/Monterrey', NULL, N'25.769168838556393', N'-100.45509983015337', N'12.757271574563367', NULL, NULL, NULL, NULL, 571, N'closed', NULL, NULL, NULL, N'2026-03-12 14:50:56', N'2026-03-13 00:22:48')
+INSERT [dbo].[TimeSheetPunches] ([PunchId], [EmployeeId], [CustomerId], [ClockInAt], [ClockOutAt], [Timezone], [IpAddress], [Latitude], [Longitude], [GpsAccuracy], [City], [Region], [Country], [LocationRaw], [WorkedMinutes], [Status], [Note], [ApprovedBy], [ApprovedAt], [CreatedAt], [UpdatedAt]) VALUES (2, 49, 1, N'2026-03-17 11:42:50', N'2026-03-18 12:36:15', N'America/New_York', NULL, N'18.317721496001777', N'-66.09618346379386', N'129', NULL, NULL, NULL, NULL, 1493, N'rejected', NULL, 49, N'2026-03-18 12:36:59', N'2026-03-17 11:42:50', N'2026-03-18 12:36:59')
+
+SET IDENTITY_INSERT [dbo].[TimeSheetPunches] OFF
+GO
 
 
 -- Data for TimeSheetSettings (1 records)
@@ -1821,7 +1858,7 @@ GO
 -- BACKUP SUMMARY
 -- =============================================
 -- Total Tables: 32
--- Total Records: 394
+-- Total Records: 415
 -- 
 -- Data per table:
 --   Countries: 5 records
@@ -1831,22 +1868,24 @@ GO
 --   CustomerAlternateContacts: 1 records
 --   CustomerNotes: 1 records
 --   Roles: 5 records
---   EmployeeRoles: 58 records
+--   EmployeeRoles: 61 records
 --   Tenants: 2 records
 --   ExternalUsers: 2 records
---   HardwareInventory: 25 records
---   Licenses: 63 records
+--   HardwareInventory: 26 records
+--   Licenses: 64 records
 --   Modules: 14 records
 --   RoleModules: 29 records
 --   TenantLogos: 2 records
---   Tickets: 92 records
---   ticketMessages: 35 records
---   ticketAttachments: 4 records
+--   Tickets: 98 records
+--   ticketMessages: 37 records
+--   ticketAttachments: 6 records
 --   TimeOffBalances: 2 records
---   TimeOffRequests: 2 records
+--   TimeOffRequests: 3 records
+--   TimeSheetLocationSnapshots: 3 records
+--   TimeSheetPunches: 2 records
 --   TimeSheetSettings: 1 records
 -- =============================================
 
 PRINT 'Complete backup restored successfully!'
-PRINT 'Total records inserted: 394'
+PRINT 'Total records inserted: 415'
 GO

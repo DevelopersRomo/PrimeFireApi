@@ -7,37 +7,37 @@ from models.time_off import AbsenceTypeEnum, RequestStatusEnum, TimeUnitEnum
 
 
 class TimeOffRequestCreate(SQLModel):
-    EmployeeId: int | None = None
-    AbsenceType: AbsenceTypeEnum
-    TimeUnit: TimeUnitEnum
-    StartDate: date
-    EndDate: date
-    StartTime: time | None = None
-    EndTime: time | None = None
-    Reason: str | None = None
+    employee_id: int | None = None
+    absence_type: AbsenceTypeEnum
+    time_unit: TimeUnitEnum
+    start_date: date
+    end_date: date
+    start_time: time | None = None
+    end_time: time | None = None
+    reason: str | None = None
 
 
 class TimeOffRequestRead(SQLModel):
-    RequestId: int
-    EmployeeId: int
-    AbsenceType: AbsenceTypeEnum
-    Status: RequestStatusEnum
-    TimeUnit: TimeUnitEnum
-    StartDate: str
-    EndDate: str
-    StartTime: str | None = None
-    EndTime: str | None = None
-    TotalHours: str | None = None
-    TotalDays: str
-    Reason: str | None = None
-    ReviewedBy: int | None = None
-    ReviewedAt: str | None = None
-    ReviewNotes: str | None = None
-    CreatedAt: str
-    UpdatedAt: str
+    request_id: int
+    employee_id: int
+    absence_type: AbsenceTypeEnum
+    status: RequestStatusEnum
+    time_unit: TimeUnitEnum
+    start_date: str
+    end_date: str
+    start_time: str | None = None
+    end_time: str | None = None
+    total_hours: str | None = None
+    total_days: str
+    reason: str | None = None
+    reviewed_by: int | None = None
+    reviewed_at: str | None = None
+    review_notes: str | None = None
+    created_at: str
+    updated_at: str
 
     @classmethod
-    @field_validator("StartTime", "EndTime", mode="before")
+    @field_validator("start_time", "end_time", mode="before")
     @classmethod
     def append_z_to_time(cls, v: str | None) -> str | None:
         if v and isinstance(v, str) and not v.endswith("Z"):
@@ -45,7 +45,7 @@ class TimeOffRequestRead(SQLModel):
         return v
 
     @classmethod
-    @field_validator("ReviewedAt", "CreatedAt", "UpdatedAt", mode="before")
+    @field_validator("reviewed_at", "created_at", "updated_at", mode="before")
     @classmethod
     def format_datetime_utc(cls, v: str | None) -> str | None:
         if v and isinstance(v, str):
@@ -60,56 +60,56 @@ class TimeOffRequestRead(SQLModel):
 
 
 class RequestReview(SQLModel):
-    ReviewNotes: str | None = None
+    review_notes: str | None = None
 
 
 class TimeOffBalanceRead(SQLModel):
-    BalanceId: int
-    EmployeeId: int
-    AbsenceType: AbsenceTypeEnum
-    Year: int
-    EntitledDays: str
-    UsedDays: str
-    PendingDays: str
-    CarryoverDays: str
+    balance_id: int
+    employee_id: int
+    absence_type: AbsenceTypeEnum
+    year: int
+    entitled_days: str
+    used_days: str
+    pending_days: str
+    carryover_days: str
 
     class Config:
         from_attributes = True
 
 
 class HolidayRead(SQLModel):
-    HolidayId: int
-    Name: str
-    Date: str
-    Year: int
+    holiday_id: int
+    name: str
+    date: str
+    year: int
 
     class Config:
         from_attributes = True
 
 
 class DepartmentRead(SQLModel):
-    DepartmentId: int
-    Name: str
-    Code: str | None = None
+    department_id: int
+    name: str
+    code: str | None = None
 
     class Config:
         from_attributes = True
 
 
 class CalendarEvent(SQLModel):
-    Id: str
-    Type: str
-    Title: str
-    StartDate: str
-    EndDate: str
-    Status: RequestStatusEnum | None = None
-    TimeUnit: TimeUnitEnum | None = None
-    EmployeeId: int | None = None
-    StartTime: str | None = None
-    EndTime: str | None = None
+    id: str
+    type: str
+    title: str
+    start_date: str
+    end_date: str
+    status: RequestStatusEnum | None = None
+    time_unit: TimeUnitEnum | None = None
+    employee_id: int | None = None
+    start_time: str | None = None
+    end_time: str | None = None
 
     @classmethod
-    @field_validator("StartTime", "EndTime", mode="before")
+    @field_validator("start_time", "end_time", mode="before")
     @classmethod
     def append_z_to_time(cls, v: str | None) -> str | None:
         if v and isinstance(v, str) and not v.endswith("Z"):

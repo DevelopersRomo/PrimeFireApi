@@ -11,55 +11,55 @@ if TYPE_CHECKING:
 
 
 class EmployeeRoles(SQLModel, table=True):
-    __tablename__ = "EmployeeRoles"
+    __tablename__ = "employee_roles"
     __table_args__ = {"schema": "dbo"}
 
-    EmployeeId: int = Field(foreign_key="dbo.Employees.EmployeeId", primary_key=True)
-    RoleId: int = Field(foreign_key="dbo.Roles.RoleId", primary_key=True)
+    employee_id: int = Field(foreign_key="dbo.employees.employee_id", primary_key=True)
+    role_id: int = Field(foreign_key="dbo.roles.role_id", primary_key=True)
 
 
 class Roles(SQLModel, table=True):
-    __tablename__ = "Roles"
+    __tablename__ = "roles"
     __table_args__ = {"schema": "dbo"}
 
-    RoleId: int | None = Field(default=None, primary_key=True, index=True)
-    RoleName: str = Field(max_length=50)
-    Description: str | None = Field(default=None, max_length=200)
+    role_id: int | None = Field(default=None, primary_key=True, index=True)
+    role_name: str = Field(max_length=50)
+    description: str | None = Field(default=None, max_length=200)
 
     # Many-to-many relationship with Employees through EmployeeRoles
     employees: list["Employees"] = Relationship(back_populates="roles", link_model=EmployeeRoles)
 
 
 class Employees(SQLModel, table=True):
-    __tablename__ = "Employees"
+    __tablename__ = "employees"
     __table_args__ = {"schema": "dbo"}
 
-    EmployeeId: int | None = Field(default=None, primary_key=True, index=True)
+    employee_id: int | None = Field(default=None, primary_key=True, index=True)
 
     # Microsoft Graph fields
-    FirstName: str | None = Field(default=None, max_length=50)
-    LastName: str | None = Field(default=None, max_length=50)
-    DisplayName: str | None = Field(default=None, max_length=100)
-    Title: str | None = Field(default=None, max_length=50)
-    Department: str | None = Field(default=None, max_length=50)
-    Office: str | None = Field(default=None, max_length=50)
-    Email: str | None = Field(default=None, max_length=50)
-    Phone: str | None = Field(default=None, max_length=20)
-    MobilePhone: str | None = Field(default=None, max_length=20)
-    OfficePhone: str | None = Field(default=None, max_length=20)
-    Anydesk: str | None = Field(default=None, max_length=50)
-    Manager: str | None = Field(default=None, max_length=100)
-    ManagerEmail: str | None = Field(default=None, max_length=100)
-    ManagerEmployeeId: int | None = Field(default=None, foreign_key="dbo.Employees.EmployeeId")
+    first_name: str | None = Field(default=None, max_length=50)
+    last_name: str | None = Field(default=None, max_length=50)
+    display_name: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, max_length=50)
+    department: str | None = Field(default=None, max_length=50)
+    office: str | None = Field(default=None, max_length=50)
+    email: str | None = Field(default=None, max_length=50)
+    phone: str | None = Field(default=None, max_length=20)
+    mobile_phone: str | None = Field(default=None, max_length=20)
+    office_phone: str | None = Field(default=None, max_length=20)
+    anydesk: str | None = Field(default=None, max_length=50)
+    manager: str | None = Field(default=None, max_length=100)
+    manager_email: str | None = Field(default=None, max_length=100)
+    manager_employee_id: int | None = Field(default=None, foreign_key="dbo.employees.employee_id")
 
     # Address fields
-    StreetAddress: str | None = Field(default=None, max_length=100)
-    City: str | None = Field(default=None, max_length=50)
-    State: str | None = Field(default=None, max_length=50)
-    PostalCode: str | None = Field(default=None, max_length=20)
+    street_address: str | None = Field(default=None, max_length=100)
+    city: str | None = Field(default=None, max_length=50)
+    state: str | None = Field(default=None, max_length=50)
+    postal_code: str | None = Field(default=None, max_length=20)
 
     # Internal fields
-    CountryId: int | None = Field(default=None, foreign_key="dbo.Countries.CountryId")
+    country_id: int | None = Field(default=None, foreign_key="dbo.countries.country_id")
 
     # Relationship to Countries
     country: Optional["Countries"] = Relationship()
@@ -68,25 +68,25 @@ class Employees(SQLModel, table=True):
     roles: list["Roles"] = Relationship(back_populates="employees", link_model=EmployeeRoles)
 
     # Azure AD fields for auto-registration
-    AzureOid: str | None = Field(default=None, max_length=100, unique=True)
-    AzureUpn: str | None = Field(default=None, max_length=100)
+    azure_oid: str | None = Field(default=None, max_length=100, unique=True)
+    azure_upn: str | None = Field(default=None, max_length=100)
 
     # Auth Fields
-    PasswordHash: str | None = Field(default=None, max_length=255)
+    password_hash: str | None = Field(default=None, max_length=255)
 
     # Sync tracking
-    LastSyncedAt: datetime | None = Field(default=None)
+    last_synced_at: datetime | None = Field(default=None)
 
     # Relationships with Tickets
     created_tickets: list["Tickets"] = Relationship(
-        back_populates="creator", sa_relationship_kwargs={"foreign_keys": "[Tickets.CreatedBy]"}
+        back_populates="creator", sa_relationship_kwargs={"foreign_keys": "[Tickets.created_by]"}
     )
     assigned_tickets: list["Tickets"] = Relationship(
-        back_populates="assignee", sa_relationship_kwargs={"foreign_keys": "[Tickets.AssignedTo]"}
+        back_populates="assignee", sa_relationship_kwargs={"foreign_keys": "[Tickets.assigned_to]"}
     )
 
     # Relationships with Licenses
-    Licenses: list["Licenses"] = Relationship(back_populates="Employee")
+    licenses: list["Licenses"] = Relationship(back_populates="employee")
 
     # Relationships with Hardware Inventory
-    hardware_inventories: list["HardwareInventory"] = Relationship(back_populates="Employee")
+    hardware_inventories: list["HardwareInventory"] = Relationship(back_populates="employee")

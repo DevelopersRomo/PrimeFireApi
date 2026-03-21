@@ -13,23 +13,23 @@ router = APIRouter()
 def job_to_schema(db_job: Jobs, db: Session) -> Job:
     """Convert database Job model to response schema with Country ISO2."""
     country_iso2 = None
-    if db_job.CountryId:
-        country = db.exec(select(Countries).where(Countries.CountryId == db_job.CountryId)).first()
+    if db_job.country_id:
+        country = db.exec(select(Countries).where(Countries.country_id == db_job.country_id)).first()
         if country:
-            country_iso2 = country.Name
+            country_iso2 = country.name
 
     return Job(
-        JobId=db_job.JobId,
-        Title=db_job.Title,
-        Description=db_job.Description,
-        Requirements=db_job.Requirements,
-        Location=db_job.Location,
-        SalaryMin=db_job.SalaryMin,
-        SalaryMax=db_job.SalaryMax,
-        Status=db_job.Status,
-        PostedAt=db_job.PostedAt,
-        EmployeeId=db_job.EmployeeId,
-        Country=country_iso2,
+        job_id=db_job.job_id,
+        title=db_job.title,
+        description=db_job.description,
+        requirements=db_job.requirements,
+        location=db_job.location,
+        salary_min=db_job.salary_min,
+        salary_max=db_job.salary_max,
+        status=db_job.status,
+        posted_at=db_job.posted_at,
+        employee_id=db_job.employee_id,
+        country=country_iso2,
     )
 
 
@@ -40,15 +40,15 @@ def job_to_schema(db_job: Jobs, db: Session) -> Job:
 def create_job(job: JobCreate, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     # Resolve Country ISO2 to CountryId if provided
     country_id = None
-    if job.Country:
-        country = db.exec(select(Countries).where(Countries.Name == job.Country.upper())).first()
+    if job.country:
+        country = db.exec(select(Countries).where(Countries.name == job.country.upper())).first()
         if not country:
-            raise HTTPException(status_code=404, detail=f"Country with ISO2 code '{job.Country}' not found")
-        country_id = country.CountryId
+            raise HTTPException(status_code=404, detail=f"Country with ISO2 code '{job.country}' not found")
+        country_id = country.country_id
 
     # Create job data without Country field
-    job_data = job.model_dump(exclude={"Country"})
-    job_data["CountryId"] = country_id
+    job_data = job.model_dump(exclude={"country"})
+    job_data["country_id"] = country_id
 
     db_job = Jobs(**job_data)
     db.add(db_job)
@@ -76,7 +76,7 @@ def get_job(
     job_id: int,
     db: Session = Depends(get_db),
 ):
-    db_job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
+    db_job = db.exec(select(Jobs).filter(Jobs.job_id == job_id)).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job_to_schema(db_job, db)
@@ -90,7 +90,7 @@ def get_jobs_by_status(
     status: str,
     db: Session = Depends(get_db),
 ):
-    jobs = db.exec(select(Jobs).filter(Jobs.Status == status)).all()
+    jobs = db.exec(select(Jobs).filter(Jobs.status == status)).all()
     return [job_to_schema(job, db) for job in jobs]
 
 
@@ -99,18 +99,18 @@ def get_jobs_by_status(
 # ----------------------------
 @router.put("/{job_id}", response_model=Job)
 def update_job(job_id: int, job: JobUpdate, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    db_job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
+    db_job = db.exec(select(Jobs).filter(Jobs.job_id == job_id)).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     # Resolve Country ISO2 to CountryId if provided
-    job_data = job.model_dump(exclude_unset=True, exclude={"Country"})
+    job_data = job.model_dump(exclude_unset=True, exclude={"country"})
 
-    if job.Country is not None:
-        country = db.exec(select(Countries).where(Countries.Name == job.Country.upper())).first()
+    if job.country is not None:
+        country = db.exec(select(Countries).where(Countries.name == job.country.upper())).first()
         if not country:
-            raise HTTPException(status_code=404, detail=f"Country with ISO2 code '{job.Country}' not found")
-        job_data["CountryId"] = country.CountryId
+            raise HTTPException(status_code=404, detail=f"Country with ISO2 code '{job.country}' not found")
+        job_data["country_id"] = country.country_id
 
     for key, value in job_data.items():
         setattr(db_job, key, value)
@@ -124,7 +124,7 @@ def update_job(job_id: int, job: JobUpdate, db: Session = Depends(get_db), _auth
 # ----------------------------
 @router.delete("/{job_id}")
 def delete_job(job_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    db_job = db.exec(select(Jobs).filter(Jobs.JobId == job_id)).first()
+    db_job = db.exec(select(Jobs).filter(Jobs.job_id == job_id)).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
     db.delete(db_job)

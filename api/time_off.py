@@ -77,28 +77,28 @@ def _time_to_utc_str(t: time | str) -> str:
 
 def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal | None]:
     """Calculate total days and hours based on payload."""
-    if payload.EndDate < payload.StartDate:
+    if payload.end_date < payload.start_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="EndDate must be greater than or equal to StartDate",
+            detail="end_date must be greater than or equal to start_date",
         )
 
-    days_span = (payload.EndDate - payload.StartDate).days + 1
+    days_span = (payload.end_date - payload.start_date).days + 1
 
-    if payload.TimeUnit == TimeUnitEnum.FULL_DAY:
+    if payload.time_unit == TimeUnitEnum.FULL_DAY:
         return Decimal(days_span), None
 
-    if payload.TimeUnit == TimeUnitEnum.HALF_DAY:
+    if payload.time_unit == TimeUnitEnum.HALF_DAY:
         return Decimal(days_span) * Decimal("0.5"), None
 
-    if payload.StartTime is None or payload.EndTime is None:
+    if payload.start_time is None or payload.end_time is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="StartTime and EndTime are required when TimeUnit is 'hours'",
+            detail="start_time and end_time are required when time_unit is 'hours'",
         )
 
-    start_time_str = _time_to_utc_str(payload.StartTime)
-    end_time_str = _time_to_utc_str(payload.EndTime)
+    start_time_str = _time_to_utc_str(payload.start_time)
+    end_time_str = _time_to_utc_str(payload.end_time)
 
     start_time_clean = datetime.strptime(start_time_str, "%H:%M:%S").time()  # noqa: DTZ007
     end_time_clean = datetime.strptime(end_time_str, "%H:%M:%S").time()  # noqa: DTZ007
@@ -109,7 +109,7 @@ def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal |
     if total_seconds <= 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="EndTime must be after StartTime",
+            detail="end_time must be after start_time",
         )
 
     hours = Decimal(total_seconds / 3600).quantize(DECIMAL_PLACES)
@@ -120,20 +120,20 @@ def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal |
 def _get_or_create_balance(db: Session, employee_id: int, absence_type: AbsenceTypeEnum, year: int) -> TimeOffBalance:
     balance = db.exec(
         select(TimeOffBalance).where(
-            TimeOffBalance.EmployeeId == employee_id,
-            TimeOffBalance.AbsenceType == absence_type,
-            TimeOffBalance.Year == year,
+            TimeOffBalance.employee_id == employee_id,
+            TimeOffBalance.absence_type == absence_type,
+            TimeOffBalance.year == year,
         )
     ).first()
     if balance is None:
         balance = TimeOffBalance(
-            EmployeeId=employee_id,
-            AbsenceType=absence_type,
-            Year=year,
-            EntitledDays=Decimal(0),
-            UsedDays=Decimal(0),
-            PendingDays=Decimal(0),
-            CarryoverDays=Decimal(0),
+            employee_id=employee_id,
+            absence_type=absence_type,
+            year=year,
+            entitled_days=Decimal(0),
+            used_days=Decimal(0),
+            pending_days=Decimal(0),
+            carryover_days=Decimal(0),
         )
         db.add(balance)
         db.commit()
@@ -142,7 +142,7 @@ def _get_or_create_balance(db: Session, employee_id: int, absence_type: AbsenceT
 
 
 def _get_request_or_404(db: Session, request_id: int) -> TimeOffRequest:
-    request = db.exec(select(TimeOffRequest).where(TimeOffRequest.RequestId == request_id)).first()
+    request = db.exec(select(TimeOffRequest).where(TimeOffRequest.request_id == request_id)).first()
     if not request:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
     return request
@@ -151,12 +151,12 @@ def _get_request_or_404(db: Session, request_id: int) -> TimeOffRequest:
 def _has_timeoff_admin_actions(user_permissions: dict) -> bool:
     for perm in user_permissions.get("permissions", []):
         if perm.get("module_key") == "timeoff":
-            return perm.get("permissions", {}).get("AdminActions", False)
+            return perm.get("permissions", {}).get("admin_actions", False)
     return False
 
 
 def _get_direct_report_ids(db: Session, manager_employee_id: int) -> set[int]:
-    rows = db.exec(select(Employees.EmployeeId).where(Employees.ManagerEmployeeId == manager_employee_id)).all()
+    rows = db.exec(select(Employees.employee_id).where(Employees.manager_employee_id == manager_employee_id)).all()
     return {employee_id for employee_id in rows if employee_id is not None}
 
 
@@ -168,13 +168,13 @@ def _build_visible_employee_ids(
     if is_admin:
         return None
 
-    visible_ids = _get_direct_report_ids(db, current_employee.EmployeeId)
-    visible_ids.add(current_employee.EmployeeId)
+    visible_ids = _get_direct_report_ids(db, current_employee.employee_id)
+    visible_ids.add(current_employee.employee_id)
     return visible_ids
 
 
 def _assert_request_visibility(request: TimeOffRequest, visible_employee_ids: set[int] | None) -> None:
-    if visible_employee_ids is not None and request.EmployeeId not in visible_employee_ids:
+    if visible_employee_ids is not None and request.employee_id not in visible_employee_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not allowed to access this request",
@@ -187,7 +187,7 @@ def _assert_can_review_request(
     current_employee: Employees,
     is_admin: bool,
 ) -> None:
-    if request.EmployeeId == current_employee.EmployeeId:
+    if request.employee_id == current_employee.employee_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot approve or reject your own request",
@@ -196,14 +196,14 @@ def _assert_can_review_request(
     if is_admin:
         return
 
-    requester = db.exec(select(Employees).where(Employees.EmployeeId == request.EmployeeId)).first()
+    requester = db.exec(select(Employees).where(Employees.employee_id == request.employee_id)).first()
     if not requester:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Requester employee not found",
         )
 
-    if requester.ManagerEmployeeId != current_employee.EmployeeId:
+    if requester.manager_employee_id != current_employee.employee_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the direct manager or an admin can review this request",
@@ -225,7 +225,7 @@ def list_requests(
     if visible_employee_ids is not None:
         scoped_ids = set(visible_employee_ids)
         if team_only:
-            scoped_ids.discard(current_employee.EmployeeId)
+            scoped_ids.discard(current_employee.employee_id)
         if not scoped_ids:
             return []
     else:
@@ -240,15 +240,15 @@ def list_requests(
     query = select(TimeOffRequest)
 
     if scoped_ids is not None:
-        query = query.where(TimeOffRequest.EmployeeId.in_(scoped_ids))
+        query = query.where(TimeOffRequest.employee_id.in_(scoped_ids))
 
     if employee_id is not None:
-        query = query.where(TimeOffRequest.EmployeeId == employee_id)
+        query = query.where(TimeOffRequest.employee_id == employee_id)
 
     if request_status is not None:
-        query = query.where(TimeOffRequest.Status == request_status)
+        query = query.where(TimeOffRequest.status == request_status)
 
-    return db.exec(query.order_by(TimeOffRequest.CreatedAt.desc())).all()
+    return db.exec(query.order_by(TimeOffRequest.created_at.desc())).all()
 
 
 @router.get("/requests/{request_id}", response_model=TimeOffRequestRead)
@@ -274,8 +274,8 @@ def create_request(
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
-    employee_id = payload.EmployeeId or current_employee.EmployeeId
-    employee_exists = db.exec(select(Employees).where(Employees.EmployeeId == employee_id)).first()
+    employee_id = payload.employee_id or current_employee.employee_id
+    employee_exists = db.exec(select(Employees).where(Employees.employee_id == employee_id)).first()
     if not employee_exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
@@ -283,57 +283,57 @@ def create_request(
 
     start_time_str = None
     end_time_str = None
-    if payload.TimeUnit == TimeUnitEnum.HOURS and payload.StartTime and payload.EndTime:
-        start_time_str = _time_to_utc_str(payload.StartTime)
-        end_time_str = _time_to_utc_str(payload.EndTime)
+    if payload.time_unit == TimeUnitEnum.HOURS and payload.start_time and payload.end_time:
+        start_time_str = _time_to_utc_str(payload.start_time)
+        end_time_str = _time_to_utc_str(payload.end_time)
 
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     time_off_request = TimeOffRequest(
-        EmployeeId=employee_id,
-        AbsenceType=payload.AbsenceType.value,
-        TimeUnit=payload.TimeUnit.value,
-        StartDate=payload.StartDate.strftime("%Y-%m-%d"),
-        EndDate=payload.EndDate.strftime("%Y-%m-%d"),
-        StartTime=start_time_str,
-        EndTime=end_time_str,
-        TotalDays=_quantize(total_days),
-        TotalHours=_quantize(total_hours) if total_hours is not None else None,
-        Reason=payload.Reason,
-        Status=RequestStatusEnum.PENDING.value,
-        CreatedAt=now_str,
-        UpdatedAt=now_str,
+        employee_id=employee_id,
+        absence_type=payload.absence_type.value,
+        time_unit=payload.time_unit.value,
+        start_date=payload.start_date.strftime("%Y-%m-%d"),
+        end_date=payload.end_date.strftime("%Y-%m-%d"),
+        start_time=start_time_str,
+        end_time=end_time_str,
+        total_days=_quantize(total_days),
+        total_hours=_quantize(total_hours) if total_hours is not None else None,
+        reason=payload.reason,
+        status=RequestStatusEnum.PENDING.value,
+        created_at=now_str,
+        updated_at=now_str,
     )
 
-    year = payload.StartDate.year
-    balance = _get_or_create_balance(db, employee_id, payload.AbsenceType.value, year)
-    balance.PendingDays = _quantize(Decimal(balance.PendingDays) + total_days)
+    year = payload.start_date.year
+    balance = _get_or_create_balance(db, employee_id, payload.absence_type.value, year)
+    balance.pending_days = _quantize(Decimal(balance.pending_days) + total_days)
     db.add(balance)
     db.add(time_off_request)
     db.commit()
     db.refresh(time_off_request)
 
     # Determine recipient email (Manager or default)
-    manager_email = employee_exists.ManagerEmail
+    manager_email = employee_exists.manager_email
     recipient_email = manager_email or "info@primefire.us"
     support_cc_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
     tenant_key = tenant_key or http_request.headers.get("X-Tenant-ID")
 
     background_tasks.add_task(
         notify_time_off_submitted,
-        request_id=time_off_request.RequestId,
-        employee_id=employee_exists.EmployeeId,
-        employee_name=employee_exists.DisplayName,
-        employee_email=employee_exists.Email,
-        absence_type=payload.AbsenceType.value,
-        start_date=payload.StartDate.strftime("%Y-%m-%d"),
-        end_date=payload.EndDate.strftime("%Y-%m-%d"),
+        request_id=time_off_request.request_id,
+        employee_id=employee_exists.employee_id,
+        employee_name=employee_exists.display_name,
+        employee_email=employee_exists.email,
+        absence_type=payload.absence_type.value,
+        start_date=payload.start_date.strftime("%Y-%m-%d"),
+        end_date=payload.end_date.strftime("%Y-%m-%d"),
         total_days=_quantize(total_days),
         to_email=recipient_email,
         cc_email=support_cc_email,
-        reason=payload.Reason,
+        reason=payload.reason,
         tenant_key=tenant_key,
-        # action_url=f"https://primefireapp.azurewebsites.net/time-off/requests/{time_off_request.RequestId}"
+        # action_url=f"https://primefireapp.azurewebsites.net/time-off/requests/{time_off_request.request_id}"
     )
 
     return time_off_request
@@ -354,25 +354,25 @@ def approve_request(
     is_admin = _has_timeoff_admin_actions(user_permissions)
     _assert_can_review_request(db, request, current_employee, is_admin)
 
-    if request.Status != RequestStatusEnum.PENDING.value:
+    if request.status != RequestStatusEnum.PENDING.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only pending requests can be approved",
         )
 
-    year = int(request.StartDate[:4])
-    balance = _get_or_create_balance(db, request.EmployeeId, request.AbsenceType, year)
-    pending = Decimal(balance.PendingDays) - Decimal(request.TotalDays)
-    balance.PendingDays = _quantize(pending if pending > 0 else Decimal(0))
-    balance.UsedDays = _quantize(Decimal(balance.UsedDays) + Decimal(request.TotalDays))
+    year = int(request.start_date[:4])
+    balance = _get_or_create_balance(db, request.employee_id, request.absence_type, year)
+    pending = Decimal(balance.pending_days) - Decimal(request.total_days)
+    balance.pending_days = _quantize(pending if pending > 0 else Decimal(0))
+    balance.used_days = _quantize(Decimal(balance.used_days) + Decimal(request.total_days))
 
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
-    request.Status = RequestStatusEnum.APPROVED.value
-    request.ReviewedBy = current_employee.EmployeeId
-    request.ReviewedAt = now_str
-    request.ReviewNotes = review.ReviewNotes
-    request.UpdatedAt = now_str
+    request.status = RequestStatusEnum.APPROVED.value
+    request.reviewed_by = current_employee.employee_id
+    request.reviewed_at = now_str
+    request.review_notes = review.review_notes
+    request.updated_at = now_str
 
     db.add(balance)
     db.add(request)
@@ -380,23 +380,23 @@ def approve_request(
     db.refresh(request)
 
     # Notify requester
-    requester = db.exec(select(Employees).where(Employees.EmployeeId == request.EmployeeId)).first()
-    if requester and requester.Email:
+    requester = db.exec(select(Employees).where(Employees.employee_id == request.employee_id)).first()
+    if requester and requester.email:
         tenant_key = tenant_key or http_request.headers.get("X-Tenant-ID")
         background_tasks.add_task(
             notify_time_off_approved,
-            request_id=request.RequestId,
-            employee_id=requester.EmployeeId,
-            employee_name=requester.DisplayName,
-            employee_email=requester.Email,
-            absence_type=request.AbsenceType,
-            start_date=request.StartDate,
-            end_date=request.EndDate,
-            total_days=request.TotalDays,
-            reason=request.Reason,
-            reviewed_by_name=current_employee.DisplayName,
-            reviewed_by_email=current_employee.Email,
-            review_notes=review.ReviewNotes,
+            request_id=request.request_id,
+            employee_id=requester.employee_id,
+            employee_name=requester.display_name,
+            employee_email=requester.email,
+            absence_type=request.absence_type,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_days=request.total_days,
+            reason=request.reason,
+            reviewed_by_name=current_employee.display_name,
+            reviewed_by_email=current_employee.email,
+            review_notes=review.review_notes,
             tenant_key=tenant_key,
         )
 
@@ -418,24 +418,24 @@ def reject_request(
     is_admin = _has_timeoff_admin_actions(user_permissions)
     _assert_can_review_request(db, request, current_employee, is_admin)
 
-    if request.Status != RequestStatusEnum.PENDING.value:
+    if request.status != RequestStatusEnum.PENDING.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only pending requests can be rejected",
         )
 
-    year = int(request.StartDate[:4])
-    balance = _get_or_create_balance(db, request.EmployeeId, request.AbsenceType, year)
-    pending = Decimal(balance.PendingDays) - Decimal(request.TotalDays)
-    balance.PendingDays = _quantize(pending if pending > 0 else Decimal(0))
+    year = int(request.start_date[:4])
+    balance = _get_or_create_balance(db, request.employee_id, request.absence_type, year)
+    pending = Decimal(balance.pending_days) - Decimal(request.total_days)
+    balance.pending_days = _quantize(pending if pending > 0 else Decimal(0))
 
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
-    request.Status = RequestStatusEnum.REJECTED.value
-    request.ReviewedBy = current_employee.EmployeeId
-    request.ReviewedAt = now_str
-    request.ReviewNotes = review.ReviewNotes
-    request.UpdatedAt = now_str
+    request.status = RequestStatusEnum.REJECTED.value
+    request.reviewed_by = current_employee.employee_id
+    request.reviewed_at = now_str
+    request.review_notes = review.review_notes
+    request.updated_at = now_str
 
     db.add(balance)
     db.add(request)
@@ -443,23 +443,23 @@ def reject_request(
     db.refresh(request)
 
     # Notify requester
-    requester = db.exec(select(Employees).where(Employees.EmployeeId == request.EmployeeId)).first()
-    if requester and requester.Email:
+    requester = db.exec(select(Employees).where(Employees.employee_id == request.employee_id)).first()
+    if requester and requester.email:
         tenant_key = tenant_key or http_request.headers.get("X-Tenant-ID")
         background_tasks.add_task(
             notify_time_off_rejected,
-            request_id=request.RequestId,
-            employee_id=requester.EmployeeId,
-            employee_name=requester.DisplayName,
-            employee_email=requester.Email,
-            absence_type=request.AbsenceType,
-            start_date=request.StartDate,
-            end_date=request.EndDate,
-            total_days=request.TotalDays,
-            reason=request.Reason,
-            reviewed_by_name=current_employee.DisplayName,
-            reviewed_by_email=current_employee.Email,
-            review_notes=review.ReviewNotes,
+            request_id=request.request_id,
+            employee_id=requester.employee_id,
+            employee_name=requester.display_name,
+            employee_email=requester.email,
+            absence_type=request.absence_type,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_days=request.total_days,
+            reason=request.reason,
+            reviewed_by_name=current_employee.display_name,
+            reviewed_by_email=current_employee.email,
+            review_notes=review.review_notes,
             tenant_key=tenant_key,
         )
 
@@ -478,32 +478,32 @@ def get_calendar(
     holidays = db.exec(select(Holiday)).all()
     request_query = select(TimeOffRequest)
     if visible_employee_ids is not None:
-        request_query = request_query.where(TimeOffRequest.EmployeeId.in_(visible_employee_ids))
+        request_query = request_query.where(TimeOffRequest.employee_id.in_(visible_employee_ids))
     requests = db.exec(request_query).all()
 
     events: list[CalendarEvent] = [
         CalendarEvent(
-            Id=str(holiday.HolidayId),
-            Type="holiday",
-            Title=holiday.Name,
-            StartDate=holiday.Date,
-            EndDate=holiday.Date,
+            id=str(holiday.holiday_id),
+            type="holiday",
+            title=holiday.name,
+            start_date=holiday.date,
+            end_date=holiday.date,
         )
         for holiday in holidays
     ]
 
     events.extend(
         CalendarEvent(
-            Id=str(request.RequestId),
-            Type="time_off_request",
-            Title=f"{request.AbsenceType} - {request.Status}",
-            StartDate=request.StartDate,
-            EndDate=request.EndDate,
-            Status=request.Status,
-            TimeUnit=request.TimeUnit,
-            EmployeeId=request.EmployeeId,
-            StartTime=request.StartTime,
-            EndTime=request.EndTime,
+            id=str(request.request_id),
+            type="time_off_request",
+            title=f"{request.absence_type} - {request.status}",
+            start_date=request.start_date,
+            end_date=request.end_date,
+            status=request.status,
+            time_unit=request.time_unit,
+            employee_id=request.employee_id,
+            start_time=request.start_time,
+            end_time=request.end_time,
         )
         for request in requests
     )
@@ -523,8 +523,8 @@ def get_report_summary(
     request_query = select(TimeOffRequest)
     balance_query = select(TimeOffBalance)
     if visible_employee_ids is not None:
-        request_query = request_query.where(TimeOffRequest.EmployeeId.in_(visible_employee_ids))
-        balance_query = balance_query.where(TimeOffBalance.EmployeeId.in_(visible_employee_ids))
+        request_query = request_query.where(TimeOffRequest.employee_id.in_(visible_employee_ids))
+        balance_query = balance_query.where(TimeOffBalance.employee_id.in_(visible_employee_ids))
 
     requests = db.exec(request_query).all()
     balances = db.exec(balance_query).all()
@@ -538,19 +538,19 @@ def get_report_summary(
     absence_totals = {"vacation": 0.0, "personal": 0.0, "sick": 0.0}
 
     for request in requests:
-        status_counts[request.Status] += 1
-        absence_totals[request.AbsenceType] += float(request.TotalDays)
+        status_counts[request.status] += 1
+        absence_totals[request.absence_type] += float(request.total_days)
 
     balance_map: dict[str, BalanceTotals] = {}
     for balance in balances:
-        key = balance.AbsenceType
+        key = balance.absence_type
         if key not in balance_map:
             balance_map[key] = BalanceTotals()
         current = balance_map[key]
-        current.entitled += float(balance.EntitledDays)
-        current.used += float(balance.UsedDays)
-        current.pending += float(balance.PendingDays)
-        current.carryover += float(balance.CarryoverDays)
+        current.entitled += float(balance.entitled_days)
+        current.used += float(balance.used_days)
+        current.pending += float(balance.pending_days)
+        current.carryover += float(balance.carryover_days)
 
     return ReportSummary(
         total_requests=len(requests),
@@ -571,52 +571,52 @@ def export_requests_report(
 
     query = select(TimeOffRequest)
     if visible_employee_ids is not None:
-        query = query.where(TimeOffRequest.EmployeeId.in_(visible_employee_ids))
+        query = query.where(TimeOffRequest.employee_id.in_(visible_employee_ids))
 
     rows = db.exec(query).all()
     buffer = StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
         [
-            "RequestId",
-            "EmployeeId",
-            "AbsenceType",
-            "Status",
-            "TimeUnit",
-            "StartDate",
-            "EndDate",
-            "StartTime",
-            "EndTime",
-            "TotalHours",
-            "TotalDays",
-            "Reason",
-            "ReviewedBy",
-            "ReviewedAt",
-            "ReviewNotes",
-            "CreatedAt",
-            "UpdatedAt",
+            "request_id",
+            "employee_id",
+            "absence_type",
+            "status",
+            "time_unit",
+            "start_date",
+            "end_date",
+            "start_time",
+            "end_time",
+            "total_hours",
+            "total_days",
+            "reason",
+            "reviewed_by",
+            "reviewed_at",
+            "review_notes",
+            "created_at",
+            "updated_at",
         ]
     )
     for item in rows:
         writer.writerow(
             [
-                item.RequestId,
-                item.EmployeeId,
-                item.AbsenceType,
-                item.Status,
-                item.TimeUnit,
-                item.StartDate,
-                item.EndDate,
-                item.StartTime,
-                item.EndTime,
-                item.TotalHours,
-                item.TotalDays,
-                item.Reason,
-                item.ReviewedBy,
-                item.ReviewedAt,
-                item.ReviewNotes,
-                item.CreatedAt,
-                item.UpdatedAt,
+                item.request_id,
+                item.employee_id,
+                item.absence_type,
+                item.status,
+                item.time_unit,
+                item.start_date,
+                item.end_date,
+                item.start_time,
+                item.end_time,
+                item.total_hours,
+                item.total_days,
+                item.reason,
+                item.reviewed_by,
+                item.reviewed_at,
+                item.review_notes,
+                item.created_at,
+                item.updated_at,
             ]
         )
 
@@ -643,7 +643,7 @@ def get_balances(
             detail="You are not allowed to view this employee balances",
         )
 
-    return db.exec(select(TimeOffBalance).where(TimeOffBalance.EmployeeId == employee_id)).all()
+    return db.exec(select(TimeOffBalance).where(TimeOffBalance.employee_id == employee_id)).all()
 
 
 @router.get("/holidays", response_model=list[HolidayRead])

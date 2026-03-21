@@ -166,9 +166,9 @@ def auth_headers(db_session: Session) -> dict:
 
     from models.employees import Employees
 
-    emp = db_session.exec(select(Employees).where(Employees.Email == "test@example.com")).first()
+    emp = db_session.exec(select(Employees).where(Employees.email == "test@example.com")).first()
     if not emp:
-        emp = Employees(Email="test@example.com", EmployeeId=1)
+        emp = Employees(email="test@example.com", employee_id=1)
         db_session.add(emp)
         db_session.commit()
 
@@ -224,14 +224,14 @@ def create_test_record(session: Session, model_class, **kwargs):
         employee = create_test_record(db_session, Employees, Name="John", Role="Dev")
     """
     if model_class.__name__ == "Customers":
-        if "CustomerType" not in kwargs:
-            kwargs["CustomerType"] = "commercial"
-        if "CreatedBy" not in kwargs:
-            kwargs["CreatedBy"] = 1
-        if "CompanyName" not in kwargs:
-            kwargs["CompanyName"] = "Test Company"
-        kwargs.pop("Name", None)
-        kwargs.pop("ContactName", None)
+        if "customer_type" not in kwargs:
+            kwargs["customer_type"] = "commercial"
+        if "created_by" not in kwargs:
+            kwargs["created_by"] = 1
+        if "company_name" not in kwargs:
+            kwargs["company_name"] = "Test Company"
+        kwargs.pop("name", None)
+        kwargs.pop("contact_name", None)
     record = model_class(**kwargs)
     session.add(record)
     session.commit()
@@ -256,16 +256,16 @@ def get_or_create(session: Session, model_class, defaults=None, **kwargs):
     defaults = defaults or {}
 
     if model_class.__name__ == "Customers":
-        if "CustomerType" not in defaults:
-            defaults["CustomerType"] = "commercial"
-        if "CreatedBy" not in defaults:
-            defaults["CreatedBy"] = 1
-        if "CompanyName" not in defaults:
-            defaults["CompanyName"] = "Test Company"
-        if "Name" in defaults:
-            del defaults["Name"]
-        if "ContactName" in defaults:
-            del defaults["ContactName"]
+        if "customer_type" not in defaults:
+            defaults["customer_type"] = "commercial"
+        if "created_by" not in defaults:
+            defaults["created_by"] = 1
+        if "company_name" not in defaults:
+            defaults["company_name"] = "Test Company"
+        if "name" in defaults:
+            del defaults["name"]
+        if "contact_name" in defaults:
+            del defaults["contact_name"]
     defaults.update(kwargs)
     record = model_class(**defaults)
     session.add(record)

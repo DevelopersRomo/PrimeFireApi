@@ -14,13 +14,13 @@ router = APIRouter()
 def contact_to_schema(db_contact: CustomerAlternateContacts) -> CustomerAlternateContact:
     """Convert CustomerAlternateContacts model to CustomerAlternateContact schema."""
     return CustomerAlternateContact(
-        CustomerAlternateContactId=db_contact.CustomerAlternateContactId,
-        CustomerId=db_contact.CustomerId,
-        Name=db_contact.Name,
-        Email=db_contact.Email,
-        Phone=db_contact.Phone,
-        CreatedAt=db_contact.CreatedAt,
-        UpdatedAt=db_contact.UpdatedAt,
+        customer_alternate_contact_id=db_contact.customer_alternate_contact_id,
+        customer_id=db_contact.customer_id,
+        name=db_contact.name,
+        email=db_contact.email,
+        phone=db_contact.phone,
+        created_at=db_contact.created_at,
+        updated_at=db_contact.updated_at,
     )
 
 
@@ -33,8 +33,8 @@ def get_customer_contacts(customer_id: int, db: Session = Depends(get_db), _auth
 
     contacts = db.exec(
         select(CustomerAlternateContacts)
-        .filter(CustomerAlternateContacts.CustomerId == customer_id)
-        .order_by(CustomerAlternateContacts.CreatedAt.desc())
+        .filter(CustomerAlternateContacts.customer_id == customer_id)
+        .order_by(CustomerAlternateContacts.created_at.desc())
     ).all()
 
     return [contact_to_schema(contact) for contact in contacts]
@@ -53,11 +53,11 @@ def create_customer_contact(
         raise HTTPException(status_code=404, detail="Customer not found")
 
     db_contact = CustomerAlternateContacts(
-        CustomerId=customer_id,
-        Name=contact.Name,
-        Email=contact.Email,
-        Phone=contact.Phone,
-        CreatedAt=datetime.now(UTC),
+        customer_id=customer_id,
+        name=contact.name,
+        email=contact.email,
+        phone=contact.phone,
+        created_at=datetime.now(UTC),
     )
 
     db.add(db_contact)
@@ -78,8 +78,8 @@ def update_customer_contact(
     """Update a customer alternate contact."""
     db_contact = db.exec(
         select(CustomerAlternateContacts).filter(
-            CustomerAlternateContacts.CustomerAlternateContactId == contact_id,
-            CustomerAlternateContacts.CustomerId == customer_id,
+            CustomerAlternateContacts.customer_alternate_contact_id == contact_id,
+            CustomerAlternateContacts.customer_id == customer_id,
         )
     ).first()
 
@@ -90,7 +90,7 @@ def update_customer_contact(
     for key, value in update_data.items():
         setattr(db_contact, key, value)
 
-    db_contact.UpdatedAt = datetime.now(UTC)
+    db_contact.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(db_contact)
 
@@ -104,8 +104,8 @@ def delete_customer_contact(
     """Delete a customer alternate contact."""
     db_contact = db.exec(
         select(CustomerAlternateContacts).filter(
-            CustomerAlternateContacts.CustomerAlternateContactId == contact_id,
-            CustomerAlternateContacts.CustomerId == customer_id,
+            CustomerAlternateContacts.customer_alternate_contact_id == contact_id,
+            CustomerAlternateContacts.customer_id == customer_id,
         )
     ).first()
 

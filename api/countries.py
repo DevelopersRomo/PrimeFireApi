@@ -15,10 +15,10 @@ async def get_countries(db: Session = Depends(get_db), _auth=Depends(require_aut
     Returns only ISO2 format countries (2 characters).
     """
     # Get all countries and filter in Python for SQLite compatibility
-    all_countries = db.exec(select(Countries).where(Countries.Name.isnot(None))).all()
+    all_countries = db.exec(select(Countries).where(Countries.name.isnot(None))).all()
 
     # Filter only 2-character ISO codes
-    countries = [c for c in all_countries if c.Name and len(c.Name) == 2]
+    countries = [c for c in all_countries if c.name and len(c.name) == 2]
 
     # Convert to dict format for response
-    return [{"CountryId": country.CountryId, "Name": country.Name} for country in countries]
+    return [{"country_id": country.country_id, "name": country.name} for country in countries]

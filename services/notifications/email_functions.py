@@ -162,3 +162,220 @@ async def send_notification_email(
     )
 
     return success, error_message
+
+
+# --- EMAIL TEMPLATES FOR AUTH ---
+
+
+def build_password_recovery_email(*, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire") -> tuple[str, str]:
+    """Build password recovery email body and subject."""
+    reset_url = f"{app_url}/reset-password?token={token}"
+    subject = f"Reset your password - {tenant_title}"
+    body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{subject}</title>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td {{font-family: Arial, sans-serif !important;}}
+    </style>
+    <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 40px 0;">
+                <table width="600" cellpadding="0" cellspacing="0"
+                       style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #007bff; padding: 20px; text-align: center;">
+                            <div style="font-size: 32px; color: #ffffff; margin-bottom: 4px;">🔑</div>
+                        </td>
+                    </tr>
+
+                    <!-- Title -->
+                    <tr>
+                        <td style="padding: 40px 40px 20px;">
+                            <h1 style="margin: 0; color: #333; font-size: 24px; font-weight: bold;">
+                                Reset your password
+                            </h1>
+                            <p style="margin: 10px 0 0; color: #666; font-size: 16px;">Hi there,</p>
+                        </td>
+                    </tr>
+
+                    <!-- Message -->
+                    <tr>
+                        <td style="padding: 0 40px 20px;">
+                            <p style="margin: 0; color: #333; font-size: 16px; line-height: 1.6;">
+                                We received a request to reset the password for your {tenant_title} account.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Action button -->
+                    <tr>
+                        <td style="padding: 30px 40px; text-align: center;">
+                            <a href="{reset_url}"
+                               target="_blank"
+                               style="display: inline-block; padding: 12px 30px; background-color: #000000;
+                                      color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: bold;">
+                                Reset password
+                            </a>
+                        </td>
+                    </tr>
+
+                    <!-- Expiry notice -->
+                    <tr>
+                        <td style="padding: 0 40px 20px;">
+                            <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.6;">
+                                This link expires in <strong>15 minutes</strong> and can only be used once.
+                                If you didn't request this change, you can safely ignore this email.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Divider -->
+                    <tr>
+                        <td style="padding: 20px 40px;">
+                            <hr style="border: none; border-top: 1px solid #e1e1e1; margin: 0;">
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 10px 40px 40px; text-align: center;">
+                            <a href="{app_url}"
+                               style="color: #5b5b5b; text-decoration: none; font-size: 14px;">
+                                {tenant_title} Support · <a href="mailto:info@devromo.com" style="color: #5b5b5b;">info@devromo.com</a>
+                            </a>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+    """
+    return subject, body
+
+
+def build_magic_link_email(*, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire") -> tuple[str, str]:
+    """Build magic link email body and subject."""
+    login_url = f"{app_url}/magic-login?token={token}"
+    subject = f"Your magic login link - {tenant_title}"
+    body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{subject}</title>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td {{font-family: Arial, sans-serif !important;}}
+    </style>
+    <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 40px 0;">
+                <table width="600" cellpadding="0" cellspacing="0"
+                       style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #6f42c1; padding: 20px; text-align: center;">
+                            <div style="font-size: 32px; color: #ffffff; margin-bottom: 4px;">✨</div>
+                        </td>
+                    </tr>
+
+                    <!-- Title -->
+                    <tr>
+                        <td style="padding: 40px 40px 20px;">
+                            <h1 style="margin: 0; color: #333; font-size: 24px; font-weight: bold;">
+                                Magic Link Login
+                            </h1>
+                            <p style="margin: 10px 0 0; color: #666; font-size: 16px;">Hi there,</p>
+                        </td>
+                    </tr>
+
+                    <!-- Message -->
+                    <tr>
+                        <td style="padding: 0 40px 20px;">
+                            <p style="margin: 0; color: #333; font-size: 16px; line-height: 1.6;">
+                                Click the button below to sign in to {tenant_title} automatically — no password needed.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Action button -->
+                    <tr>
+                        <td style="padding: 30px 40px; text-align: center;">
+                            <a href="{login_url}"
+                               target="_blank"
+                               style="display: inline-block; padding: 12px 30px; background-color: #000000;
+                                      color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: bold;">
+                                Sign in to {tenant_title}
+                            </a>
+                        </td>
+                    </tr>
+
+                    <!-- Expiry notice -->
+                    <tr>
+                        <td style="padding: 0 40px 20px;">
+                            <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.6;">
+                                This link expires in <strong>15 minutes</strong> and can only be used once.
+                                If you didn't request this, you can safely ignore this email.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Divider -->
+                    <tr>
+                        <td style="padding: 20px 40px;">
+                            <hr style="border: none; border-top: 1px solid #e1e1e1; margin: 0;">
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 10px 40px 40px; text-align: center;">
+                            <a href="{app_url}"
+                               style="color: #5b5b5b; text-decoration: none; font-size: 14px;">
+                                {tenant_title} Support · <a href="mailto:info@devromo.com" style="color: #5b5b5b;">info@devromo.com</a>
+                            </a>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+    """
+    return subject, body
+
+
+async def send_password_recovery_email(*, to_email: str, token: str, app_url: str | None = None, tenant_title: str = "PrimeFire") -> tuple[bool, str | None]:
+    """Send password recovery email. Returns (success, error_message)."""
+    if app_url is None:
+        app_url = getattr(settings, "APP_URL", "")
+    subject, body = build_password_recovery_email(to_email=to_email, token=token, app_url=app_url, tenant_title=tenant_title)
+    return await send_notification_email(to_emails=[to_email], subject=subject, body=body)
+
+
+async def send_magic_link_email(*, to_email: str, token: str, app_url: str | None = None, tenant_title: str = "PrimeFire") -> tuple[bool, str | None]:
+    """Send magic link email. Returns (success, error_message)."""
+    if app_url is None:
+        app_url = getattr(settings, "APP_URL", "")
+    subject, body = build_magic_link_email(to_email=to_email, token=token, app_url=app_url, tenant_title=tenant_title)
+    return await send_notification_email(to_emails=[to_email], subject=subject, body=body)

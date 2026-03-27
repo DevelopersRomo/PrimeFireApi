@@ -2,7 +2,7 @@ import enum
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column
+from sqlalchemy import Column, ForeignKey
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -44,6 +44,23 @@ class TicketSLA(enum.StrEnum):
         return self.value
 
 
+class TicketType(enum.StrEnum):
+    ISSUE = "issue"
+    REQUEST = "request"
+    IMPROVEMENT = "improvement"
+
+
+class TicketRecurrenceType(enum.StrEnum):
+    NONE = "none"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    BIWEEKLY = "biweekly"
+    TRIWEEKLY = "triweekly"
+    MONTHLY = "monthly"
+    BIMONTHLY = "bimonthly"
+    YEARLY = "yearly"
+
+
 class Tickets(SQLModel, table=True):
     __tablename__ = "tickets"
     __table_args__ = {"schema": "dbo"}
@@ -76,6 +93,14 @@ class Tickets(SQLModel, table=True):
         ),
     )
 
+    # Ticket type enum (required, default issue/request/improvement)
+    ticket_type: TicketType = Field(
+        default=TicketType.REQUEST,
+        sa_column=Column(
+            SAEnum(TicketType, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=False
+        ),
+    )
+
     # Foreign keys
     created_by: int = Field(foreign_key="dbo.employees.employee_id")
     assigned_to: int | None = Field(default=None, foreign_key="dbo.employees.employee_id")
@@ -90,4 +115,31 @@ class Tickets(SQLModel, table=True):
     )
     assignee: Optional["Employees"] = Relationship(
         back_populates="assigned_tickets", sa_relationship_kwargs={"foreign_keys": "Tickets.assigned_to"}
+    )
+    recurrence_config: Optional["TicketRecurrenceConfig"] = Relationship(
+        back_populates="ticket",
+        sa_relationship_kwargs={"foreign_keys": "TicketRecurrenceConfig.ticket_id", "uselist": False},
+    )
+
+
+class TicketRecurrenceConfig(SQLModel, table=True):
+    __tablename__ = "ticket_recurrence_config"
+    __table_args__ = {"schema": "dbo"}
+
+    config_id: int | None = Field(default=None, primary_key=True, index=True)
+    ticket_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("dbo.tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True
+        ),
+    )
+    recurrence_type: TicketRecurrenceType = Field(default=TicketRecurrenceType.NONE)
+    next_occurrence: datetime | None = Field(default=None)
+    parent_ticket_id: int | None = Field(default=None)  # no FK: app handles integrity
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    ticket: Optional[Tickets] = Relationship(
+        back_populates="recurrence_config",
+        sa_relationship_kwargs={"foreign_keys": "TicketRecurrenceConfig.ticket_id"},
     )

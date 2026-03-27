@@ -1,14 +1,15 @@
 from datetime import UTC, datetime
+from dateutil.relativedelta import relativedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, and_, or_, select
+from sqlmodel import Session, and_, delete, or_, select
 
 from api.dependencies import get_current_employee, get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
 from core.config import settings
 from models.employees import Employees
-from models.tickets import TicketPriority, TicketSLA, TicketStatus, Tickets
+from models.tickets import TicketPriority, TicketRecurrenceConfig, TicketRecurrenceType, TicketSLA, TicketStatus, TicketType, Tickets
 from schemas.tickets import Ticket, TicketCreate, TicketEmployee, TicketUpdate
 from services.notifications.notifications import (
     notify_ticket_created,
@@ -19,27 +20,52 @@ from services.notifications.schemas import TicketNotificationData
 router = APIRouter()
 
 
+def _calculate_next_occurrence(from_date: datetime, recurrence_type: TicketRecurrenceType) -> datetime:
+    """Calculate the next occurrence date based on recurrence type."""
+    if recurrence_type == TicketRecurrenceType.DAILY:
+        return from_date + relativedelta(days=1)
+    elif recurrence_type == TicketRecurrenceType.WEEKLY:
+        return from_date + relativedelta(weeks=1)
+    elif recurrence_type == TicketRecurrenceType.BIWEEKLY:
+        return from_date + relativedelta(weeks=2)
+    elif recurrence_type == TicketRecurrenceType.TRIWEEKLY:
+        return from_date + relativedelta(weeks=3)
+    elif recurrence_type == TicketRecurrenceType.MONTHLY:
+        return from_date + relativedelta(months=1)
+    elif recurrence_type == TicketRecurrenceType.BIMONTHLY:
+        return from_date + relativedelta(months=2)
+    elif recurrence_type == TicketRecurrenceType.YEARLY:
+        return from_date + relativedelta(years=1)
+    return from_date
+
+
 def has_admin_actions(user_permissions: dict) -> bool:
-    """Check if user has AdminActions permission for tickets module."""
+    """Check if user has admin_actions permission for tickets module."""
     for perm in user_permissions.get("permissions", []):
         if perm.get("module_key") == "tickets":
-            return perm.get("permissions", {}).get("AdminActions", False)
+            return perm.get("permissions", {}).get("admin_actions", False)
     return False
 
 
 def ticket_to_schema(db_ticket: Tickets) -> Ticket:
     """Convert Tickets model to Ticket schema with related employee data."""
+    recurrence_type: TicketRecurrenceType | None = None
+    if db_ticket.recurrence_config and db_ticket.recurrence_config.is_active:
+        recurrence_type = db_ticket.recurrence_config.recurrence_type
+
     return Ticket(
         ticket_id=db_ticket.ticket_id,
         title=db_ticket.title,
         description=db_ticket.description,
         status=db_ticket.status,
         priority=db_ticket.priority,
+        ticket_type=db_ticket.ticket_type,
         sla=db_ticket.sla,
         created_by=db_ticket.created_by,
         assigned_to=db_ticket.assigned_to,
         created_at=db_ticket.created_at,
         updated_at=db_ticket.updated_at,
+        recurrence_type=recurrence_type,
         creator=TicketEmployee(
             employee_id=db_ticket.creator.employee_id,
             display_name=db_ticket.creator.display_name,
@@ -57,6 +83,118 @@ def ticket_to_schema(db_ticket: Tickets) -> Ticket:
         if db_ticket.assignee
         else None,
     )
+
+
+# ----------------------------
+# 📌 GET /tickets/stats (ANALYTICS AGGREGATED COUNTS)
+# ----------------------------
+@router.get("/stats")
+def get_ticket_stats(
+    user_id: str | None = Query(
+        None,
+        description="Filter by user. 'all' returns all tickets (admin only). "
+        "Integer returns tickets for that specific user. "
+        "Omitting returns tickets for current user.",
+    ),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
+    """
+    Return aggregated ticket counts grouped by status, priority, ticket_type, and SLA.
+    Admin (AdminActions): sees all tickets. User: sees only their own.
+    """
+    current_employee_id = user_permissions["employee"]["employee_id"]
+    is_admin = has_admin_actions(user_permissions)
+
+    query = select(Tickets)
+
+    if user_id is not None and user_id.lower() == "all":
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only admins can view all tickets stats")
+    elif user_id is not None:
+        target_user_id = int(user_id)
+        if is_admin:
+            query = query.where(
+                or_(
+                    Tickets.created_by == target_user_id,
+                    Tickets.assigned_to == target_user_id,
+                )
+            )
+        else:
+            raise HTTPException(status_code=403, detail="Non-admin users can only view their own stats")
+    else:
+        if not is_admin:
+            query = query.where(
+                or_(
+                    Tickets.created_by == current_employee_id,
+                    Tickets.assigned_to == current_employee_id,
+                )
+            )
+
+    tickets = db.exec(query).all()
+
+    from collections import defaultdict
+    status_counts: dict = defaultdict(int)
+    priority_counts: dict = defaultdict(int)
+    ticket_type_counts: dict = defaultdict(int)
+    sla_counts: dict = defaultdict(int)
+
+    for ticket in tickets:
+        status_counts[ticket.status.value] += 1
+        priority_counts[ticket.priority.value] += 1
+        ticket_type_counts[ticket.ticket_type.value] += 1
+        sla_key = ticket.sla.value if ticket.sla else "none"
+        sla_counts[sla_key] += 1
+
+    return {
+        "status_counts": dict(status_counts),
+        "priority_counts": dict(priority_counts),
+        "ticket_type_counts": dict(ticket_type_counts),
+        "sla_counts": dict(sla_counts),
+        "total": len(tickets),
+    }
+
+
+# ----------------------------
+# 📌 GET /tickets/stats/users (USERS FOR DROPDOWN)
+# ----------------------------
+@router.get("/stats/users")
+def get_ticket_stats_users(
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
+    """Return list of employees who have tickets, with their ticket counts."""
+    query = select(Tickets.created_by).distinct()
+    created_by_ids = db.exec(query).all()
+
+    query2 = select(Tickets.assigned_to).distinct().where(Tickets.assigned_to.isnot(None))
+    assigned_to_ids = db.exec(query2).all()
+
+    all_user_ids = set(created_by_ids + assigned_to_ids)
+    if not all_user_ids:
+        return []
+
+    employees = db.exec(select(Employees).where(Employees.employee_id.in_(all_user_ids))).all()
+
+    result = []
+    for emp in employees:
+        count = db.exec(
+            select(Tickets).where(
+                or_(
+                    Tickets.created_by == emp.employee_id,
+                    Tickets.assigned_to == emp.employee_id,
+                )
+            )
+        ).all()
+        result.append({
+            "employee_id": emp.employee_id,
+            "display_name": emp.display_name,
+            "email": emp.email,
+            "ticket_count": len(count),
+        })
+
+    result.sort(key=lambda x: x["display_name"] or "")
+    return result
 
 
 # ----------------------------
@@ -79,7 +217,11 @@ def get_tickets(
 ):
     """Get tickets with optional filters and pagination."""
     # Build base query with relationships
-    query = select(Tickets).options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
+    query = select(Tickets).options(
+        selectinload(Tickets.creator),
+        selectinload(Tickets.assignee),
+        selectinload(Tickets.recurrence_config),
+    )
 
     # Apply filters
     filters = []
@@ -115,7 +257,11 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(requ
     """Get a single ticket by ID."""
     db_ticket = db.exec(
         select(Tickets)
-        .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee),
+            selectinload(Tickets.recurrence_config),
+        )
         .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
@@ -148,6 +294,7 @@ def create_ticket(
         description=ticket.description,
         status=ticket.status,
         priority=ticket.priority,
+        ticket_type=ticket.ticket_type,
         sla=ticket.sla,
         created_by=current_employee.employee_id,
         assigned_to=ticket.assigned_to,
@@ -159,10 +306,26 @@ def create_ticket(
     db.commit()
     db.refresh(db_ticket)
 
+    # Create recurrence config if recurrence_type is set
+    if ticket.recurrence_type and ticket.recurrence_type != TicketRecurrenceType.NONE:
+        recurrence_config = TicketRecurrenceConfig(
+            ticket_id=db_ticket.ticket_id,
+            recurrence_type=ticket.recurrence_type,
+            next_occurrence=_calculate_next_occurrence(datetime.now(UTC), ticket.recurrence_type),
+            parent_ticket_id=None,  # This is the parent/original ticket
+            is_active=True,
+        )
+        db.add(recurrence_config)
+        db.commit()
+
     # Load relationships for response
     db_ticket = db.exec(
         select(Tickets)
-        .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee),
+            selectinload(Tickets.recurrence_config),
+        )
         .filter(Tickets.ticket_id == db_ticket.ticket_id)
     ).first()
 
@@ -205,7 +368,11 @@ async def update_ticket(
     # Get ticket
     db_ticket = db.exec(
         select(Tickets)
-        .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee),
+            selectinload(Tickets.recurrence_config),
+        )
         .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
@@ -232,10 +399,41 @@ async def update_ticket(
         if not assigned_employee:
             raise HTTPException(status_code=404, detail="Assigned employee not found")
 
-    # Apply updates
+    # Apply updates (exclude recurrence_type - it belongs to TicketRecurrenceConfig, not Tickets)
     update_data = ticket_update.model_dump(exclude_unset=True)
+    recurrence_type = update_data.pop("recurrence_type", None)
     for key, value in update_data.items():
         setattr(db_ticket, key, value)
+
+    # Handle recurrence: DELETE config if ticket is set to inactive (closed/resolved)
+    new_status = ticket_update.status
+    if new_status == TicketStatus.INACTIVE and db_ticket.recurrence_config:
+        db.delete(db_ticket.recurrence_config)
+
+    # Handle recurrence_type update
+    if recurrence_type is not None:
+        recurrence_type = ticket_update.recurrence_type
+        if recurrence_type == TicketRecurrenceType.NONE:
+            # Remove recurrence config entirely if user cleared recurrence
+            if db_ticket.recurrence_config:
+                db.delete(db_ticket.recurrence_config)
+        else:
+            # Create or update recurrence config
+            if db_ticket.recurrence_config:
+                db_ticket.recurrence_config.recurrence_type = recurrence_type
+                db_ticket.recurrence_config.is_active = True
+                db_ticket.recurrence_config.next_occurrence = _calculate_next_occurrence(
+                    datetime.now(UTC), recurrence_type
+                )
+            else:
+                recurrence_config = TicketRecurrenceConfig(
+                    ticket_id=db_ticket.ticket_id,
+                    recurrence_type=recurrence_type,
+                    next_occurrence=_calculate_next_occurrence(datetime.now(UTC), recurrence_type),
+                    parent_ticket_id=None,
+                    is_active=True,
+                )
+                db.add(recurrence_config)
 
     # Update timestamp
     db_ticket.updated_at = datetime.now(UTC)
@@ -246,7 +444,11 @@ async def update_ticket(
     # Reload relationships after update
     db_ticket = db.exec(
         select(Tickets)
-        .options(selectinload(Tickets.creator), selectinload(Tickets.assignee))
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee),
+            selectinload(Tickets.recurrence_config),
+        )
         .filter(Tickets.ticket_id == ticket_id)
     ).first()
 
@@ -272,6 +474,58 @@ async def update_ticket(
                 notification_data=notification_data,
                 to_email=db_ticket.assignee.email or "",
             )
+
+    return ticket_to_schema(db_ticket)
+
+
+# ----------------------------
+# 📌 POST /tickets/{id}/stop-recurrence
+# ----------------------------
+@router.post("/{ticket_id}/stop-recurrence", response_model=Ticket)
+async def stop_ticket_recurrence(
+    ticket_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
+    """Stop the recurrence for a ticket. Only creator, assignee, or AdminActions can stop recurrence."""
+    current_employee_id = user_permissions["employee"]["employee_id"]
+
+    db_ticket = db.exec(
+        select(Tickets)
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee),
+            selectinload(Tickets.recurrence_config),
+        )
+        .filter(Tickets.ticket_id == ticket_id)
+    ).first()
+
+    if not db_ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    is_creator = db_ticket.created_by == current_employee_id
+    is_assignee = db_ticket.assigned_to == current_employee_id
+    has_admin = has_admin_actions(user_permissions)
+
+    if not (is_creator or is_assignee or has_admin):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only stop recurrence on tickets you created, are assigned to, or have admin permissions",
+        )
+
+    if db_ticket.recurrence_config and db_ticket.recurrence_config.is_active:
+        db.delete(db_ticket.recurrence_config)
+        db.commit()
+
+    db_ticket = db.exec(
+        select(Tickets)
+        .options(
+            selectinload(Tickets.creator),
+            selectinload(Tickets.assignee),
+            selectinload(Tickets.recurrence_config),
+        )
+        .filter(Tickets.ticket_id == ticket_id)
+    ).first()
 
     return ticket_to_schema(db_ticket)
 
@@ -306,6 +560,13 @@ async def delete_ticket(
         raise HTTPException(
             status_code=403, detail="Only the ticket creator or users with admin permissions can delete it"
         )
+
+    # Delete recurrence config first (don't let FK SET NULL — delete the config entirely)
+    recurrence_config = db.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket_id)
+    ).first()
+    if recurrence_config:
+        db.delete(recurrence_config)
 
     # Delete the ticket from the database
     db.delete(db_ticket)

@@ -72,6 +72,17 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+    # Start ticket recurrence scheduler
+    recurrence_task = None
+    try:
+        from core.ticket_recurrence_scheduler import recurrence_scheduler
+
+        recurrence_task = asyncio.create_task(
+            recurrence_scheduler.start(interval_seconds=settings.RECURRENCE_JOB_INTERVAL_HOURS * 3600)
+        )
+    except Exception:
+        pass
+
     yield
 
     if sync_task and not sync_task.done():
@@ -81,6 +92,18 @@ async def lifespan(app: FastAPI):
         from core.background_tasks import sync_scheduler
 
         await sync_scheduler.stop_periodic_sync()
+    except Exception:
+        pass
+
+    if recurrence_task and not recurrence_task.done():
+        recurrence_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await recurrence_task
+
+    try:
+        from core.ticket_recurrence_scheduler import recurrence_scheduler
+
+        await recurrence_scheduler.stop()
     except Exception:
         pass
 

@@ -2,51 +2,17 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee, get_current_employee_with_permissions
-from main import app
 from models.employees import Employees
-from models.tickets import TicketPriority, TicketStatus, Tickets
+from models.tickets import TicketPriority, TicketRecurrenceConfig, TicketRecurrenceType, TicketStatus, Tickets
 from tests.conftest import create_test_record
 
 
-@pytest.fixture
-def current_employee(db_session: Session):
-    emp = create_test_record(
-        db_session, Employees, email="test@example.com", first_name="Test", last_name="User", display_name="Test User"
-    )
-    db_session.commit()
-    return emp
-
-
-@pytest.fixture
-def other_employee(db_session: Session):
-    emp = create_test_record(
-        db_session, Employees, email="other@example.com", first_name="Other", last_name="User", display_name="Other User"
-    )
-    db_session.commit()
-    return emp
-
-
-@pytest.fixture
-def auth_overrides(current_employee: Employees):
-    # Override current employee
-    def mock_get_current_employee():
-        return current_employee
-
-    # Override employee with permissions
-    def mock_get_current_employee_with_permissions():
-        return {
-            "employee": {"employee_id": current_employee.employee_id, "email": current_employee.email},
-            "permissions": [],  # Has no admin_actions by default
-        }
-
-    app.dependency_overrides[get_current_employee] = mock_get_current_employee
-    app.dependency_overrides[get_current_employee_with_permissions] = mock_get_current_employee_with_permissions
-    yield
-    app.dependency_overrides.pop(get_current_employee, None)
-    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
+# Fixtures (current_employee, other_employee, auth_overrides) are defined in conftest.py
+# They are automatically injected by pytest — no import needed.
+current_employee: Employees
+other_employee: Employees
 
 
 def test_create_ticket(
@@ -162,3 +128,264 @@ def test_delete_ticket(
 
     response = client.get(f"/tickets/{ticket.ticket_id}", headers=auth_headers)
     assert response.status_code == 404
+
+
+# =============================================================================
+# Recurrence Tests
+# =============================================================================
+
+
+def test_create_ticket_with_recurrence(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Creating a ticket with recurrence_type should create a TicketRecurrenceConfig."""
+    with patch("api.tickets.notify_ticket_created"):
+        payload = {
+            "title": "Recurring Ticket",
+            "description": "Test recurring ticket",
+            "status": "todo",
+            "priority": "high",
+            "recurrence_type": "weekly",
+            "assigned_to": other_employee.employee_id,
+        }
+
+        response = client.post("/tickets", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["recurrence_type"] == "weekly"
+
+        # Verify config was created in DB
+        config = db_session.exec(
+            select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == data["ticket_id"])
+        ).first()
+        assert config is not None
+        assert config.recurrence_type == TicketRecurrenceType.WEEKLY
+        assert config.is_active is True
+        assert config.next_occurrence is not None
+
+
+def test_create_ticket_without_recurrence(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Creating a ticket without recurrence_type should NOT create a TicketRecurrenceConfig."""
+    with patch("api.tickets.notify_ticket_created"):
+        payload = {
+            "title": "Normal Ticket",
+            "description": "No recurrence",
+            "status": "todo",
+            "priority": "low",
+            "assigned_to": other_employee.employee_id,
+        }
+
+        response = client.post("/tickets", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["recurrence_type"] is None
+
+        # Verify no config was created
+        config = db_session.exec(
+            select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == data["ticket_id"])
+        ).first()
+        assert config is None
+
+
+def test_update_ticket_recurrence_type(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Updating recurrence_type on an existing ticket should create/update the config."""
+    ticket = create_test_record(
+        db_session,
+        Tickets,
+        title="Test Ticket",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    # Update with recurrence
+    payload = {"recurrence_type": "monthly"}
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["recurrence_type"] == "monthly"
+
+    db_session.expire_all()  # Force re-fetch so we see DB state, not identity-map cache
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is not None
+    assert config.recurrence_type == TicketRecurrenceType.MONTHLY
+
+    # Update recurrence type
+    payload = {"recurrence_type": "biweekly"}
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["recurrence_type"] == "biweekly"
+
+    db_session.expire_all()  # Force re-fetch after second update
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is not None
+    assert config.recurrence_type == TicketRecurrenceType.BIWEEKLY
+
+
+def test_update_recurrence_type_to_none_deletes_config(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Setting recurrence_type to 'none' should DELETE the TicketRecurrenceConfig."""
+    ticket = create_test_record(
+        db_session,
+        Tickets,
+        title="Test Ticket",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    # First add recurrence
+    client.patch(f"/tickets/{ticket.ticket_id}", json={"recurrence_type": "weekly"}, headers=auth_headers)
+
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is not None
+
+    # Now clear recurrence
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json={"recurrence_type": "none"}, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["recurrence_type"] is None
+
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is None  # Deleted, not just inactive
+
+
+def test_update_status_to_inactive_deletes_recurrence_config(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Setting status to 'inactive' should DELETE the TicketRecurrenceConfig."""
+    ticket = create_test_record(
+        db_session,
+        Tickets,
+        title="Test Ticket",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    # First add recurrence
+    client.patch(f"/tickets/{ticket.ticket_id}", json={"recurrence_type": "daily"}, headers=auth_headers)
+
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is not None
+
+    # Now set to inactive
+    response = client.patch(
+        f"/tickets/{ticket.ticket_id}", json={"status": "inactive", "recurrence_type": "none"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "inactive"
+
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is None  # Deleted
+
+
+def test_delete_ticket_deletes_recurrence_config(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Deleting a ticket should also DELETE its TicketRecurrenceConfig."""
+    ticket = create_test_record(
+        db_session,
+        Tickets,
+        title="Test Ticket",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+    ticket_id = ticket.ticket_id
+
+    # First add recurrence
+    client.patch(f"/tickets/{ticket_id}", json={"recurrence_type": "yearly"}, headers=auth_headers)
+
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket_id)
+    ).first()
+    assert config is not None
+
+    # Delete the ticket
+    response = client.delete(f"/tickets/{ticket_id}", headers=auth_headers)
+    assert response.status_code == 200
+
+    # Config should be gone too
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket_id)
+    ).first()
+    assert config is None
+
+
+def test_stop_recurrence_endpoint(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """POST /tickets/{id}/stop-recurrence should delete the recurrence config."""
+    ticket = create_test_record(
+        db_session,
+        Tickets,
+        title="Test Ticket",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    # First add recurrence
+    client.patch(f"/tickets/{ticket.ticket_id}", json={"recurrence_type": "weekly"}, headers=auth_headers)
+
+    db_session.expire_all()
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is not None
+
+    # Stop recurrence
+    response = client.post(f"/tickets/{ticket.ticket_id}/stop-recurrence", headers=auth_headers)
+    assert response.status_code == 200
+
+    db_session.expire_all()  # Force re-fetch after deletion
+    config = db_session.exec(
+        select(TicketRecurrenceConfig).filter(TicketRecurrenceConfig.ticket_id == ticket.ticket_id)
+    ).first()
+    assert config is None

@@ -1,9 +1,10 @@
 import uuid
+import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -11,8 +12,10 @@ from sqlmodel import Session, select
 
 from bd.dependencies import get_main_db
 from core.config import settings
+from models.auth_tokens import AuthToken
 from models.employees import Employees
-from models.tenants import TenantEmployees, Tenants
+from models.tenants import TenantEmployees, TenantLogos, Tenants
+from services.notifications.email_functions import send_magic_link_email, send_password_recovery_email
 
 # --- CONFIGURACIÓN ---
 # Usar una clave secreta segura en producción
@@ -351,3 +354,256 @@ async def refresh_azure_token(refresh_data: AzureRefreshTokenRequest):
         )
 
     return response.json()
+
+
+# --- PASSWORD RECOVERY & MAGIC LINK ENDPOINTS ---
+
+
+class PasswordRecoveryRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class MagicLinkRequest(BaseModel):
+    email: str
+
+
+TOKEN_EXPIRE_MINUTES = 15
+
+
+def _generate_secure_token() -> str:
+    """Generate a secure random token."""
+    return secrets.token_urlsafe(32)
+
+
+def _find_user_by_email(db: Session, email: str) -> tuple[Employees | None, TenantEmployees | None]:
+    """Find user by email in Employees or TenantEmployees tables."""
+    tenant_user = db.exec(select(TenantEmployees).where(TenantEmployees.email == email)).first()
+    if tenant_user:
+        return None, tenant_user
+    internal_user = db.exec(select(Employees).where(Employees.email == email)).first()
+    return internal_user, None
+
+
+def _get_tenant_info(db: Session, internal_user: Employees | None, tenant_user: TenantEmployees | None) -> tuple[str, str]:
+    """Resolve the correct frontend app URL and title for a user.
+
+    Returns (app_url, tenant_title):
+    - TenantEmployees → use the tenant's URL and title from TenantLogos.
+    - Internal Employees → fall back to global APP_URL and "PrimeFire".
+    """
+    if tenant_user and tenant_user.tenant_id:
+        logo = db.exec(
+            select(TenantLogos)
+            .where(TenantLogos.tenant_id == tenant_user.tenant_id)
+            .order_by(TenantLogos.logo_id)
+        ).first()
+        if logo and logo.url:
+            return logo.url.rstrip("/"), logo.title
+    return getattr(settings, "APP_URL", ""), "PrimeFire"
+
+
+@router.post("/password-recovery")
+async def password_recovery(request: PasswordRecoveryRequest, db: Session = Depends(get_main_db)):
+    """
+    Request a password recovery email.
+    Always returns 200 to prevent email enumeration attacks.
+    """
+    internal_user, tenant_user = _find_user_by_email(db, request.email)
+
+    if not internal_user and not tenant_user:
+        # User not found — still return 200 to prevent enumeration
+        return {"message": "If the email exists in our system, you will receive a recovery link."}
+
+    # Determine target user (prefer TenantEmployees for local auth users)
+    target_email = tenant_user.email if tenant_user else internal_user.email
+
+    # Invalidate any existing unused recovery tokens for this email
+    existing = db.exec(
+        select(AuthToken).where(
+            AuthToken.email == target_email,
+            AuthToken.token_type == "password_recovery",
+            AuthToken.used_at.is_(None),
+        )
+    ).all()
+    for tok in existing:
+        tok.used_at = datetime.utcnow()
+    db.add_all(existing)
+    db.commit()
+
+    # Create new token
+    token = _generate_secure_token()
+    expires_at = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    auth_token = AuthToken(
+        email=target_email,
+        token=token,
+        token_type="password_recovery",
+        expires_at=expires_at,
+    )
+    db.add(auth_token)
+    db.commit()
+
+    # Send email with tenant-aware URL and title
+    app_url, tenant_title = _get_tenant_info(db, internal_user, tenant_user)
+    await send_password_recovery_email(to_email=target_email, token=token, app_url=app_url, tenant_title=tenant_title)
+
+    return {"message": "If the email exists in our system, you will receive a recovery link."}
+
+
+@router.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_main_db)):
+    """
+    Reset password using a valid token.
+    """
+    # Find token
+    auth_token = db.exec(
+        select(AuthToken).where(
+            AuthToken.token == request.token,
+            AuthToken.token_type == "password_recovery",
+        )
+    ).first()
+
+    if not auth_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or already used token.")
+
+    if auth_token.used_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This token has already been used.")
+
+    if auth_token.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This token has expired. Please request a new one.")
+
+    # Find user
+    internal_user, tenant_user = _find_user_by_email(db, auth_token.email)
+    user = tenant_user if tenant_user else internal_user
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    if not hasattr(user, "password_hash") or user.password_hash is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This user does not use local password authentication. Please sign in with Azure AD.",
+        )
+
+    # Update password
+    user.password_hash = get_password_hash(request.new_password)
+    db.add(user)
+
+    # Mark token as used
+    auth_token.used_at = datetime.utcnow()
+    db.add(auth_token)
+    db.commit()
+
+    return {"message": "Password updated successfully. You can now sign in."}
+
+
+@router.post("/magic-link")
+async def request_magic_link(request: MagicLinkRequest, db: Session = Depends(get_main_db)):
+    """
+    Request a magic link email.
+    Always returns 200 to prevent email enumeration attacks.
+    """
+    internal_user, tenant_user = _find_user_by_email(db, request.email)
+
+    if not internal_user and not tenant_user:
+        return {"message": "If the email exists in our system, you will receive a login link."}
+
+    target_email = tenant_user.email if tenant_user else internal_user.email
+
+    # Only allow magic link for users with password_hash (local auth users)
+    has_local_auth = (tenant_user and tenant_user.password_hash) or (internal_user and internal_user.password_hash)
+    if not has_local_auth:
+        return {"message": "Si el email existe, recibirás un enlace de acceso."}
+
+    # Invalidate existing unused magic link tokens
+    existing = db.exec(
+        select(AuthToken).where(
+            AuthToken.email == target_email,
+            AuthToken.token_type == "magic_link",
+            AuthToken.used_at.is_(None),
+        )
+    ).all()
+    for tok in existing:
+        tok.used_at = datetime.utcnow()
+    db.add_all(existing)
+    db.commit()
+
+    # Create new token
+    token = _generate_secure_token()
+    expires_at = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    auth_token = AuthToken(
+        email=target_email,
+        token=token,
+        token_type="magic_link",
+        expires_at=expires_at,
+    )
+    db.add(auth_token)
+    db.commit()
+
+    # Send email with tenant-aware URL and title
+    app_url, tenant_title = _get_tenant_info(db, internal_user, tenant_user)
+    await send_magic_link_email(to_email=target_email, token=token, app_url=app_url, tenant_title=tenant_title)
+
+    return {"message": "If the email exists in our system, you will receive a login link."}
+
+
+@router.get("/magic-link/verify", response_model=Token)
+async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_main_db)):
+    """
+    Verify a magic link token and return JWT tokens (auto-login).
+    """
+    auth_token = db.exec(
+        select(AuthToken).where(
+            AuthToken.token == token,
+            AuthToken.token_type == "magic_link",
+        )
+    ).first()
+
+    if not auth_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or already used token.")
+
+    if auth_token.used_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This link has already been used.")
+
+    if auth_token.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This link has expired. Please request a new one.")
+
+    # Find user
+    internal_user, tenant_user = _find_user_by_email(db, auth_token.email)
+    user = tenant_user if tenant_user else internal_user
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
+
+    # Mark token as used
+    auth_token.used_at = datetime.utcnow()
+    db.add(auth_token)
+    db.commit()
+
+    # Generate tokens (same as normal login)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    if tenant_user:
+        # External user
+        tenant = db.get(Tenants, tenant_user.tenant_id)
+        token_data = {"sub": tenant_user.email, "type": "internal"}
+        if tenant and tenant.tenant_id != 1:
+            token_data["tenant_key"] = tenant.db_connection_key
+        refresh_payload = {"sub": tenant_user.email, "tenant_key": tenant.db_connection_key if tenant else None}
+        access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
+        refresh_token = create_refresh_token(data=refresh_payload)
+    else:
+        # Internal user
+        token_data = {"sub": internal_user.email, "type": "internal"}
+        access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
+        refresh_token = create_refresh_token(data={"sub": internal_user.email})
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "refresh_token": refresh_token,
+    }

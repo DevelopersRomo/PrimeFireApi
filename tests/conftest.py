@@ -16,6 +16,7 @@ from sqlmodel import SQLModel, Session, create_engine
 
 from bd.dependencies import get_db, get_main_db
 from main import app
+from models.employees import Employees
 
 # =============================================================================
 # Test Database Configuration
@@ -209,6 +210,60 @@ def setup_test_env() -> None:
     """
     os.environ.setdefault("ENVIRONMENT", "test")
     # Cleanup
+
+
+# =============================================================================
+# Employee Fixtures (shared across all test modules)
+# =============================================================================
+
+
+@pytest.fixture
+def current_employee(db_session: Session):
+    emp = create_test_record(
+        db_session,
+        Employees,
+        email="test@example.com",
+        first_name="Test",
+        last_name="User",
+        display_name="Test User",
+    )
+    db_session.commit()
+    return emp
+
+
+@pytest.fixture
+def other_employee(db_session: Session):
+    emp = create_test_record(
+        db_session,
+        Employees,
+        email="other@example.com",
+        first_name="Other",
+        last_name="User",
+        display_name="Other User",
+    )
+    db_session.commit()
+    return emp
+
+
+@pytest.fixture
+def auth_overrides(current_employee: Employees):
+    """Override auth dependencies to use the test employee."""
+    from api.dependencies import get_current_employee, get_current_employee_with_permissions
+
+    def mock_get_current_employee():
+        return current_employee
+
+    def mock_get_current_employee_with_permissions():
+        return {
+            "employee": {"employee_id": current_employee.employee_id, "email": current_employee.email},
+            "permissions": [],
+        }
+
+    app.dependency_overrides[get_current_employee] = mock_get_current_employee
+    app.dependency_overrides[get_current_employee_with_permissions] = mock_get_current_employee_with_permissions
+    yield
+    app.dependency_overrides.pop(get_current_employee, None)
+    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
 
 
 # =============================================================================

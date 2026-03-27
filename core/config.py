@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     )
 
     # Notification settings
+    SEND_NOTIFICATIONS: bool = Field(
+        default=True,
+        validation_alias="SEND_NOTIFICATIONS",
+        description="Enable/disable all notifications (default: True for production)",
+    )
     BOT_EMAIL: str = Field(
         default="", validation_alias="BOT_EMAIL", description="Email address for bot to send notifications"
     )
@@ -114,6 +119,13 @@ class Settings(BaseSettings):
     # IP Geolocation
     IPGEOLOCATION_API_KEY: str = Field(
         default="", validation_alias="IPGEOLOCATION_API_KEY", description="API key for ipgeolocation.io"
+    )
+
+    # Ticket Recurrence Scheduler
+    RECURRENCE_JOB_INTERVAL_HOURS: int = Field(
+        default=1,
+        validation_alias="RECURRENCE_JOB_INTERVAL_HOURS",
+        description="Hours between ticket recurrence job runs (default: 1)",
     )
 
     @property

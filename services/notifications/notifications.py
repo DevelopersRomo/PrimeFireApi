@@ -5,8 +5,11 @@ from helpers.string_helpers import format_absence_type, format_hours_to_readable
 IMPORTANT: All notifications are sent using BOT_EMAIL as the sender (orchestrator).
 Even though actions are performed by specific users, the email always comes from BOT_EMAIL.
 This ensures consistent email delivery and proper authentication with Microsoft Graph API.
+
+To disable notifications, set SEND_NOTIFICATIONS=false in environment variables.
 """
 
+import logging
 from sqlmodel import select
 
 from bd.connection import SessionLocal
@@ -23,6 +26,13 @@ from services.notifications.schemas import (
     UserApprovalNotificationData,
 )
 from services.notifications.teams_functions import send_teams_notification
+
+logger = logging.getLogger(__name__)
+
+
+def _should_send_notification() -> bool:
+    """Check if notifications should be sent based on SEND_NOTIFICATIONS setting."""
+    return getattr(settings, "SEND_NOTIFICATIONS", True)
 
 
 def get_action_color(action_type: str) -> str:
@@ -287,6 +297,10 @@ async def send_time_off_notification(
     tenant_key: str | None = None,
 ) -> NotificationResponse:
     """Send time off notification (approved/rejected)."""
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping time off notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     try:
         absence_type_display = format_absence_type(notification_data.absence_type)
 
@@ -374,6 +388,10 @@ async def send_ticket_assigned_notification(
     cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a ticket is assigned to someone."""
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping ticket assigned notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     try:
         title = "Ticket Assigned to You"
         message_body = f"A ticket has been assigned to you: {notification_data.title}"
@@ -443,6 +461,10 @@ async def send_ticket_created_notification(
     cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a ticket is created."""
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping ticket created notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     try:
         title = "New Ticket Created"
         message_body = f"A new ticket has been created: {notification_data.title}"
@@ -515,6 +537,10 @@ async def send_ticket_message_notification(
     cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a ticket message is posted."""
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping ticket message notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     try:
         title = "New Comment on Ticket"
         message_body = f"{notification_data.commenter_name} commented on ticket: {notification_data.ticket_title}"
@@ -577,6 +603,10 @@ async def send_user_approval_notification(
     cc_email: str | None = None,
 ) -> NotificationResponse:
     """Send notification when a user is approved and ready to use."""
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping user approval notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     try:
         title = "Account Approved and Ready"
         message_body = "Your account has been approved and is now ready to use."
@@ -944,6 +974,10 @@ async def send_custom_notification(
     Returns:
         NotificationResponse with success status
     """
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping custom notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     try:
         html_body = generate_notification_html(
             title=title,
@@ -1009,6 +1043,10 @@ async def notify_teams(
     Returns:
         NotificationResponse with success status
     """
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping teams notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     return await send_teams_notification(
         recipient_email=recipient_email,
         title=title,
@@ -1023,6 +1061,10 @@ async def send_timesheet_notification(
     to_email: str,
 ) -> NotificationResponse:
     """Send timesheet notification (regular hours or overtime)."""
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping timesheet notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
     try:
         if notification_data.notification_type == "regular_hours":
             title = "Regular Hours Completed"

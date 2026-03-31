@@ -14,6 +14,28 @@ from services.notifications.schemas import EmailAttachment
 logger = logging.getLogger(__name__)
 
 
+def _normalize_app_url(raw_url: str | None) -> str:
+    """Return a normalized absolute URL, forcing https when scheme is missing."""
+    candidate = (raw_url or "").strip()
+    if not candidate:
+        candidate = (getattr(settings, "APP_URL", "") or "").strip()
+    if not candidate:
+        return ""
+
+    cleaned = candidate.rstrip("/")
+    if cleaned.startswith("https://"):
+        return cleaned
+    if cleaned.startswith("http://"):
+        return f"https://{cleaned[len('http://'):]}"
+    return f"https://{cleaned}"
+
+
+def _build_auth_url(*, app_url: str | None, path: str, token: str) -> str:
+    base_url = _normalize_app_url(app_url)
+    clean_token = (token or "").strip()
+    return f"{base_url}{path}?token={clean_token}"
+
+
 def get_retry_client() -> httpx.AsyncClient:
     """Get HTTP client with retry logic."""
     return httpx.AsyncClient(
@@ -169,7 +191,9 @@ async def send_notification_email(
 
 def build_password_recovery_email(*, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire") -> tuple[str, str]:
     """Build password recovery email body and subject."""
-    reset_url = f"{app_url}/reset-password?token={token}"
+    app_url = _normalize_app_url(app_url)
+    reset_url = _build_auth_url(app_url=app_url, path="/reset-password", token=token)
+    support_email = getattr(settings, "SUPPORT_EMAIL", "info@devromo.com")
     subject = f"Reset your password - {tenant_title}"
     body = f"""
 <!DOCTYPE html>
@@ -251,7 +275,12 @@ def build_password_recovery_email(*, to_email: str, token: str, app_url: str, te
                         <td style="padding: 10px 40px 40px; text-align: center;">
                             <a href="{app_url}"
                                style="color: #5b5b5b; text-decoration: none; font-size: 14px;">
-                                {tenant_title} Support · <a href="mailto:info@devromo.com" style="color: #5b5b5b;">info@devromo.com</a>
+                                {tenant_title} Support
+                            </a>
+                            <span style="color: #5b5b5b; font-size: 14px;"> · </span>
+                            <a href="mailto:{support_email}"
+                               style="color: #5b5b5b; text-decoration: none; font-size: 14px;">
+                                {support_email}
                             </a>
                         </td>
                     </tr>
@@ -268,7 +297,9 @@ def build_password_recovery_email(*, to_email: str, token: str, app_url: str, te
 
 def build_magic_link_email(*, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire") -> tuple[str, str]:
     """Build magic link email body and subject."""
-    login_url = f"{app_url}/magic-login?token={token}"
+    app_url = _normalize_app_url(app_url)
+    login_url = _build_auth_url(app_url=app_url, path="/magic-login", token=token)
+    support_email = getattr(settings, "SUPPORT_EMAIL", "info@devromo.com")
     subject = f"Your magic login link - {tenant_title}"
     body = f"""
 <!DOCTYPE html>
@@ -350,7 +381,12 @@ def build_magic_link_email(*, to_email: str, token: str, app_url: str, tenant_ti
                         <td style="padding: 10px 40px 40px; text-align: center;">
                             <a href="{app_url}"
                                style="color: #5b5b5b; text-decoration: none; font-size: 14px;">
-                                {tenant_title} Support · <a href="mailto:info@devromo.com" style="color: #5b5b5b;">info@devromo.com</a>
+                                {tenant_title} Support
+                            </a>
+                            <span style="color: #5b5b5b; font-size: 14px;"> · </span>
+                            <a href="mailto:{support_email}"
+                               style="color: #5b5b5b; text-decoration: none; font-size: 14px;">
+                                {support_email}
                             </a>
                         </td>
                     </tr>

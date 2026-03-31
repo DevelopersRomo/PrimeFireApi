@@ -67,8 +67,10 @@ def _normalize_app_url(url: str) -> str:
     cleaned = (url or "").strip()
     if not cleaned:
         return ""
-    if cleaned.startswith(("http://", "https://")):
+    if cleaned.startswith("https://"):
         return cleaned
+    if cleaned.startswith("http://"):
+        return f"https://{cleaned[len('http://'):]}"
     return f"https://{cleaned}"
 
 

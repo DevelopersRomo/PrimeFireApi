@@ -1,8 +1,13 @@
 """Notification API endpoints."""
 
+from asyncio import Lock
+from collections import deque
+import hashlib
 from secrets import compare_digest
+import time
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlmodel import Session
 
 from api.dependencies import get_current_employee
@@ -27,6 +32,96 @@ from services.notifications.schemas import NotificationField, NotificationRespon
 
 router = APIRouter()
 
+_CONTACT_RATE_LIMIT_BUCKETS: dict[str, deque[float]] = {}
+_CONTACT_DUPLICATE_INDEX: dict[str, float] = {}
+_CONTACT_DUPLICATE_QUEUE: deque[tuple[float, str]] = deque()
+_CONTACT_SPAM_GUARD_LOCK = Lock()
+
+
+def _get_allowed_turnstile_hostnames() -> set[str]:
+    hostnames_raw = getattr(settings, "CLOUDFLARE_TURNSTILE_ALLOWED_HOSTNAMES", "")
+    if not hostnames_raw:
+        return set()
+
+    return {hostname.strip().lower() for hostname in hostnames_raw.split(",") if hostname.strip()}
+
+
+def _extract_client_ip(http_request: Request) -> str:
+    forwarded_for = http_request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        forwarded_ip = forwarded_for.split(",")[0].strip()
+        if forwarded_ip:
+            return forwarded_ip
+
+    real_ip = http_request.headers.get("x-real-ip", "").strip()
+    if real_ip:
+        return real_ip
+
+    if http_request.client and http_request.client.host:
+        return http_request.client.host.strip()
+
+    return "unknown"
+
+
+def _build_contact_fingerprint(request: ContactPrimeFireRequest) -> str:
+    components = [
+        (request.name or "").strip().lower(),
+        str(request.email).strip().lower(),
+        "".join(char for char in request.phone if char.isdigit()),
+        (request.subject or "").strip().lower(),
+        (request.note or "").strip().lower(),
+        (request.company or "").strip().lower(),
+        (request.industry or "").strip().lower(),
+        (request.service or "").strip().lower(),
+    ]
+    payload = "|".join(components)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+async def _enforce_contact_spam_protections(request: ContactPrimeFireRequest, client_ip: str) -> None:
+    if request.website and request.website.strip():
+        raise HTTPException(status_code=400, detail="Spam detected")
+
+    max_requests = max(1, int(getattr(settings, "CONTACT_PRIMEFIRE_RATE_LIMIT_MAX_REQUESTS", 3)))
+    rate_window_seconds = max(60, int(getattr(settings, "CONTACT_PRIMEFIRE_RATE_LIMIT_WINDOW_SECONDS", 600)))
+    duplicate_window_seconds = max(60, int(getattr(settings, "CONTACT_PRIMEFIRE_DUPLICATE_WINDOW_SECONDS", 600)))
+
+    now = time.monotonic()
+    fingerprint = _build_contact_fingerprint(request)
+
+    async with _CONTACT_SPAM_GUARD_LOCK:
+        bucket = _CONTACT_RATE_LIMIT_BUCKETS.setdefault(client_ip, deque())
+
+        rate_cutoff = now - rate_window_seconds
+        while bucket and bucket[0] <= rate_cutoff:
+            bucket.popleft()
+
+        if len(bucket) >= max_requests:
+            retry_after = max(1, int(rate_window_seconds - (now - bucket[0])))
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded for this IP",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        # Count the attempt immediately so repeated spam attempts also consume quota.
+        bucket.append(now)
+
+        duplicate_cutoff = now - duplicate_window_seconds
+        while _CONTACT_DUPLICATE_QUEUE and _CONTACT_DUPLICATE_QUEUE[0][0] <= duplicate_cutoff:
+            queued_timestamp, queued_fingerprint = _CONTACT_DUPLICATE_QUEUE.popleft()
+            if _CONTACT_DUPLICATE_INDEX.get(queued_fingerprint) == queued_timestamp:
+                _CONTACT_DUPLICATE_INDEX.pop(queued_fingerprint, None)
+
+        if fingerprint in _CONTACT_DUPLICATE_INDEX:
+            raise HTTPException(
+                status_code=409,
+                detail="Duplicate contact submission detected. Please wait before sending the same request again",
+            )
+
+        _CONTACT_DUPLICATE_INDEX[fingerprint] = now
+        _CONTACT_DUPLICATE_QUEUE.append((now, fingerprint))
+
 
 def _extract_contact_token(
     authorization: str | None,
@@ -41,6 +136,40 @@ def _extract_contact_token(
         return x_contact_token.strip()
 
     return None
+
+
+async def _verify_turnstile_token(turnstile_token: str, http_request: Request) -> None:
+    turnstile_secret = getattr(settings, "CLOUDFLARE_TURNSTILE_SECRET_KEY", "").strip()
+    if not turnstile_secret:
+        raise HTTPException(status_code=503, detail="Captcha validation is not configured")
+
+    remote_ip = _extract_client_ip(http_request)
+
+    verification_payload: dict[str, str] = {
+        "secret": turnstile_secret,
+        "response": turnstile_token,
+    }
+    if remote_ip and remote_ip != "unknown":
+        verification_payload["remoteip"] = remote_ip
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            verification_response = await client.post(
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                data=verification_payload,
+            )
+            verification_response.raise_for_status()
+            verification_data = verification_response.json()
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Captcha verification service unavailable") from exc
+
+    if not verification_data.get("success", False):
+        raise HTTPException(status_code=400, detail="Captcha verification failed")
+
+    allowed_hostnames = _get_allowed_turnstile_hostnames()
+    verified_hostname = str(verification_data.get("hostname", "")).strip().lower()
+    if allowed_hostnames and verified_hostname not in allowed_hostnames:
+        raise HTTPException(status_code=400, detail="Captcha hostname is not allowed")
 
 
 @router.post("/send", response_model=NotificationResponse)
@@ -247,6 +376,7 @@ async def send_notification(
 @router.post("/send/contact-primefire", response_model=ContactPrimeFireResponse)
 async def send_contact_primefire(
     request: ContactPrimeFireRequest,
+    http_request: Request,
     authorization: str | None = Header(default=None),
     x_contact_token: str | None = Header(default=None),
 ) -> ContactPrimeFireResponse:
@@ -256,6 +386,11 @@ async def send_contact_primefire(
 
     if not received_token or not configured_token or not compare_digest(received_token, configured_token):
         raise HTTPException(status_code=401, detail="Invalid or missing contact endpoint token")
+
+    client_ip = _extract_client_ip(http_request)
+    await _enforce_contact_spam_protections(request, client_ip)
+
+    await _verify_turnstile_token(request.cf_turnstile_response, http_request)
 
     notification_result = await send_contact_primefire_notification(request)
     if not notification_result.success:

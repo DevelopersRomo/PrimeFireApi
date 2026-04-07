@@ -2,6 +2,21 @@
 
 Guia rapida del endpoint para enviar correos de contacto con plantilla HTML.
 
+## Requisito de seguridad (Cloudflare Turnstile)
+
+Este endpoint ahora valida en backend el token de Cloudflare Turnstile.
+
+Variables de entorno requeridas:
+
+- `CLOUDFLARE_TURNSTILE_SECRET_KEY`: secret key de Turnstile.
+- `CLOUDFLARE_TURNSTILE_ALLOWED_HOSTNAMES` (opcional): hostnames permitidos separados por coma.
+
+Variables anti-spam (opcionales):
+
+- `CONTACT_PRIMEFIRE_RATE_LIMIT_MAX_REQUESTS` (default `3`)
+- `CONTACT_PRIMEFIRE_RATE_LIMIT_WINDOW_SECONDS` (default `600`)
+- `CONTACT_PRIMEFIRE_DUPLICATE_WINDOW_SECONDS` (default `600`)
+
 ## Endpoint
 
 - Metodo: `POST`
@@ -24,6 +39,8 @@ curl -X 'POST' \
   "company": "Acme Corp",
   "email": "john@acme.com",
   "phone": "+1 (829) 961-4866",
+  "cf_turnstile_response": "TOKEN_GENERADO_POR_TURNSTILE",
+  "website": "",
   "industry": "Manufacturing",
   "service": "Alarm System",
   "note": "I need a maintenance visit.",
@@ -48,6 +65,8 @@ curl -X 'POST' \
 - `company` (string, opcional): empresa.
 - `email` (string email, requerido): email del contacto.
 - `phone` (string, requerido): telefono del contacto.
+- `cf_turnstile_response` (string, requerido): token de Cloudflare Turnstile.
+- `website` (string, opcional): campo honeypot, debe enviarse vacio.
 - `industry` (string, opcional): industria.
 - `service` (string, requerido): servicio solicitado.
 - `note` (string, opcional): nota libre.
@@ -90,6 +109,8 @@ Validaciones por tipo:
   "company": "Acme Corp",
   "email": "john@acme.com",
   "phone": "+1 (829) 961-4866",
+  "cf_turnstile_response": "TOKEN_GENERADO_POR_TURNSTILE",
+  "website": "",
   "industry": "Manufacturing",
   "service": "Alarm System",
   "note": "I need a maintenance visit.",
@@ -120,5 +141,8 @@ Validaciones por tipo:
 
 - `200 OK`: correo enviado correctamente.
 - `401 Unauthorized`: token faltante o invalido.
+- `400 Bad Request`: captcha invalido o hostname no permitido.
+- `409 Conflict`: envio duplicado detectado dentro de la ventana anti-duplicados.
+- `429 Too Many Requests`: limite de 3 envios por IP en 10 minutos superado.
 - `422 Unprocessable Entity`: payload invalido (por ejemplo email/telefono/url).
-- `503 Service Unavailable`: fallo al enviar correo (Graph/API de correo).
+- `503 Service Unavailable`: fallo al enviar correo o servicio de validacion captcha no disponible.

@@ -29,7 +29,7 @@ def create_hardware(
 # ----------------------------
 @router.get("", response_model=list[HardwareInventoryRead])
 def get_hardware_list(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    statement = select(HardwareInventory).options(selectinload(HardwareInventory.Employee))
+    statement = select(HardwareInventory).options(selectinload(HardwareInventory.employee))
     return db.exec(statement).all()
 
 

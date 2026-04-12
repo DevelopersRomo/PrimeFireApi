@@ -261,6 +261,63 @@ def test_create_request_hours(
 
 
 @patch("api.time_off.BackgroundTasks.add_task")
+def test_create_request_half_day_requires_single_day(
+    _mock_add_task, override_deps, client: TestClient, emp_user: Employees
+):
+    override_deps(emp_user, {})
+
+    payload = {
+        "absence_type": "vacation",
+        "time_unit": "half_day",
+        "start_date": (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d"),
+        "end_date": (datetime.now(UTC) + timedelta(days=2)).strftime("%Y-%m-%d"),
+        "reason": "Invalid half-day range",
+    }
+
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 400
+    assert "half_day requests must use the same start_date and end_date" in response.json()["detail"]
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_create_request_rejects_overlap_with_active_request(
+    _mock_add_task, override_deps, client: TestClient, db_session: Session, emp_user: Employees
+):
+    override_deps(emp_user, {})
+
+    start = (datetime.now(UTC) + timedelta(days=3)).strftime("%Y-%m-%d")
+    end = (datetime.now(UTC) + timedelta(days=4)).strftime("%Y-%m-%d")
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+    existing = TimeOffRequest(
+        employee_id=emp_user.employee_id,
+        absence_type=AbsenceTypeEnum.VACATION.value,
+        status=RequestStatusEnum.APPROVED.value,
+        time_unit=TimeUnitEnum.FULL_DAY.value,
+        start_date=start,
+        end_date=end,
+        total_days="2.00",
+        reason="Existing approved request",
+        created_at=now_str,
+        updated_at=now_str,
+    )
+    db_session.add(existing)
+    db_session.commit()
+
+    payload = {
+        "absence_type": "vacation",
+        "time_unit": "full_day",
+        "start_date": start,
+        "end_date": end,
+        "reason": "Should be blocked",
+    }
+
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 400
+    assert "overlaps with an existing pending or approved" in response.json()["detail"]
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
 def test_approve_request_admin(
     mock_add_task, override_deps, client: TestClient, emp_other: Employees, time_off_request: TimeOffRequest
 ):

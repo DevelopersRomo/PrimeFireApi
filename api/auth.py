@@ -1,6 +1,8 @@
 import uuid
 import secrets
+import logging
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import bcrypt
 import httpx
@@ -27,6 +29,7 @@ REFRESH_TOKEN_EXPIRE_DAYS = 30
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # --- MODELOS ---
@@ -380,6 +383,24 @@ def _generate_secure_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def _normalize_token_for_lookup(raw_token: str | None) -> str:
+    """Normalize token values coming from query/body before DB lookup."""
+    candidate = (raw_token or "").strip().strip('"\'<>')
+    if not candidate:
+        return ""
+
+    decoded = unquote(candidate)
+
+    # Defensive path: some clients may pass full URL or raw query string instead of token value.
+    if "token=" in decoded:
+        query = urlsplit(decoded).query if "://" in decoded else decoded.lstrip("?")
+        extracted_values = parse_qs(query).get("token")
+        if extracted_values and extracted_values[0]:
+            decoded = unquote(extracted_values[0])
+
+    return decoded.strip().strip('"\'<>')
+
+
 def _find_user_by_email(db: Session, email: str) -> tuple[Employees | None, TenantEmployees | None]:
     """Find user by email in Employees or TenantEmployees tables."""
     tenant_user = db.exec(select(TenantEmployees).where(TenantEmployees.email == email)).first()
@@ -396,6 +417,16 @@ def _get_tenant_info(db: Session, internal_user: Employees | None, tenant_user: 
     - TenantEmployees → use the tenant's URL and title from TenantLogos.
     - Internal Employees → fall back to global APP_URL and "PrimeFire".
     """
+    def _force_https(raw_url: str | None) -> str:
+        cleaned = (raw_url or "").strip().rstrip("/")
+        if not cleaned:
+            return ""
+        if cleaned.startswith("https://"):
+            return cleaned
+        if cleaned.startswith("http://"):
+            return f"https://{cleaned[len('http://'):]}"
+        return f"https://{cleaned}"
+
     if tenant_user and tenant_user.tenant_id:
         logo = db.exec(
             select(TenantLogos)
@@ -403,8 +434,8 @@ def _get_tenant_info(db: Session, internal_user: Employees | None, tenant_user: 
             .order_by(TenantLogos.logo_id)
         ).first()
         if logo and logo.url:
-            return logo.url.rstrip("/"), logo.title
-    return getattr(settings, "APP_URL", ""), "PrimeFire"
+            return _force_https(logo.url), logo.title
+    return _force_https(getattr(settings, "APP_URL", "")), "PrimeFire"
 
 
 @router.post("/password-recovery")
@@ -459,15 +490,18 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
     """
     Reset password using a valid token.
     """
+    token_value = _normalize_token_for_lookup(request.token)
+
     # Find token
     auth_token = db.exec(
         select(AuthToken).where(
-            AuthToken.token == request.token,
+            AuthToken.token == token_value,
             AuthToken.token_type == "password_recovery",
         )
     ).first()
 
     if not auth_token:
+        logger.warning("Password recovery token not found. prefix=%s len=%s", token_value[:8], len(token_value))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or already used token.")
 
     if auth_token.used_at is not None:
@@ -556,14 +590,17 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
     """
     Verify a magic link token and return JWT tokens (auto-login).
     """
+    token_value = _normalize_token_for_lookup(token)
+
     auth_token = db.exec(
         select(AuthToken).where(
-            AuthToken.token == token,
+            AuthToken.token == token_value,
             AuthToken.token_type == "magic_link",
         )
     ).first()
 
     if not auth_token:
+        logger.warning("Magic link token not found. prefix=%s len=%s", token_value[:8], len(token_value))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or already used token.")
 
     if auth_token.used_at is not None:

@@ -31,7 +31,12 @@ def get_driver(requested_driver):
 
 
 def create_engine_from_env(prefix="DB"):
+    '''
+    #for windows 
     server = os.getenv(f"{prefix}_SERVER", "localhost\\SQLEXPRESS")
+    '''
+     # For Linux/Mac, default to localhost with default port
+    server = os.getenv(f"{prefix}_SERVER", "localhost,1433") 
     database = os.getenv(f"{prefix}_DATABASE", "PrimeFireCorp")
     username = os.getenv(f"{prefix}_USERNAME", "sa")
     password = os.getenv(f"{prefix}_PASSWORD", "")

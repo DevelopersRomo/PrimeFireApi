@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import api.notifications as notifications_api
 from api.dependencies import get_current_employee, get_current_employee_with_permissions
 from main import app
 
@@ -28,10 +29,17 @@ def mock_get_current_admin_permissions():
 
 @pytest.fixture(autouse=True)
 def setup_dependencies():
+    notifications_api._CONTACT_RATE_LIMIT_BUCKETS.clear()
+    notifications_api._CONTACT_DUPLICATE_INDEX.clear()
+    notifications_api._CONTACT_DUPLICATE_QUEUE.clear()
+
     app.dependency_overrides[get_current_employee] = mock_get_current_employee
     app.dependency_overrides[get_current_employee_with_permissions] = mock_get_current_admin_permissions
     yield
     app.dependency_overrides.clear()
+    notifications_api._CONTACT_RATE_LIMIT_BUCKETS.clear()
+    notifications_api._CONTACT_DUPLICATE_INDEX.clear()
+    notifications_api._CONTACT_DUPLICATE_QUEUE.clear()
 
 
 @pytest.fixture
@@ -121,25 +129,27 @@ def test_send_contact_primefire(client):
         "name": "John Doe",
         "email": "johndoe@example.com",
         "phone": "1234567890",
+        "cf_turnstile_response": "valid-turnstile-token",
         "subject": "Inquiry",
         "message": "Hello PrimeFire",
     }
 
     # Patch settings token
     with patch("api.notifications.settings.CONTACT_PRIMEFIRE_API_TOKEN", "valid-token"):
-        with patch("api.notifications.send_contact_primefire_notification", new_callable=AsyncMock) as mock_contact:
-            mock_ret = MagicMock()
-            mock_ret.success = True
-            mock_ret.message_id = "msg_123"
-            mock_contact.return_value = mock_ret
+        with patch("api.notifications._verify_turnstile_token", new_callable=AsyncMock):
+            with patch("api.notifications.send_contact_primefire_notification", new_callable=AsyncMock) as mock_contact:
+                mock_ret = MagicMock()
+                mock_ret.success = True
+                mock_ret.message_id = "msg_123"
+                mock_contact.return_value = mock_ret
 
-            headers = {"Authorization": "Bearer valid-token"}
-            response = client.post("/notifications/send/contact-primefire", json=payload, headers=headers)
+                headers = {"Authorization": "Bearer valid-token"}
+                response = client.post("/notifications/send/contact-primefire", json=payload, headers=headers)
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] is True
-            assert data["message_id"] == "msg_123"
+                assert response.status_code == 200
+                data = response.json()
+                assert data["success"] is True
+                assert data["message_id"] == "msg_123"
 
 
 def test_send_contact_primefire_unauthorized(client):
@@ -148,6 +158,7 @@ def test_send_contact_primefire_unauthorized(client):
         "name": "John Doe",
         "email": "johndoe@example.com",
         "phone": "1234567890",
+        "cf_turnstile_response": "valid-turnstile-token",
         "subject": "Inquiry",
         "message": "Hello PrimeFire",
     }
@@ -158,3 +169,84 @@ def test_send_contact_primefire_unauthorized(client):
         response = client.post("/notifications/send/contact-primefire", json=payload, headers=headers)
 
         assert response.status_code == 401
+
+
+def test_send_contact_primefire_honeypot_rejected(client):
+    payload = {
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "phone": "1234567890",
+        "cf_turnstile_response": "valid-turnstile-token",
+        "website": "https://spam.example",
+        "subject": "Inquiry",
+        "message": "Hello PrimeFire",
+    }
+
+    with patch("api.notifications.settings.CONTACT_PRIMEFIRE_API_TOKEN", "valid-token"):
+        headers = {"Authorization": "Bearer valid-token"}
+        response = client.post("/notifications/send/contact-primefire", json=payload, headers=headers)
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Spam detected"
+
+
+def test_send_contact_primefire_duplicate_rejected(client):
+    from unittest.mock import MagicMock
+
+    payload = {
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "phone": "1234567890",
+        "cf_turnstile_response": "valid-turnstile-token",
+        "website": "",
+        "subject": "Inquiry",
+        "message": "Hello PrimeFire",
+    }
+
+    with patch("api.notifications.settings.CONTACT_PRIMEFIRE_API_TOKEN", "valid-token"):
+        with patch("api.notifications._verify_turnstile_token", new_callable=AsyncMock):
+            with patch("api.notifications.send_contact_primefire_notification", new_callable=AsyncMock) as mock_contact:
+                mock_ret = MagicMock()
+                mock_ret.success = True
+                mock_ret.message_id = "msg_123"
+                mock_contact.return_value = mock_ret
+
+                headers = {"Authorization": "Bearer valid-token"}
+                first_response = client.post("/notifications/send/contact-primefire", json=payload, headers=headers)
+                second_response = client.post("/notifications/send/contact-primefire", json=payload, headers=headers)
+
+                assert first_response.status_code == 200
+                assert second_response.status_code == 409
+
+
+def test_send_contact_primefire_rate_limit_per_ip(client):
+    from unittest.mock import MagicMock
+
+    base_payload = {
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "phone": "1234567890",
+        "cf_turnstile_response": "valid-turnstile-token",
+        "website": "",
+        "subject": "Inquiry",
+        "message": "Hello PrimeFire",
+    }
+
+    with patch("api.notifications.settings.CONTACT_PRIMEFIRE_API_TOKEN", "valid-token"):
+        with patch("api.notifications._verify_turnstile_token", new_callable=AsyncMock):
+            with patch("api.notifications.send_contact_primefire_notification", new_callable=AsyncMock) as mock_contact:
+                mock_ret = MagicMock()
+                mock_ret.success = True
+                mock_ret.message_id = "msg_123"
+                mock_contact.return_value = mock_ret
+
+                headers = {"Authorization": "Bearer valid-token"}
+                responses = []
+                for idx in range(4):
+                    payload = {**base_payload, "note": f"unique-{idx}"}
+                    responses.append(client.post("/notifications/send/contact-primefire", json=payload, headers=headers))
+
+                assert responses[0].status_code == 200
+                assert responses[1].status_code == 200
+                assert responses[2].status_code == 200
+                assert responses[3].status_code == 429

@@ -108,6 +108,31 @@ class Settings(BaseSettings):
         validation_alias="CONTACT_PRIMEFIRE_API_TOKEN",
         description="Static API token for /notifications/send/contact-primefire endpoint",
     )
+    CLOUDFLARE_TURNSTILE_SECRET_KEY: str = Field(
+        default="",
+        validation_alias="CLOUDFLARE_TURNSTILE_SECRET_KEY",
+        description="Cloudflare Turnstile secret key used to validate contact form captcha tokens",
+    )
+    CLOUDFLARE_TURNSTILE_ALLOWED_HOSTNAMES: str = Field(
+        default="primefire.us,www.primefire.us,primefire.do,www.primefire.do",
+        validation_alias="CLOUDFLARE_TURNSTILE_ALLOWED_HOSTNAMES",
+        description="Comma-separated hostnames allowed in Cloudflare Turnstile verification results",
+    )
+    CONTACT_PRIMEFIRE_RATE_LIMIT_MAX_REQUESTS: int = Field(
+        default=3,
+        validation_alias="CONTACT_PRIMEFIRE_RATE_LIMIT_MAX_REQUESTS",
+        description="Maximum contact submissions allowed per IP in the configured rate limit window",
+    )
+    CONTACT_PRIMEFIRE_RATE_LIMIT_WINDOW_SECONDS: int = Field(
+        default=600,
+        validation_alias="CONTACT_PRIMEFIRE_RATE_LIMIT_WINDOW_SECONDS",
+        description="Rate limit window for contact submissions, in seconds",
+    )
+    CONTACT_PRIMEFIRE_DUPLICATE_WINDOW_SECONDS: int = Field(
+        default=600,
+        validation_alias="CONTACT_PRIMEFIRE_DUPLICATE_WINDOW_SECONDS",
+        description="Window used to block duplicate contact submissions, in seconds",
+    )
 
     # File upload settings
     UPLOAD_DIR: str = Field(

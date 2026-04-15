@@ -61,6 +61,10 @@ class ContactPrimeFireRequest(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     email: EmailStr
     phone: str = Field(min_length=7, max_length=30)
+    cf_turnstile_response: str = Field(
+        min_length=1,
+        max_length=2048,
+    )
 
     # Optional fields
     to_email: EmailStr | None = None
@@ -72,12 +76,24 @@ class ContactPrimeFireRequest(BaseModel):
     company: str | None = Field(default=None, max_length=150)
     industry: str | None = Field(default=None, max_length=120)
     service: str | None = Field(default=None, max_length=120)
+    website: str | None = Field(default=None, max_length=255)
     fields: list[ContactPrimeFireField] = Field(default_factory=list)
     note: str | None = Field(default=None, max_length=4000)
 
     @classmethod
     @field_validator(
-        "title", "subject", "subtitle", "name", "company", "industry", "service", "note", "phone", mode="before"
+        "title",
+        "subject",
+        "subtitle",
+        "name",
+        "company",
+        "industry",
+        "service",
+        "website",
+        "note",
+        "phone",
+        "cf_turnstile_response",
+        mode="before",
     )
     @classmethod
     def strip_optional_strings(cls, value):

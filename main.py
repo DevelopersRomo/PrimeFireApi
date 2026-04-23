@@ -30,6 +30,7 @@ from api.notifications import router as notifications_router
 from api.permissions import router as permissions_router
 from api.products import router as products_router
 from api.quotations import router as quotations_router
+from api.quotation_items import router as quotation_items_router
 from api.roles import router as roles_router
 from api.tenants import router as tenants_router
 from api.ticket_attachments import router as ticket_attachments_router
@@ -263,9 +264,11 @@ app.include_router(customer_notes_router, tags=["customer_notes"])
 app.include_router(customer_contacts_router, tags=["customer_contacts"])
 app.include_router(customer_attachments_router, tags=["customer_attachments"])
 
+
 # IMPORTANT
 app.include_router(products_router, prefix="/products", tags=["products"])
 app.include_router(quotations_router)  # prefix already defined in router
+app.include_router(quotation_items_router)
 app.include_router(backups_router, prefix="/backups", tags=["backups"])
 
 

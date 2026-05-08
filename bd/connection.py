@@ -89,8 +89,18 @@ def create_engine_from_env(prefix="DB"):
         "Connection Timeout=30",
     ]
 
-    if username and password:
-        odbc_params.extend((f"UID={username}", f"PWD={password}"))
+    # Check for trusted connection env var (e.g. DB_TRUSTED_CONNECTION=true)
+    trusted_conn_env = os.getenv(f"{prefix}_TRUSTED_CONNECTION", "").lower()
+    if trusted_conn_env == "true":
+        odbc_params.append("Trusted_Connection=yes")
+    elif username and password:
+        # Escape password for ODBC connection string
+        # If password contains special chars (semicolons, etc.), wrap in braces
+        if any(c in password for c in ";{}"):
+            escaped_password = "{" + password + "}"
+        else:
+            escaped_password = password
+        odbc_params.extend((f"UID={username}", f"PWD={escaped_password}"))
     else:
         odbc_params.append("Trusted_Connection=yes")
 

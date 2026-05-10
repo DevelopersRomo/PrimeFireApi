@@ -1,15 +1,22 @@
 from datetime import UTC, datetime
-from dateutil.relativedelta import relativedelta
 
+from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, and_, delete, or_, select
+from sqlmodel import Session, and_, or_, select
 
 from api.dependencies import get_current_employee, get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
 from core.config import settings
 from models.employees import Employees
-from models.tickets import TicketPriority, TicketRecurrenceConfig, TicketRecurrenceType, TicketSLA, TicketStatus, TicketType, Tickets
+from models.tickets import (
+    TicketPriority,
+    TicketRecurrenceConfig,
+    TicketRecurrenceType,
+    TicketSLA,
+    TicketStatus,
+    Tickets,
+)
 from schemas.tickets import Ticket, TicketCreate, TicketEmployee, TicketUpdate
 from services.notifications.notifications import (
     notify_ticket_created,
@@ -24,17 +31,17 @@ def _calculate_next_occurrence(from_date: datetime, recurrence_type: TicketRecur
     """Calculate the next occurrence date based on recurrence type."""
     if recurrence_type == TicketRecurrenceType.DAILY:
         return from_date + relativedelta(days=1)
-    elif recurrence_type == TicketRecurrenceType.WEEKLY:
+    if recurrence_type == TicketRecurrenceType.WEEKLY:
         return from_date + relativedelta(weeks=1)
-    elif recurrence_type == TicketRecurrenceType.BIWEEKLY:
+    if recurrence_type == TicketRecurrenceType.BIWEEKLY:
         return from_date + relativedelta(weeks=2)
-    elif recurrence_type == TicketRecurrenceType.TRIWEEKLY:
+    if recurrence_type == TicketRecurrenceType.TRIWEEKLY:
         return from_date + relativedelta(weeks=3)
-    elif recurrence_type == TicketRecurrenceType.MONTHLY:
+    if recurrence_type == TicketRecurrenceType.MONTHLY:
         return from_date + relativedelta(months=1)
-    elif recurrence_type == TicketRecurrenceType.BIMONTHLY:
+    if recurrence_type == TicketRecurrenceType.BIMONTHLY:
         return from_date + relativedelta(months=2)
-    elif recurrence_type == TicketRecurrenceType.YEARLY:
+    if recurrence_type == TicketRecurrenceType.YEARLY:
         return from_date + relativedelta(years=1)
     return from_date
 
@@ -45,6 +52,55 @@ def has_admin_actions(user_permissions: dict) -> bool:
         if perm.get("module_key") == "tickets":
             return perm.get("permissions", {}).get("admin_actions", False)
     return False
+
+
+def get_subordinate_ids(manager_id: int, db: Session) -> list[int]:
+    """Return all subordinate employee IDs (direct + indirect) for a manager.
+
+    Recursively collects employees whose manager_employee_id points to the manager
+    or any of their subordinates. Uses breadth-first traversal with a single query
+    per level (typical org depth ≤3).
+    """
+    result: set[int] = set()
+    to_process = {manager_id}
+
+    while to_process:
+        current_batch = list(to_process)
+        to_process.clear()
+
+        for current in current_batch:
+            rows = db.exec(
+                select(Employees.employee_id).where(Employees.manager_employee_id == current)
+            ).all()
+            for emp_id in rows:
+                if emp_id not in result:
+                    result.add(emp_id)
+                    to_process.add(emp_id)
+
+    return list(result)
+
+
+def get_ticket_visibility_scope(user_permissions: dict, db: Session) -> dict:
+    """Return visibility scope for the current employee.
+
+    Returns {'scope': 'admin'|'manager'|'user', 'allowed_ids': set[int]}.
+    - admin: has admin_actions on tickets module → empty allowed_ids (no filter needed)
+    - manager: has subordinates via manager_employee_id → self + all subordinates
+    - user: neither admin nor manager → self only
+    """
+    employee_id = user_permissions["employee"]["employee_id"]
+
+    if has_admin_actions(user_permissions):
+        return {"scope": "admin", "allowed_ids": set()}
+
+    subordinate_ids = get_subordinate_ids(employee_id, db)
+    allowed_ids = {employee_id}
+
+    if subordinate_ids:
+        allowed_ids.update(subordinate_ids)
+        return {"scope": "manager", "allowed_ids": allowed_ids}
+
+    return {"scope": "user", "allowed_ids": allowed_ids}
 
 
 def ticket_to_schema(db_ticket: Tickets) -> Ticket:
@@ -65,6 +121,7 @@ def ticket_to_schema(db_ticket: Tickets) -> Ticket:
         assigned_to=db_ticket.assigned_to,
         created_at=db_ticket.created_at,
         updated_at=db_ticket.updated_at,
+        in_progress_at=db_ticket.in_progress_at,
         recurrence_type=recurrence_type,
         creator=TicketEmployee(
             employee_id=db_ticket.creator.employee_id,
@@ -101,10 +158,11 @@ def get_ticket_stats(
 ):
     """
     Return aggregated ticket counts grouped by status, priority, ticket_type, and SLA.
-    Admin (AdminActions): sees all tickets. User: sees only their own.
+    Admin (AdminActions): sees all tickets. Manager: sees own + subordinates. User: sees only their own.
     """
-    current_employee_id = user_permissions["employee"]["employee_id"]
-    is_admin = has_admin_actions(user_permissions)
+    scope = get_ticket_visibility_scope(user_permissions, db)
+    is_admin = scope["scope"] == "admin"
+    allowed_ids = scope["allowed_ids"]
 
     query = select(Tickets)
 
@@ -122,14 +180,13 @@ def get_ticket_stats(
             )
         else:
             raise HTTPException(status_code=403, detail="Non-admin users can only view their own stats")
-    else:
-        if not is_admin:
-            query = query.where(
-                or_(
-                    Tickets.created_by == current_employee_id,
-                    Tickets.assigned_to == current_employee_id,
-                )
+    elif not is_admin:
+        query = query.where(
+            or_(
+                Tickets.created_by.in_(allowed_ids),
+                Tickets.assigned_to.in_(allowed_ids),
             )
+        )
 
     tickets = db.exec(query).all()
 
@@ -163,7 +220,11 @@ def get_ticket_stats_users(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
-    """Return list of employees who have tickets, with their ticket counts."""
+    """Return list of employees who have tickets, with their ticket counts. Scoped by visibility tier."""
+    scope = get_ticket_visibility_scope(user_permissions, db)
+    is_admin = scope["scope"] == "admin"
+    allowed_ids = scope["allowed_ids"]
+
     query = select(Tickets.created_by).distinct()
     created_by_ids = db.exec(query).all()
 
@@ -173,6 +234,16 @@ def get_ticket_stats_users(
     all_user_ids = set(created_by_ids + assigned_to_ids)
     if not all_user_ids:
         return []
+
+    # Non-admin: restrict to employees within visibility scope
+    if not is_admin:
+        all_user_ids &= allowed_ids
+        # Manager sees only subordinates (exclude self from dropdown)
+        if scope["scope"] == "manager":
+            current_id = user_permissions["employee"]["employee_id"]
+            all_user_ids.discard(current_id)
+        if not all_user_ids:
+            return []
 
     employees = db.exec(select(Employees).where(Employees.employee_id.in_(all_user_ids))).all()
 
@@ -186,12 +257,14 @@ def get_ticket_stats_users(
                 )
             )
         ).all()
-        result.append({
-            "employee_id": emp.employee_id,
-            "display_name": emp.display_name,
-            "email": emp.email,
-            "ticket_count": len(count),
-        })
+        result.append(
+            {
+                "employee_id": emp.employee_id,
+                "display_name": emp.display_name,
+                "email": emp.email,
+                "ticket_count": len(count),
+            }
+        )
 
     result.sort(key=lambda x: x["display_name"] or "")
     return result
@@ -213,9 +286,13 @@ def get_tickets(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
-    """Get tickets with optional filters and pagination."""
+    """Get tickets with optional filters and pagination. Visibility scoped by role tier."""
+    scope = get_ticket_visibility_scope(user_permissions, db)
+    is_admin = scope["scope"] == "admin"
+    allowed_ids = scope["allowed_ids"]
+
     # Build base query with relationships
     query = select(Tickets).options(
         selectinload(Tickets.creator),
@@ -223,8 +300,30 @@ def get_tickets(
         selectinload(Tickets.recurrence_config),
     )
 
-    # Apply filters
+    # Enforce visibility scope (non-admin only)
     filters = []
+    if not is_admin:
+        filters.append(
+            or_(
+                Tickets.created_by.in_(allowed_ids),
+                Tickets.assigned_to.in_(allowed_ids),
+            )
+        )
+
+    # Validate out-of-scope params (non-admin only)
+    if not is_admin:
+        if assigned_to is not None and assigned_to not in allowed_ids:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You do not have permission to view tickets assigned to employee {assigned_to}",
+            )
+        if created_by is not None and created_by not in allowed_ids:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You do not have permission to view tickets created by employee {created_by}",
+            )
+
+    # Apply user-provided filters
     if status:
         filters.append(Tickets.status == status)
     if priority:
@@ -405,8 +504,12 @@ async def update_ticket(
     for key, value in update_data.items():
         setattr(db_ticket, key, value)
 
-    # Handle recurrence: DELETE config if ticket is set to inactive (closed/resolved)
+    # Set in_progress_at when ticket moves to in_progress for the first time
     new_status = ticket_update.status
+    if new_status == TicketStatus.IN_PROGRESS and db_ticket.in_progress_at is None:
+        db_ticket.in_progress_at = datetime.now(UTC)
+
+    # Handle recurrence: DELETE config if ticket is set to inactive (closed/resolved)
     if new_status == TicketStatus.INACTIVE and db_ticket.recurrence_config:
         db.delete(db_ticket.recurrence_config)
 
@@ -417,23 +520,22 @@ async def update_ticket(
             # Remove recurrence config entirely if user cleared recurrence
             if db_ticket.recurrence_config:
                 db.delete(db_ticket.recurrence_config)
+        # Create or update recurrence config
+        elif db_ticket.recurrence_config:
+            db_ticket.recurrence_config.recurrence_type = recurrence_type
+            db_ticket.recurrence_config.is_active = True
+            db_ticket.recurrence_config.next_occurrence = _calculate_next_occurrence(
+                datetime.now(UTC), recurrence_type
+            )
         else:
-            # Create or update recurrence config
-            if db_ticket.recurrence_config:
-                db_ticket.recurrence_config.recurrence_type = recurrence_type
-                db_ticket.recurrence_config.is_active = True
-                db_ticket.recurrence_config.next_occurrence = _calculate_next_occurrence(
-                    datetime.now(UTC), recurrence_type
-                )
-            else:
-                recurrence_config = TicketRecurrenceConfig(
-                    ticket_id=db_ticket.ticket_id,
-                    recurrence_type=recurrence_type,
-                    next_occurrence=_calculate_next_occurrence(datetime.now(UTC), recurrence_type),
-                    parent_ticket_id=None,
-                    is_active=True,
-                )
-                db.add(recurrence_config)
+            recurrence_config = TicketRecurrenceConfig(
+                ticket_id=db_ticket.ticket_id,
+                recurrence_type=recurrence_type,
+                next_occurrence=_calculate_next_occurrence(datetime.now(UTC), recurrence_type),
+                parent_ticket_id=None,
+                is_active=True,
+            )
+            db.add(recurrence_config)
 
     # Update timestamp
     db_ticket.updated_at = datetime.now(UTC)

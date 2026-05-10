@@ -25,7 +25,6 @@ class EmployeeUpdate(SQLModel):
     title: str | None = None
     department: str | None = None
     office: str | None = None
-    email: str | None = None
     phone: str | None = None
     mobile_phone: str | None = None
     office_phone: str | None = None

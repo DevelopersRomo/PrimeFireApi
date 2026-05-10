@@ -246,6 +246,53 @@ def other_employee(db_session: Session):
 
 
 @pytest.fixture
+def manager_employee(db_session: Session):
+    """Employee that has subordinates (reports)."""
+    emp = create_test_record(
+        db_session,
+        Employees,
+        email="manager@example.com",
+        first_name="Manager",
+        last_name="Test",
+        display_name="Manager Test",
+    )
+    db_session.commit()
+    return emp
+
+
+@pytest.fixture
+def subordinate_employee(db_session: Session, manager_employee: Employees):
+    """Employee that reports to manager_employee."""
+    emp = create_test_record(
+        db_session,
+        Employees,
+        email="subordinate@example.com",
+        first_name="Subordinate",
+        last_name="Test",
+        display_name="Subordinate Test",
+        manager_employee_id=manager_employee.employee_id,
+    )
+    db_session.commit()
+    return emp
+
+
+@pytest.fixture
+def second_subordinate(db_session: Session, manager_employee: Employees):
+    """Second employee that reports to manager_employee (for multi-subordinate tests)."""
+    emp = create_test_record(
+        db_session,
+        Employees,
+        email="subordinate2@example.com",
+        first_name="Subordinate",
+        last_name="Two",
+        display_name="Subordinate Two",
+        manager_employee_id=manager_employee.employee_id,
+    )
+    db_session.commit()
+    return emp
+
+
+@pytest.fixture
 def auth_overrides(current_employee: Employees):
     """Override auth dependencies to use the test employee."""
     from api.dependencies import get_current_employee, get_current_employee_with_permissions
@@ -257,6 +304,48 @@ def auth_overrides(current_employee: Employees):
         return {
             "employee": {"employee_id": current_employee.employee_id, "email": current_employee.email},
             "permissions": [],
+        }
+
+    app.dependency_overrides[get_current_employee] = mock_get_current_employee
+    app.dependency_overrides[get_current_employee_with_permissions] = mock_get_current_employee_with_permissions
+    yield
+    app.dependency_overrides.pop(get_current_employee, None)
+    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
+
+
+@pytest.fixture
+def manager_auth_overrides(manager_employee: Employees):
+    """Override auth to use manager_employee with no admin permissions (manager tier)."""
+    from api.dependencies import get_current_employee, get_current_employee_with_permissions
+
+    def mock_get_current_employee():
+        return manager_employee
+
+    def mock_get_current_employee_with_permissions():
+        return {
+            "employee": {"employee_id": manager_employee.employee_id, "email": manager_employee.email},
+            "permissions": [],
+        }
+
+    app.dependency_overrides[get_current_employee] = mock_get_current_employee
+    app.dependency_overrides[get_current_employee_with_permissions] = mock_get_current_employee_with_permissions
+    yield
+    app.dependency_overrides.pop(get_current_employee, None)
+    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
+
+
+@pytest.fixture
+def admin_auth_overrides(current_employee: Employees):
+    """Override auth with admin_actions on tickets module (admin tier)."""
+    from api.dependencies import get_current_employee, get_current_employee_with_permissions
+
+    def mock_get_current_employee():
+        return current_employee
+
+    def mock_get_current_employee_with_permissions():
+        return {
+            "employee": {"employee_id": current_employee.employee_id, "email": current_employee.email},
+            "permissions": [{"module_key": "tickets", "permissions": {"admin_actions": True}}],
         }
 
     app.dependency_overrides[get_current_employee] = mock_get_current_employee

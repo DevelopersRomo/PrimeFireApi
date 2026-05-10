@@ -1,0 +1,155 @@
+{
+  "status": "ok",
+  "project": "PrimeFire",
+  "initialized_at": "2026-05-08T21:20:00-06:00",
+  "persistence_mode": "openspec",
+  "engram_available": false,
+  "stack": {
+    "backend": {
+      "framework": "FastAPI",
+      "version": "0.135.1",
+      "language": "Python",
+      "language_version": "3.12+",
+      "orm": "SQLModel (SQLAlchemy)",
+      "database": "Azure SQL Server",
+      "server": "Uvicorn 0.41.0"
+    },
+    "frontend": {
+      "framework": "Angular",
+      "version": "18.2.0",
+      "language": "TypeScript",
+      "language_version": "5.5.2",
+      "ui_library": "Angular Material 18.2.14",
+      "auth": "MSAL Angular 4.0.1",
+      "state_management": "RxJS 7.8"
+    }
+  },
+  "architecture": {
+    "patterns": [
+      "Multi-tenant REST API",
+      "CQRS-lite (models/schemas separation)",
+      "Dependency injection (FastAPI Depends)",
+      "Lazy-loaded Angular modules",
+      "Smart/Dumb component separation",
+      "Standalone components (Angular)",
+      "OnPush change detection"
+    ],
+    "auth_schemes": [
+      "Azure AD OAuth2 PKCE",
+      "Local password grant",
+      "JWT Bearer",
+      "Contact token (static)"
+    ]
+  },
+  "testing_capabilities": {
+    "backend": {
+      "runner": "pytest",
+      "command": "pytest",
+      "full_command": "pytest tests/ (from venv)",
+      "framework": "pytest 9.0.2",
+      "asyncio_mode": "strict",
+      "test_files": 28,
+      "sample_test_run": "10 passed, 25 warnings in 7.41s",
+      "test_db": "SQLite (temporary, auto-created per test session)",
+      "layers": {
+        "unit": { "available": true, "tool": "pytest" },
+        "integration": { "available": true, "tool": "TestClient + SQLite temp DB" },
+        "e2e": { "available": false, "tool": null }
+      },
+      "fixtures": [
+        "client (TestClient)",
+        "db_session (SQLModel Session)",
+        "auth_headers (mock JWT)",
+        "auth_overrides (dependency override)",
+        "current_employee",
+        "other_employee",
+        "mock_upload_dirs",
+        "setup_and_cleanup (autouse)",
+        "setup_test_env (session autouse)"
+      ],
+      "coverage": {
+        "available": false,
+        "command": null,
+        "note": "pytest-cov not in requirements.txt"
+      }
+    },
+    "frontend": {
+      "runner": "karma",
+      "command": "ng test",
+      "framework": "Jasmine + Karma",
+      "test_files": 32,
+      "layers": {
+        "unit": { "available": true, "tool": "Jasmine + TestBed" },
+        "integration": { "available": false, "tool": null },
+        "e2e": { "available": false, "tool": null }
+      },
+      "coverage": {
+        "available": false,
+        "command": null
+      }
+    }
+  },
+  "strict_tdd": {
+    "enabled": true,
+    "reason": "Test runner detected (pytest + Jasmine/Karma), no explicit disabling found"
+  },
+  "quality_tools": {
+    "backend": {
+      "linter": { "available": true, "command": "ruff check .", "tool": "ruff" },
+      "type_checker": { "available": true, "command": "mypy .", "tool": "mypy" },
+      "formatter": { "available": true, "command": "ruff format .", "tool": "ruff format" },
+      "spell_checker": { "available": true, "command": "codespell", "tool": "codespell" }
+    },
+    "frontend": {
+      "linter": { "available": true, "command": "ng lint", "tool": "ESLint" },
+      "type_checker": { "available": true, "command": "tsc --noEmit", "tool": "TypeScript strict mode" },
+      "formatter": { "available": true, "command": null, "tool": "Prettier (inferred)" }
+    }
+  },
+  "conventions": {
+    "python": {
+      "line_length": 120,
+      "target_version": "py312",
+      "docstring_style": "google",
+      "quote_style": "double",
+      "indent_style": "space",
+      "isort_case_sensitive": true,
+      "mccabe_max_complexity": 20,
+      "type_hints": true,
+      "naming": "snake_case functions, PascalCase classes"
+    },
+    "typescript": {
+      "strict_mode": true,
+      "no_implicit_override": true,
+      "no_property_access_from_index_signature": true,
+      "no_implicit_returns": true,
+      "no_fallthrough_cases_in_switch": true,
+      "naming": "camelCase variables, PascalCase classes, kebab-case files"
+    },
+    "angular": {
+      "standalone": true,
+      "change_detection": "OnPush",
+      "guards": "functional (CanActivateFn)",
+      "imports": "MaterialModule preferred over individual modules",
+      "colors": "NEVER hardcode background or text colors"
+    }
+  },
+  "persistence": {
+    "mode": "openspec",
+    "config_path": "PrimeFireApi/openspec/config.yaml",
+    "specs_path": "PrimeFireApi/openspec/specs/",
+    "changes_path": "PrimeFireApi/openspec/changes/",
+    "archive_path": "PrimeFireApi/openspec/changes/archive/",
+    "init_result_path": "PrimeFireApi/.sdd/init-result.json"
+  },
+  "warnings": [
+    "Engram NOT available — using file-based openspec persistence",
+    "Frontend test runner not verified (requires Node.js + Chrome)",
+    "No pytest-cov installed — coverage unavailable for backend",
+    "Frontend e2e tests not configured (no Playwright/Cypress)"
+  ],
+  "next_recommended": [
+    "Run /sdd-explore to investigate a feature or idea",
+    "Run /sdd-new <change-name> to create a new change proposal"
+  ]
+}

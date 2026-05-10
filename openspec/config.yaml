@@ -2,10 +2,39 @@
 schema: spec-driven
 
 context: |
-  Tech stack: Python 3.12+, FastAPI, SQLAlchemy, async/await
-  Architecture: Multi-tenant API with dependency injection
-  Testing: pytest (asyncio strict mode)
-  Style: Ruff (py312 target, google docstring), mypy, codespell
+  Tech stack: Python 3.12+, FastAPI 0.135.1, SQLModel/SQLAlchemy, Azure SQL Server, Angular 18.2+
+  Architecture: Multi-tenant REST API (FastAPI) + Angular SPA with lazy-loaded modules. Auth: Azure AD OAuth2 PKCE, JWT Bearer, password grant, contact token. CQRS-lite with models/schemas separation.
+  Testing: pytest 9.0.2 (asyncio strict mode), TestClient with SQLite temp DB, Jasmine/Karma for Angular
+  Style: Ruff (py312, 120col, google docstrings, ~50 rule families), mypy (ignore_missing_imports), codespell, TypeScript strict mode
+  Frontend: Angular 18.2 standalone components, OnPush, Angular Material, MSAL 4.0.1, RxJS
+
+strict_tdd: true
+
+testing:
+  backend:
+    runner: pytest
+    command: pytest
+    framework: pytest 9.0.2
+    asyncio_mode: strict
+    unit: true
+    integration: true
+    integration_tool: TestClient + SQLite temp DB
+    integration_fixtures: client, db_session, auth_headers, auth_overrides, current_employee, mock_upload_dirs
+    coverage: false
+    coverage_command: null
+    test_files: 28
+  frontend:
+    runner: karma
+    command: ng test
+    framework: Jasmine + Karma
+    angular_testbed: true
+    unit: true
+    integration: false
+    integration_tool: null
+    e2e: false
+    coverage: false
+    coverage_command: null
+    test_files: 32
 
 rules:
   proposal:
@@ -24,8 +53,12 @@ rules:
   apply:
     - Follow existing code patterns and conventions
     - Load relevant coding skills for the project stack
+    tdd: true
+    test_command: pytest tests/
+    build_command: null
   verify:
-    - Run tests if test infrastructure exists
-    - Compare implementation against every spec scenario
+    test_command: pytest tests/
+    build_command: null
+    coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas (large removals)

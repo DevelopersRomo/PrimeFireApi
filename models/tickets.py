@@ -108,6 +108,7 @@ class Tickets(SQLModel, table=True):
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    in_progress_at: datetime | None = Field(default=None)
 
     # Relationships
     creator: Optional["Employees"] = Relationship(

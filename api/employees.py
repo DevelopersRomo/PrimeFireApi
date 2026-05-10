@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -11,6 +12,8 @@ from core.microsoft_graph import graph_client
 from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
 from schemas.employees import Employee, EmployeeRole, EmployeeRoleAssignment, EmployeeUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -345,11 +348,21 @@ async def update_employee(
         setattr(db_employee, key, value)
 
     # Always attempt to sync to Microsoft (if employee has azure_oid)
+    synced = False
     if db_employee.azure_oid:
         try:
+            # Resolve country_id to ISO code for Microsoft Graph
+            if "country_id" in update_data and update_data["country_id"] is not None:
+                country = db.exec(
+                    select(Countries).where(Countries.country_id == update_data["country_id"])
+                ).first()
+                if country:
+                    update_data["country"] = country.name
+
             graph_data = graph_client.map_employee_to_graph_user(update_data)
             if graph_data:
                 await graph_client.update_user(db_employee.azure_oid, graph_data)
+                synced = True
 
             manager_updated_in_payload = any(
                 key in update_data for key in ("manager_employee_id", "manager_email", "manager")
@@ -365,12 +378,18 @@ async def update_employee(
                         manager_identifier = db_manager.azure_oid or db_manager.azure_upn or db_manager.email
                         if manager_identifier:
                             await graph_client.set_user_manager(db_employee.azure_oid, manager_identifier)
+                synced = True
 
-            db_employee.last_synced_at = datetime.now()  # noqa: DTZ005
-        except Exception:
-            # Log the error but don't fail the entire operation
-            pass
-            # Continue without failing - local update still succeeds
+            if synced:
+                db_employee.last_synced_at = datetime.now()  # noqa: DTZ005
+        except Exception as e:
+            logger.exception(
+                "Failed to sync employee %d (azure_oid=%s) to Microsoft 365: %s",
+                employee_id,
+                db_employee.azure_oid,
+                e,
+            )
+            # Continue without failing — local update still succeeds
 
     db.commit()
     db.refresh(db_employee)

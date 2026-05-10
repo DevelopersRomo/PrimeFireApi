@@ -3,7 +3,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from api.tickets import get_subordinate_ids, get_ticket_visibility_scope
+from api.tickets import get_assignable_employee_ids, get_subordinate_ids, get_ticket_visibility_scope, has_admin_actions
 from models.employees import Employees
 from models.tickets import TicketPriority, TicketRecurrenceConfig, TicketRecurrenceType, TicketStatus, Tickets
 from tests.conftest import create_test_record
@@ -860,3 +860,381 @@ def test_ticket_stats_users_admin_sees_all(
     returned_ids = {u["employee_id"] for u in data}
     assert current_employee.employee_id in returned_ids
     assert other_employee.employee_id in returned_ids
+
+
+# =============================================================================
+# Unit: get_assignable_employee_ids (Tasks 1.2, 4.3)
+# =============================================================================
+
+
+def test_get_assignable_employee_ids_admin(db_session: Session):
+    """Admin sees ALL employees in the database."""
+    emp1 = create_test_record(
+        db_session, Employees, email="assign_admin@example.com",
+        first_name="Admin", last_name="User", display_name="Admin User",
+    )
+    emp2 = create_test_record(
+        db_session, Employees, email="assign_it@example.com",
+        first_name="IT", last_name="User", display_name="IT User", department="IT",
+    )
+    emp3 = create_test_record(
+        db_session, Employees, email="assign_sales@example.com",
+        first_name="Sales", last_name="User", display_name="Sales User", department="Sales",
+    )
+    db_session.commit()
+
+    # Count all employees in DB (includes fixture-created employees)
+    all_employee_ids = {
+        row for row in db_session.exec(select(Employees.employee_id)).all()
+    }
+
+    user_permissions = {
+        "employee": {"employee_id": emp1.employee_id, "email": emp1.email},
+        "permissions": [{"module_key": "tickets", "permissions": {"admin_actions": True}}],
+    }
+    result = get_assignable_employee_ids(user_permissions, db_session)
+    # Admin tier returns ALL employee IDs in DB
+    assert result == all_employee_ids
+    assert emp1.employee_id in result
+    assert emp2.employee_id in result
+    assert emp3.employee_id in result
+
+
+def test_get_assignable_employee_ids_manager(db_session: Session):
+    """Manager sees self + all subordinates."""
+    manager = create_test_record(
+        db_session, Employees, email="assign_mgr@example.com",
+        first_name="Mgr", last_name="User", display_name="Mgr User",
+    )
+    sub1 = create_test_record(
+        db_session, Employees, email="assign_sub1@example.com",
+        first_name="Sub1", last_name="User", display_name="Sub1 User",
+        manager_employee_id=manager.employee_id,
+    )
+    sub2 = create_test_record(
+        db_session, Employees, email="assign_sub2@example.com",
+        first_name="Sub2", last_name="User", display_name="Sub2 User",
+        manager_employee_id=manager.employee_id,
+    )
+    # Create an employee NOT in the hierarchy
+    create_test_record(
+        db_session, Employees, email="assign_outsider@example.com",
+        first_name="Outsider", last_name="User", display_name="Outsider User",
+    )
+    db_session.commit()
+
+    user_permissions = {
+        "employee": {"employee_id": manager.employee_id, "email": manager.email},
+        "permissions": [],
+    }
+    result = get_assignable_employee_ids(user_permissions, db_session)
+    assert result == {manager.employee_id, sub1.employee_id, sub2.employee_id}
+
+
+def test_get_assignable_employee_ids_user_it_only(db_session: Session):
+    """Regular user (no admin, no subordinates) sees IT department only."""
+    user = create_test_record(
+        db_session, Employees, email="assign_user@example.com",
+        first_name="User", last_name="Test", display_name="User Test", department="Support",
+    )
+    it_emp1 = create_test_record(
+        db_session, Employees, email="assign_it1@example.com",
+        first_name="IT1", last_name="User", display_name="IT1 User", department="IT",
+    )
+    it_emp2 = create_test_record(
+        db_session, Employees, email="assign_it2@example.com",
+        first_name="IT2", last_name="User", display_name="IT2 User", department="IT",
+    )
+    create_test_record(
+        db_session, Employees, email="assign_sales2@example.com",
+        first_name="Sales", last_name="Person", display_name="Sales Person", department="Sales",
+    )
+    db_session.commit()
+
+    user_permissions = {
+        "employee": {"employee_id": user.employee_id, "email": user.email},
+        "permissions": [],
+    }
+    result = get_assignable_employee_ids(user_permissions, db_session)
+    assert result == {it_emp1.employee_id, it_emp2.employee_id}
+
+
+def test_get_assignable_employee_ids_admin_wins_over_manager(db_session: Session):
+    """Admin tier wins even when employee also has subordinates."""
+    admin_mgr = create_test_record(
+        db_session, Employees, email="assign_admin_mgr@example.com",
+        first_name="AdminMgr", last_name="User", display_name="AdminMgr User",
+    )
+    create_test_record(
+        db_session, Employees, email="assign_leaf@example.com",
+        first_name="Leaf", last_name="User", display_name="Leaf User",
+        manager_employee_id=admin_mgr.employee_id,
+    )
+    db_session.commit()
+
+    user_permissions = {
+        "employee": {"employee_id": admin_mgr.employee_id, "email": admin_mgr.email},
+        "permissions": [{"module_key": "tickets", "permissions": {"admin_actions": True}}],
+    }
+    result = get_assignable_employee_ids(user_permissions, db_session)
+    # Admin tier wins — ALL employees returned
+    assert len(result) == 2  # Both admin_mgr and leaf
+
+
+def test_get_assignable_employee_ids_user_empty_it(db_session: Session):
+    """Regular user when no IT employees exist — returns empty set."""
+    user = create_test_record(
+        db_session, Employees, email="assign_user2@example.com",
+        first_name="User2", last_name="Test", display_name="User2 Test", department="Support",
+    )
+    db_session.commit()
+
+    user_permissions = {
+        "employee": {"employee_id": user.employee_id, "email": user.email},
+        "permissions": [],
+    }
+    result = get_assignable_employee_ids(user_permissions, db_session)
+    assert result == set()
+
+
+# =============================================================================
+# Integration: GET /tickets/assignable-employees (Tasks 2.1, 4.4)
+# =============================================================================
+
+
+def test_assignable_employees_admin_sees_all(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    non_it_employee: Employees,
+    admin_auth_overrides,
+):
+    """Admin sees all employees via the assignable-employees endpoint."""
+    response = client.get("/tickets/assignable-employees", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    ids = {e["employee_id"] for e in data}
+    assert current_employee.employee_id in ids
+    assert other_employee.employee_id in ids
+    assert non_it_employee.employee_id in ids
+
+
+def test_assignable_employees_manager_sees_self_and_subs(
+    client: TestClient,
+    auth_headers: dict,
+    manager_employee: Employees,
+    subordinate_employee: Employees,
+    second_subordinate: Employees,
+    other_employee: Employees,
+    non_it_employee: Employees,
+    manager_auth_overrides,
+):
+    """Manager sees self + subordinates via the assignable-employees endpoint."""
+    response = client.get("/tickets/assignable-employees", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    ids = {e["employee_id"] for e in data}
+    assert manager_employee.employee_id in ids
+    assert subordinate_employee.employee_id in ids
+    assert second_subordinate.employee_id in ids
+    # other_employee and non_it_employee are NOT subordinates
+    assert other_employee.employee_id not in ids
+    assert non_it_employee.employee_id not in ids
+
+
+def test_assignable_employees_user_sees_it_only(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    non_it_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Regular user sees only IT-department employees."""
+    # current_employee has no department set, other_employee has department="IT",
+    # non_it_employee has department="Sales"
+    response = client.get("/tickets/assignable-employees", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    ids = {e["employee_id"] for e in data}
+    # other_employee has department="IT" → should appear
+    assert other_employee.employee_id in ids
+    # current_employee has no department (None) → should NOT appear
+    assert current_employee.employee_id not in ids
+    # non_it_employee has department="Sales" → should NOT appear
+    assert non_it_employee.employee_id not in ids
+    # Verify department field is in the response
+    for emp in data:
+        if emp["employee_id"] == other_employee.employee_id:
+            assert emp.get("department") == "IT"
+
+
+def test_assignable_employees_manager_with_no_subs_sees_it_only(
+    client: TestClient,
+    auth_headers: dict,
+    manager_employee: Employees,
+    manager_auth_overrides,
+):
+    """Manager with zero subordinates falls to user tier — returns IT-department employees only."""
+    response = client.get("/tickets/assignable-employees", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    ids = {e["employee_id"] for e in data}
+    # manager_employee has no department set — not in IT-only result
+    assert manager_employee.employee_id not in ids
+    # Result may be empty if no IT employees exist in test scope
+
+
+# =============================================================================
+# Integration: POST /tickets 403 guard (Tasks 2.2, 4.5)
+# =============================================================================
+
+
+def test_create_ticket_403_non_it_assignee(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    non_it_employee: Employees,
+    auth_overrides,
+):
+    """Regular user creating ticket assigned to non-IT employee gets 403."""
+    payload = {
+        "title": "Forbidden Assignment",
+        "description": "Should be blocked",
+        "status": "todo",
+        "priority": "normal",
+        "assigned_to": non_it_employee.employee_id,
+    }
+    response = client.post("/tickets", json=payload, headers=auth_headers)
+    assert response.status_code == 403
+    detail = response.json().get("detail", "")
+    assert "permission" in detail.lower() or "assign" in detail.lower()
+
+
+def test_create_ticket_200_it_assignee(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    auth_overrides,
+):
+    """Regular user creating ticket assigned to IT employee succeeds."""
+    with patch("api.tickets.notify_ticket_created"):
+        payload = {
+            "title": "Allowed Assignment",
+            "description": "Should work",
+            "status": "todo",
+            "priority": "normal",
+            "assigned_to": other_employee.employee_id,
+        }
+        response = client.post("/tickets", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+
+def test_create_ticket_200_no_assignee(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    auth_overrides,
+):
+    """Any user creating ticket without assignee succeeds (no scope check needed)."""
+    with patch("api.tickets.notify_ticket_created"):
+        payload = {
+            "title": "Unassigned Ticket",
+            "description": "No assignee",
+            "status": "todo",
+            "priority": "low",
+        }
+        response = client.post("/tickets", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+
+def test_create_ticket_admin_can_assign_anyone(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    non_it_employee: Employees,
+    admin_auth_overrides,
+):
+    """Admin can create ticket assigned to any employee (including non-IT)."""
+    with patch("api.tickets.notify_ticket_created"):
+        payload = {
+            "title": "Admin Assignment",
+            "description": "Admin assigns non-IT",
+            "status": "todo",
+            "priority": "normal",
+            "assigned_to": non_it_employee.employee_id,
+        }
+        response = client.post("/tickets", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+
+# =============================================================================
+# Integration: PATCH /tickets/{id} 403 guard (Tasks 2.3, 4.6)
+# =============================================================================
+
+
+def test_update_ticket_403_out_of_scope_assignee(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    non_it_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Regular user updating ticket with out-of-scope assignee gets 403."""
+    ticket = create_test_record(
+        db_session, Tickets, title="Update 403 Test",
+        status=TicketStatus.TODO, created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    payload = {"assigned_to": non_it_employee.employee_id}
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json=payload, headers=auth_headers)
+    assert response.status_code == 403
+    detail = response.json().get("detail", "")
+    assert "permission" in detail.lower() or "assign" in detail.lower()
+
+
+def test_update_ticket_200_unchanged_assignee(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    """Update with assigned_to unchanged (no assigned_to in payload) succeeds."""
+    ticket = create_test_record(
+        db_session, Tickets, title="No Assignee Change",
+        status=TicketStatus.TODO, created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    payload = {"title": "Updated Title"}
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["title"] == "Updated Title"
+
+
+def test_update_ticket_admin_can_change_assignee(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    non_it_employee: Employees,
+    db_session: Session,
+    admin_auth_overrides,
+):
+    """Admin updating ticket assigned_to to any employee succeeds."""
+    ticket = create_test_record(
+        db_session, Tickets, title="Admin Update Test",
+        status=TicketStatus.TODO, created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    payload = {"assigned_to": non_it_employee.employee_id}
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json=payload, headers=auth_headers)
+    assert response.status_code == 200

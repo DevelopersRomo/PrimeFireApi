@@ -47,6 +47,7 @@ class TicketEmployee(SQLModel):
     display_name: str | None = None
     email: str | None = None
     title: str | None = None
+    department: str | None = None
 
 
 class Ticket(SQLModel):

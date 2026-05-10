@@ -43,7 +43,12 @@ from bd.connection import create_db_and_tables
 from core.config import AZURE_AUTH_SCHEME, settings
 from models.employees import Employees
 
-create_db_and_tables()
+# Skip DB creation during pytest — conftest manages its own SQLite engine.
+# This guard prevents connection errors when no SQL Server is available.
+import os as _os
+
+if not _os.environ.get("PYTEST_RUNNING"):
+    create_db_and_tables()
 
 
 @asynccontextmanager

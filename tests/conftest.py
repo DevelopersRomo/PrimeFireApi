@@ -14,6 +14,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine
 
+# Must be set BEFORE importing main (which calls create_db_and_tables at module level)
+os.environ.setdefault("PYTEST_RUNNING", "1")
+
 from bd.dependencies import get_db, get_main_db
 from main import app
 from models.employees import Employees
@@ -240,6 +243,23 @@ def other_employee(db_session: Session):
         first_name="Other",
         last_name="User",
         display_name="Other User",
+        department="IT",
+    )
+    db_session.commit()
+    return emp
+
+
+@pytest.fixture
+def non_it_employee(db_session: Session):
+    """Employee with department='Sales' for 403 guard test scenarios."""
+    emp = create_test_record(
+        db_session,
+        Employees,
+        email="sales@example.com",
+        first_name="Sales",
+        last_name="Person",
+        display_name="Sales Person",
+        department="Sales",
     )
     db_session.commit()
     return emp

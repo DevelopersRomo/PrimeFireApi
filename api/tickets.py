@@ -103,6 +103,27 @@ def get_ticket_visibility_scope(user_permissions: dict, db: Session) -> dict:
     return {"scope": "user", "allowed_ids": allowed_ids}
 
 
+def get_assignable_employee_ids(user_permissions: dict, db: Session) -> set[int]:
+    """Return set of employee IDs the caller can assign tickets to.
+
+    - admin: all employees
+    - manager: self + all subordinates (BFS via get_subordinate_ids)
+    - user: employees where department == 'IT'
+    """
+    if has_admin_actions(user_permissions):
+        rows = db.exec(select(Employees.employee_id)).all()
+        return {row for row in rows}
+
+    employee_id = user_permissions["employee"]["employee_id"]
+    subordinate_ids = get_subordinate_ids(employee_id, db)
+
+    if subordinate_ids:
+        return {employee_id} | set(subordinate_ids)
+
+    rows = db.exec(select(Employees.employee_id).where(Employees.department == "IT")).all()
+    return {row for row in rows}
+
+
 def ticket_to_schema(db_ticket: Tickets) -> Ticket:
     """Convert Tickets model to Ticket schema with related employee data."""
     recurrence_type: TicketRecurrenceType | None = None
@@ -128,6 +149,7 @@ def ticket_to_schema(db_ticket: Tickets) -> Ticket:
             display_name=db_ticket.creator.display_name,
             email=db_ticket.creator.email,
             title=db_ticket.creator.title,
+            department=db_ticket.creator.department,
         )
         if db_ticket.creator
         else None,
@@ -136,6 +158,7 @@ def ticket_to_schema(db_ticket: Tickets) -> Ticket:
             display_name=db_ticket.assignee.display_name,
             email=db_ticket.assignee.email,
             title=db_ticket.assignee.title,
+            department=db_ticket.assignee.department,
         )
         if db_ticket.assignee
         else None,
@@ -271,6 +294,39 @@ def get_ticket_stats_users(
 
 
 # ----------------------------
+# 📌 GET /tickets/assignable-employees (SCOPED EMPLOYEE LIST FOR ASSIGNMENT)
+# ----------------------------
+@router.get("/assignable-employees", response_model=list[TicketEmployee])
+def get_assignable_employees(
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
+    """Return employees the caller may assign tickets to, scoped by role tier.
+
+    Admin sees all, manager sees self+subordinates, regular user sees IT department only.
+    Sorted by display_name.
+    """
+    allowed_ids = get_assignable_employee_ids(user_permissions, db)
+    if not allowed_ids:
+        return []
+
+    employees = db.exec(
+        select(Employees).where(Employees.employee_id.in_(allowed_ids)).order_by(Employees.display_name)
+    ).all()
+
+    return [
+        TicketEmployee(
+            employee_id=emp.employee_id,
+            display_name=emp.display_name,
+            email=emp.email,
+            title=emp.title,
+            department=emp.department,
+        )
+        for emp in employees
+    ]
+
+
+# ----------------------------
 # 📌 GET /tickets (LIST WITH FILTERS AND PAGINATION)
 # ----------------------------
 @router.get("", response_model=list[Ticket])
@@ -377,15 +433,22 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(requ
 def create_ticket(
     ticket: TicketCreate,
     background_tasks: BackgroundTasks,
-    current_employee: Employees = Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
     """Create a new ticket. Creator is automatically set to the authenticated user."""
+    current_employee_id = user_permissions["employee"]["employee_id"]
+
     # Validate assigned employee exists if provided
     if ticket.assigned_to:
         assigned_employee = db.exec(select(Employees).filter(Employees.employee_id == ticket.assigned_to)).first()
         if not assigned_employee:
             raise HTTPException(status_code=404, detail="Assigned employee not found")
+
+        # Scope check: caller must have permission to assign to this employee
+        allowed_ids = get_assignable_employee_ids(user_permissions, db)
+        if ticket.assigned_to not in allowed_ids:
+            raise HTTPException(status_code=403, detail="You do not have permission to assign tickets to this employee")
 
     # Create ticket
     db_ticket = Tickets(
@@ -395,7 +458,7 @@ def create_ticket(
         priority=ticket.priority,
         ticket_type=ticket.ticket_type,
         sla=ticket.sla,
-        created_by=current_employee.employee_id,
+        created_by=current_employee_id,
         assigned_to=ticket.assigned_to,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -429,7 +492,7 @@ def create_ticket(
     ).first()
 
     # Send notification if ticket has assignee and assignee is different from creator
-    if db_ticket.assigned_to and db_ticket.assignee and db_ticket.assigned_to != current_employee.employee_id:
+    if db_ticket.assigned_to and db_ticket.assignee and db_ticket.assigned_to != current_employee_id:
         background_tasks.add_task(
             notify_ticket_created,
             ticket_id=db_ticket.ticket_id,
@@ -497,6 +560,11 @@ async def update_ticket(
         assigned_employee = db.exec(select(Employees).filter(Employees.employee_id == ticket_update.assigned_to)).first()
         if not assigned_employee:
             raise HTTPException(status_code=404, detail="Assigned employee not found")
+
+        # Scope check: caller must have permission to assign to this employee
+        allowed_ids = get_assignable_employee_ids(user_permissions, db)
+        if ticket_update.assigned_to not in allowed_ids:
+            raise HTTPException(status_code=403, detail="You do not have permission to assign tickets to this employee")
 
     # Apply updates (exclude recurrence_type - it belongs to TicketRecurrenceConfig, not Tickets)
     update_data = ticket_update.model_dump(exclude_unset=True)

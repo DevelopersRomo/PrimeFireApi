@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
@@ -10,6 +11,7 @@ from schemas.products import (
     ProductRead,
     ProductUpdate,
 )
+from schemas.pagination import PaginatedResponse
 
 router = APIRouter()
 
@@ -33,13 +35,28 @@ def create_product(
 # ----------------------------
 # READ ALL
 # ----------------------------
-@router.get("", response_model=list[ProductRead])
+@router.get("", response_model=list[ProductRead] | PaginatedResponse[ProductRead])
 def get_products(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    statement = select(Products)
-    return db.exec(statement).all()
+    statement = select(Products).order_by(Products.created_at.desc(), Products.id.desc()).offset(skip).limit(limit)
+    items = db.exec(statement).all()
+
+    if not with_meta:
+        return items
+
+    total = db.exec(select(func.count()).select_from(Products)).one()
+    return PaginatedResponse[ProductRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------

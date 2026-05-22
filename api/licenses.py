@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
 from models.licenses import Licenses
 from schemas.licenses import License, LicenseCreate, LicenseRead, LicenseUpdate
+from schemas.pagination import PaginatedResponse
 
 router = APIRouter()
 
@@ -24,10 +27,34 @@ def create_license(license: LicenseCreate, db: Session = Depends(get_db), _auth=
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("", response_model=list[LicenseRead])
-def get_licenses(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    statement = select(Licenses)
-    return db.exec(statement).all()
+@router.get("", response_model=list[LicenseRead] | PaginatedResponse[LicenseRead])
+def get_licenses(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    statement = (
+        select(Licenses)
+        .options(selectinload(Licenses.employee))
+        .order_by(Licenses.created_at.desc(), Licenses.license_id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    items = db.exec(statement).all()
+
+    if not with_meta:
+        return items
+
+    total = db.exec(select(func.count()).select_from(Licenses)).one()
+    return PaginatedResponse[LicenseRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------

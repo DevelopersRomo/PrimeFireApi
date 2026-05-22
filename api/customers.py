@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, and_, or_, select
 
@@ -25,6 +26,7 @@ from schemas.customers import (
     CustomerAttachment,
     CustomerCreate,
     CustomerEmployee,
+    CustomerListResponse,
     CustomerMerged,
     CustomerNote,
     CustomerUpdate,
@@ -76,14 +78,15 @@ def customer_to_schema(db_customer: Customers) -> Customer:
     )
 
 
-@router.get("", response_model=list[Customer])
+@router.get("", response_model=list[Customer] | CustomerListResponse)
 def get_customers(
     customer_type: CustomerTypeEnum | None = Query(None, description="Filter by customer type"),
     market: MarketEnum | None = Query(None, description="Filter by market"),
     dtd_potential: DtdPotentialEnum | None = Query(None, description="Filter by DTD potential"),
     search: str | None = Query(None, description="Search in name, company, email"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of records to return"),
+    limit: int = Query(1000, ge=1, le=1000, description="Maximum number of records to return"),
+    with_meta: bool = Query(False, description="Return pagination metadata"),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
@@ -114,7 +117,24 @@ def get_customers(
     query = query.order_by(Customers.created_at.desc()).offset(skip).limit(limit)
 
     customers = db.exec(query).all()
-    return [customer_to_schema(customer) for customer in customers]
+    items = [customer_to_schema(customer) for customer in customers]
+
+    if not with_meta:
+        return items
+
+    count_query = select(func.count()).select_from(Customers)
+    if filters:
+        count_query = count_query.where(and_(*filters))
+    total_result = db.exec(count_query).one()
+    total = total_result if isinstance(total_result, int) else total_result[0]
+
+    return CustomerListResponse(
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 @router.get("/{customer_id}", response_model=Customer)

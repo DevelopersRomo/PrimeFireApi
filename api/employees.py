@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import or_
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -12,6 +12,7 @@ from core.microsoft_graph import graph_client
 from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
 from schemas.employees import Employee, EmployeeRole, EmployeeRoleAssignment, EmployeeUpdate
+from schemas.pagination import PaginatedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -303,10 +304,35 @@ async def validate_and_resolve_manager(db: Session, employee_id: int, update_dat
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("", response_model=list[Employee])
-def get_employees(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    employees = db.exec(select(Employees).join(Countries, isouter=True).options(selectinload(Employees.roles))).all()
-    return [employee_to_schema(emp) for emp in employees]
+@router.get("", response_model=list[Employee] | PaginatedResponse[Employee])
+def get_employees(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    employees = db.exec(
+        select(Employees)
+        .join(Countries, isouter=True)
+        .options(selectinload(Employees.roles))
+        .order_by(Employees.display_name, Employees.employee_id)
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    items = [employee_to_schema(emp) for emp in employees]
+
+    if not with_meta:
+        return items
+
+    total = db.exec(select(func.count()).select_from(Employees)).one()
+    return PaginatedResponse[Employee](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------

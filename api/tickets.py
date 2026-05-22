@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, and_, or_, select
 
@@ -18,6 +19,7 @@ from models.tickets import (
     Tickets,
 )
 from schemas.tickets import Ticket, TicketCreate, TicketEmployee, TicketUpdate
+from schemas.pagination import PaginatedResponse
 from services.notifications.notifications import (
     notify_ticket_created,
     send_ticket_assigned_notification,
@@ -329,7 +331,7 @@ def get_assignable_employees(
 # ----------------------------
 # 📌 GET /tickets (LIST WITH FILTERS AND PAGINATION)
 # ----------------------------
-@router.get("", response_model=list[Ticket])
+@router.get("", response_model=list[Ticket] | PaginatedResponse[Ticket])
 def get_tickets(
     # Filters
     status: TicketStatus | None = Query(None, description="Filter by ticket status"),
@@ -340,7 +342,8 @@ def get_tickets(
     search: str | None = Query(None, description="Search in title and description"),
     # Pagination
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of records to return"),
+    limit: int = Query(1000, ge=1, le=1000, description="Maximum number of records to return"),
+    with_meta: bool = Query(False, description="Return pagination metadata"),
     db: Session = Depends(get_db),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
@@ -401,7 +404,23 @@ def get_tickets(
     query = query.order_by(Tickets.created_at.desc()).offset(skip).limit(limit)
 
     tickets = db.exec(query).all()
-    return [ticket_to_schema(ticket) for ticket in tickets]
+    items = [ticket_to_schema(ticket) for ticket in tickets]
+
+    if not with_meta:
+        return items
+
+    count_query = select(func.count()).select_from(Tickets)
+    if filters:
+        count_query = count_query.where(and_(*filters))
+    total = db.exec(count_query).one()
+
+    return PaginatedResponse[Ticket](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
@@ -9,6 +10,7 @@ from schemas.quotations import (
     QuotationRead,
     QuotationUpdate,
 )
+from schemas.pagination import PaginatedResponse
 
 router = APIRouter(
     prefix="/quotations",
@@ -43,13 +45,28 @@ def create_quotation(
 # READ ALL
 # GET /quotations/
 # ----------------------------
-@router.get("/", response_model=list[QuotationRead])
+@router.get("/", response_model=list[QuotationRead] | PaginatedResponse[QuotationRead])
 def get_quotations(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    statement = select(Quotations)
-    return db.exec(statement).all()
+    statement = select(Quotations).order_by(Quotations.created_at.desc(), Quotations.id.desc()).offset(skip).limit(limit)
+    items = db.exec(statement).all()
+
+    if not with_meta:
+        return items
+
+    total = db.exec(select(func.count()).select_from(Quotations)).one()
+    return PaginatedResponse[QuotationRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------

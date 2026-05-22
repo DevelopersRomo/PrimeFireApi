@@ -205,3 +205,11 @@ class CustomerFilters(SQLModel):
     market: MarketEnum | None = None
     dtd_potential: DtdPotentialEnum | None = None
     search: str | None = None
+
+
+class CustomerListResponse(SQLModel):
+    items: list[Customer]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool

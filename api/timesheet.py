@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from openpyxl import Workbook
+from sqlalchemy import func
 from sqlmodel import Session, and_, select
 
 from api.dependencies import (
@@ -40,6 +41,7 @@ from schemas.timesheet import (
     TimeSheetSummaryResponse,
     TimeSheetSummaryTotals,
 )
+from schemas.pagination import PaginatedResponse
 from services.notifications.notifications import notify_timesheet_hours
 
 router = APIRouter(prefix="/api/v1", tags=["timesheet"])
@@ -817,7 +819,7 @@ def get_current_location(
     )
 
 
-@router.get("/timesheet/admin", response_model=list[TimeSheetPunchRead])
+@router.get("/timesheet/admin", response_model=list[TimeSheetPunchRead] | PaginatedResponse[TimeSheetPunchRead])
 def list_punches_admin(
     employee_id: list[int] | None = Query(None),
     customer_id: list[int] | None = Query(None),
@@ -826,6 +828,7 @@ def list_punches_admin(
     end_date: date | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    with_meta: bool = Query(False),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
@@ -906,7 +909,21 @@ def list_punches_admin(
             updated_at=punch.updated_at,
         ))
 
-    return result
+    if not with_meta:
+        return result
+
+    count_query = select(func.count()).select_from(TimeSheetPunch)
+    if filters:
+        count_query = count_query.where(and_(*filters))
+    total = db.exec(count_query).one()
+
+    return PaginatedResponse[TimeSheetPunchRead](
+        items=result,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(result) < total,
+    )
 
 
 @router.get("/timesheet/admin/export")

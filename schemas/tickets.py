@@ -47,6 +47,7 @@ class TicketEmployee(SQLModel):
     display_name: str | None = None
     email: str | None = None
     title: str | None = None
+    department: str | None = None
 
 
 class Ticket(SQLModel):
@@ -61,6 +62,7 @@ class Ticket(SQLModel):
     assigned_to: int | None = None
     created_at: datetime
     updated_at: datetime
+    in_progress_at: datetime | None = None
     recurrence_type: TicketRecurrenceType | None = None
 
     creator: TicketEmployee | None = None

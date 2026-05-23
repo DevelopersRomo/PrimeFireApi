@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -6,6 +7,7 @@ from api.dependencies import require_authentication
 from bd.dependencies import get_db
 from models.hardware_inventory import HardwareInventory
 from schemas.hardware_inventory import HardwareInventoryCreate, HardwareInventoryRead, HardwareInventoryUpdate
+from schemas.pagination import PaginatedResponse
 
 router = APIRouter()
 
@@ -27,10 +29,34 @@ def create_hardware(
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("", response_model=list[HardwareInventoryRead])
-def get_hardware_list(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    statement = select(HardwareInventory).options(selectinload(HardwareInventory.employee))
-    return db.exec(statement).all()
+@router.get("", response_model=list[HardwareInventoryRead] | PaginatedResponse[HardwareInventoryRead])
+def get_hardware_list(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    statement = (
+        select(HardwareInventory)
+        .options(selectinload(HardwareInventory.employee))
+        .order_by(HardwareInventory.created_at.desc(), HardwareInventory.hardware_id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    items = db.exec(statement).all()
+
+    if not with_meta:
+        return items
+
+    total = db.exec(select(func.count()).select_from(HardwareInventory)).one()
+    return PaginatedResponse[HardwareInventoryRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------

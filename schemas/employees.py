@@ -25,7 +25,6 @@ class EmployeeUpdate(SQLModel):
     title: str | None = None
     department: str | None = None
     office: str | None = None
-    email: str | None = None
     phone: str | None = None
     mobile_phone: str | None = None
     office_phone: str | None = None
@@ -77,6 +76,8 @@ class Employee(SQLModel):
 
     country_name: str | None = None
     roles: list[EmployeeRole] = []
+    has_license: bool = False
+    has_active_license: bool = False
 
 
 class EmployeeRead(SQLModel):

@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime, time
 
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, or_, select
@@ -29,6 +30,14 @@ def get_ticket_stats(
         description="Filter by user. 'all' returns all tickets (admin only). "
         "Integer returns tickets for that specific user. "
         "Omitting returns tickets for current user.",
+    ),
+    start_date: datetime | None = Query(
+        None,
+        description="Filter tickets created on or after this date (inclusive). Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
+    ),
+    end_date: datetime | None = Query(
+        None,
+        description="Filter tickets created on or before this date (inclusive). Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
     ),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
@@ -75,6 +84,16 @@ def get_ticket_stats(
                 )
             )
         # Admins without user_id param see all (no filter)
+
+    # Apply date range filter
+    if start_date:
+        query = query.where(Tickets.created_at >= start_date)
+    if end_date:
+        # Set end_date to end of day if it's a date without time
+        end_datetime = end_date
+        if end_date.time() == time(0, 0, 0):
+            end_datetime = datetime.combine(end_date.date(), time(23, 59, 59))
+        query = query.where(Tickets.created_at <= end_datetime)
 
     tickets = db.exec(query).all()
 

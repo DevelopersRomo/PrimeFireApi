@@ -227,8 +227,7 @@ class MicrosoftGraphClient:
         """
         endpoint = f"/users/{user_id}"
 
-        # Filter out None values
-        update_data = {k: v for k, v in user_data.items() if v is not None}
+        update_data = dict(user_data)
         if not update_data:
             return
 
@@ -278,32 +277,29 @@ class MicrosoftGraphClient:
         """Map Employee model to Microsoft Graph user update format."""
         graph_data = {}
 
-        if employee_data.get("first_name"):
-            graph_data["givenName"] = employee_data["first_name"]
-        if employee_data.get("last_name"):
-            graph_data["surname"] = employee_data["last_name"]
-        if employee_data.get("display_name"):
-            graph_data["displayName"] = employee_data["display_name"]
-        if employee_data.get("title"):
-            graph_data["jobTitle"] = employee_data["title"]
-        if employee_data.get("department"):
-            graph_data["department"] = employee_data["department"]
-        if employee_data.get("office"):
-            graph_data["officeLocation"] = employee_data["office"]
-        if employee_data.get("mobile_phone"):
-            graph_data["mobilePhone"] = employee_data["mobile_phone"]
-        if employee_data.get("office_phone"):
-            graph_data["businessPhones"] = [employee_data["office_phone"]]
-        if employee_data.get("street_address"):
-            graph_data["streetAddress"] = employee_data["street_address"]
-        if employee_data.get("city"):
-            graph_data["city"] = employee_data["city"]
-        if employee_data.get("state"):
-            graph_data["state"] = employee_data["state"]
-        if employee_data.get("postal_code"):
-            graph_data["postalCode"] = employee_data["postal_code"]
-        if employee_data.get("country"):
-            graph_data["country"] = employee_data["country"]
+        nullable_field_map = {
+            "first_name": "givenName",
+            "last_name": "surname",
+            "display_name": "displayName",
+            "title": "jobTitle",
+            "department": "department",
+            "office": "officeLocation",
+            "mobile_phone": "mobilePhone",
+            "street_address": "streetAddress",
+            "city": "city",
+            "state": "state",
+            "postal_code": "postalCode",
+            "country": "country",
+        }
+
+        for employee_field, graph_field in nullable_field_map.items():
+            if employee_field in employee_data:
+                value = employee_data[employee_field]
+                graph_data[graph_field] = None if isinstance(value, str) and value == "" else value
+
+        if "office_phone" in employee_data:
+            office_phone = employee_data["office_phone"]
+            graph_data["businessPhones"] = [] if office_phone is None or office_phone == "" else [office_phone]
 
         return graph_data
 

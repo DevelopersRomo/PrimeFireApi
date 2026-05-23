@@ -39,6 +39,33 @@ class TestEmployeesAPI:
         response = client.get("/employees/999999", headers=auth_headers)
         assert response.status_code == 404
 
+    def test_get_employees_uses_cache_until_invalidated(self, client, auth_headers, db_session) -> None:
+        """GET /employees should reuse cached list responses until cache invalidation."""
+        from api.employees import clear_employees_cache
+
+        cached_emp = Employees(first_name="Cached", last_name="User", email="cached@primefire.com")
+        db_session.add(cached_emp)
+        db_session.commit()
+        db_session.refresh(cached_emp)
+
+        first_response = client.get("/employees", headers=auth_headers)
+        assert first_response.status_code == 200
+
+        later_emp = Employees(first_name="Later", last_name="User", email="later@primefire.com")
+        db_session.add(later_emp)
+        db_session.commit()
+        db_session.refresh(later_emp)
+
+        cached_response = client.get("/employees", headers=auth_headers)
+        cached_ids = {item["employee_id"] for item in cached_response.json()}
+        assert cached_emp.employee_id in cached_ids
+        assert later_emp.employee_id not in cached_ids
+
+        clear_employees_cache()
+        fresh_response = client.get("/employees", headers=auth_headers)
+        fresh_ids = {item["employee_id"] for item in fresh_response.json()}
+        assert later_emp.employee_id in fresh_ids
+
     @patch("api.employees.graph_client")
     def test_update_employee(self, mock_graph, client, auth_headers, db_session) -> None:
         """Test PATCH /employees/{id} updates employee and pushes to Microsoft Graph if azure_oid exists."""
@@ -57,6 +84,43 @@ class TestEmployeesAPI:
         data = response.json()
         assert data["first_name"] == "Updated"
         mock_graph.update_user.assert_called_once()
+
+    @patch("api.employees.graph_client")
+    def test_update_employee_fails_when_graph_sync_fails(self, mock_graph, client, auth_headers, db_session) -> None:
+        """PATCH must not report success when Microsoft Graph rejects the update."""
+        mock_graph.map_employee_to_graph_user.return_value = {"givenName": "Updated"}
+        mock_graph.update_user = AsyncMock(side_effect=RuntimeError("Graph rejected update"))
+
+        emp = Employees(first_name="Old", last_name="Name", email="update@primefire.com", azure_oid="some-oid-123")
+        db_session.add(emp)
+        db_session.commit()
+        db_session.refresh(emp)
+
+        response = client.patch(f"/employees/{emp.employee_id}", json={"first_name": "Updated"}, headers=auth_headers)
+
+        assert response.status_code == 502
+        db_session.refresh(emp)
+        assert emp.first_name == "Old"
+
+    @patch("api.employees.graph_client")
+    def test_update_employee_syncs_cleared_graph_fields(self, mock_graph, client, auth_headers, db_session) -> None:
+        """PATCH must send explicitly cleared fields to Microsoft Graph, not silently drop them."""
+        def map_employee_to_graph_user(data):
+            title = data.get("title")
+            return {"jobTitle": None if isinstance(title, str) and title == "" else title}
+
+        mock_graph.map_employee_to_graph_user.side_effect = map_employee_to_graph_user
+        mock_graph.update_user = AsyncMock()
+
+        emp = Employees(first_name="Old", last_name="Name", title="Engineer", azure_oid="some-oid-123")
+        db_session.add(emp)
+        db_session.commit()
+        db_session.refresh(emp)
+
+        response = client.patch(f"/employees/{emp.employee_id}", json={"title": ""}, headers=auth_headers)
+
+        assert response.status_code == 200
+        mock_graph.update_user.assert_called_once_with("some-oid-123", {"jobTitle": None})
 
     def test_assign_and_remove_role(self, client, auth_headers, db_session) -> None:
         """Test assigning a role, getting roles, and removing a role."""

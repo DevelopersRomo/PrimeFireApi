@@ -44,6 +44,8 @@ def setup_and_cleanup():
     Setup and cleanup for each test.
     Creates fresh database tables before test and drops after.
     """
+    from api.employees import clear_employees_cache
+
     global _test_engine  # noqa: PLW0603
 
     # Create engine
@@ -63,8 +65,11 @@ def setup_and_cleanup():
     # Create all tables
     SQLModel.metadata.create_all(bind=engine)
     _test_engine = engine
+    clear_employees_cache()
 
     yield
+
+    clear_employees_cache()
 
     # Drop all tables after test
     SQLModel.metadata.drop_all(bind=engine)

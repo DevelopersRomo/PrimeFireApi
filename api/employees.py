@@ -1,6 +1,9 @@
+import asyncio
+import logging
+import time
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -11,8 +14,36 @@ from core.microsoft_graph import graph_client
 from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
 from schemas.employees import Employee, EmployeeRole, EmployeeRoleAssignment, EmployeeUpdate
+from schemas.pagination import PaginatedResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+EMPLOYEES_CACHE_TTL_SECONDS = 60 * 60
+_employees_list_cache: dict[tuple[bool, str], tuple[float, list[Employee]]] = {}
+
+
+def clear_employees_cache() -> None:
+    """Invalidate cached employee list responses after employee mutations."""
+    _employees_list_cache.clear()
+
+
+def get_cached_employee_items(cache_key: tuple[bool, str]) -> list[Employee] | None:
+    cached = _employees_list_cache.get(cache_key)
+    if not cached:
+        return None
+
+    cached_at, items = cached
+    if time.monotonic() - cached_at >= EMPLOYEES_CACHE_TTL_SECONDS:
+        _employees_list_cache.pop(cache_key, None)
+        return None
+
+    return [item.model_copy(deep=True) for item in items]
+
+
+def set_cached_employee_items(cache_key: tuple[bool, str], items: list[Employee]) -> None:
+    _employees_list_cache[cache_key] = (time.monotonic(), [item.model_copy(deep=True) for item in items])
 
 
 def normalize_country_to_code(country_name: str) -> str | None:
@@ -121,7 +152,28 @@ def employee_to_schema(db_employee: Employees) -> Employee:
         last_synced_at=db_employee.last_synced_at,
         country_name=db_employee.country.name if db_employee.country else None,
         roles=roles,
+        has_license=False,
+        has_active_license=False,
     )
+
+
+async def enrich_employee_license_flags(schema: Employee, azure_oid: str | None) -> Employee:
+    if not azure_oid:
+        schema.has_license = False
+        schema.has_active_license = False
+        return schema
+
+    try:
+        license_details = await graph_client.get_user_license_details(azure_oid)
+        has_m365_license = len(license_details) > 0
+        schema.has_license = has_m365_license
+        schema.has_active_license = has_m365_license
+    except Exception:
+        logger.exception("Failed to load Microsoft 365 licenses for employee azure_oid=%s", azure_oid)
+        schema.has_license = False
+        schema.has_active_license = False
+
+    return schema
 
 
 async def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees:
@@ -159,12 +211,14 @@ async def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Emp
                 setattr(existing, key, value)
         db.commit()
         db.refresh(existing)
+        clear_employees_cache()
         return existing
 
     new_employee = Employees(**employee_data)
     db.add(new_employee)
     db.commit()
     db.refresh(new_employee)
+    clear_employees_cache()
     return new_employee
 
 
@@ -300,17 +354,65 @@ async def validate_and_resolve_manager(db: Session, employee_id: int, update_dat
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("", response_model=list[Employee])
-def get_employees(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    employees = db.exec(select(Employees).join(Countries, isouter=True).options(selectinload(Employees.roles))).all()
-    return [employee_to_schema(emp) for emp in employees]
+@router.get("", response_model=list[Employee] | PaginatedResponse[Employee])
+async def get_employees(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    include_license_status: bool = Query(False),
+    license_filter: str = Query("all", pattern="^(all|with_license|without_license|with_active_license)$"),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    cache_key = (include_license_status, license_filter)
+    items = get_cached_employee_items(cache_key)
+
+    if items is None:
+        statement = (
+            select(Employees)
+            .join(Countries, isouter=True)
+            .options(selectinload(Employees.roles))
+            .order_by(Employees.display_name, Employees.employee_id)
+        )
+        employees = db.exec(statement).all()
+        if include_license_status:
+            items = list(
+                await asyncio.gather(
+                    *[enrich_employee_license_flags(employee_to_schema(emp), emp.azure_oid) for emp in employees]
+                )
+            )
+
+            if license_filter == "with_license":
+                items = [item for item in items if item.has_license]
+            elif license_filter == "without_license":
+                items = [item for item in items if not item.has_license]
+            elif license_filter == "with_active_license":
+                items = [item for item in items if item.has_active_license]
+        else:
+            items = [employee_to_schema(emp) for emp in employees]
+
+        set_cached_employee_items(cache_key, items)
+
+    total = len(items)
+    items = items[skip : skip + limit]
+
+    if not with_meta:
+        return items
+
+    return PaginatedResponse[Employee](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------
 # 📌 READ ONE
 # ----------------------------
 @router.get("/{employee_id}", response_model=Employee)
-def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+async def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_employee = db.exec(
         select(Employees)
         .join(Countries, isouter=True)
@@ -319,7 +421,7 @@ def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=Depends(
     ).first()
     if not db_employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-    return employee_to_schema(db_employee)
+    return await enrich_employee_license_flags(employee_to_schema(db_employee), db_employee.azure_oid)
 
 
 # ----------------------------
@@ -330,8 +432,8 @@ async def update_employee(
     employee_id: int, employee: EmployeeUpdate, db: Session = Depends(get_db), _auth=Depends(require_authentication)
 ):
     """
-    Update employee in local database and sync to Microsoft 365 if possible.
-    Always attempts Microsoft sync, but continues if azure_oid is missing or sync fails.
+    Update employee in local database and sync to Microsoft 365 when Microsoft-owned fields change.
+    Graph sync failures fail the request so the UI never reports a fake successful update.
     """
     db_employee = db.exec(select(Employees).filter(Employees.employee_id == employee_id)).first()
     if not db_employee:
@@ -339,46 +441,74 @@ async def update_employee(
 
     update_data = employee.model_dump(exclude_unset=True)
     update_data = await validate_and_resolve_manager(db, employee_id, update_data)
+    local_update_data = dict(update_data)
 
-    # Update local database first
-    for key, value in update_data.items():
-        setattr(db_employee, key, value)
+    # Always attempt to sync Microsoft-owned fields before committing local state.
+    graph_data = graph_client.map_employee_to_graph_user(update_data)
+    manager_updated_in_payload = any(key in update_data for key in ("manager_employee_id", "manager_email", "manager"))
+    needs_microsoft_sync = bool(graph_data) or manager_updated_in_payload or "country_id" in update_data
 
-    # Always attempt to sync to Microsoft (if employee has azure_oid)
-    if db_employee.azure_oid:
+    if needs_microsoft_sync and not db_employee.azure_oid:
+        raise HTTPException(
+            status_code=400,
+            detail="Employee does not have azure_oid. Cannot sync Microsoft-owned fields to Microsoft 365.",
+        )
+
+    synced = False
+    if db_employee.azure_oid and needs_microsoft_sync:
         try:
-            graph_data = graph_client.map_employee_to_graph_user(update_data)
+            # Resolve country_id to ISO code for Microsoft Graph, including explicit clears.
+            if "country_id" in update_data:
+                update_data["country"] = None
+                country = (
+                    db.exec(select(Countries).where(Countries.country_id == update_data["country_id"])).first()
+                    if update_data["country_id"] is not None
+                    else None
+                )
+                if country:
+                    update_data["country"] = country.name
+                graph_data = graph_client.map_employee_to_graph_user(update_data)
+
             if graph_data:
                 await graph_client.update_user(db_employee.azure_oid, graph_data)
+                synced = True
 
-            manager_updated_in_payload = any(
-                key in update_data for key in ("manager_employee_id", "manager_email", "manager")
-            )
             if manager_updated_in_payload:
-                if db_employee.manager_employee_id is None:
+                manager_employee_id = update_data.get("manager_employee_id")
+                if manager_employee_id is None:
                     await graph_client.clear_user_manager(db_employee.azure_oid)
                 else:
-                    db_manager = db.exec(
-                        select(Employees).where(Employees.employee_id == db_employee.manager_employee_id)
-                    ).first()
+                    db_manager = db.exec(select(Employees).where(Employees.employee_id == manager_employee_id)).first()
                     if db_manager:
                         manager_identifier = db_manager.azure_oid or db_manager.azure_upn or db_manager.email
                         if manager_identifier:
                             await graph_client.set_user_manager(db_employee.azure_oid, manager_identifier)
+                synced = True
 
-            db_employee.last_synced_at = datetime.now()  # noqa: DTZ005
-        except Exception:
-            # Log the error but don't fail the entire operation
-            pass
-            # Continue without failing - local update still succeeds
+            if synced:
+                db_employee.last_synced_at = datetime.now()  # noqa: DTZ005
+        except Exception as e:
+            db.rollback()
+            logger.exception(
+                "Failed to sync employee %d (azure_oid=%s) to Microsoft 365: %s",
+                employee_id,
+                db_employee.azure_oid,
+                e,
+            )
+            raise HTTPException(status_code=502, detail=f"Failed to sync employee to Microsoft 365: {e!s}") from e
+
+    # Commit local database only after Microsoft Graph accepted the corresponding changes.
+    for key, value in local_update_data.items():
+        setattr(db_employee, key, value)
 
     db.commit()
     db.refresh(db_employee)
+    clear_employees_cache()
     return employee_to_schema(db_employee)
 
 
 # ----------------------------
-# 📌 EMPLOYEE ROLES MANAGEMENT
+# EMPLOYEE ROLES MANAGEMENT
 # ----------------------------
 @router.post("/{employee_id}/roles", response_model=Employee)
 async def assign_role_to_employee(
@@ -412,9 +542,10 @@ async def assign_role_to_employee(
     employee_role = EmployeeRoles(employee_id=employee_id, role_id=role_assignment.role_id)
     db.add(employee_role)
     db.commit()
+    clear_employees_cache()
 
     # Return updated employee with roles
-    return get_employee(employee_id, db, _auth)
+    return await get_employee(employee_id, db, _auth)
 
 
 @router.delete("/{employee_id}/roles/{role_id}", response_model=Employee)
@@ -433,9 +564,10 @@ async def remove_role_from_employee(
     # Remove assignment
     db.delete(assignment)
     db.commit()
+    clear_employees_cache()
 
     # Return updated employee with roles
-    return get_employee(employee_id, db, _auth)
+    return await get_employee(employee_id, db, _auth)
 
 
 @router.get("/{employee_id}/roles", response_model=list[EmployeeRole])
@@ -502,6 +634,7 @@ async def sync_from_microsoft(db: Session = Depends(get_db), _auth=Depends(requi
                         setattr(existing, key, value)
                 db.commit()
                 db.refresh(existing)
+                clear_employees_cache()
                 synced_employees.append(existing)
             else:
                 # Create new employee
@@ -509,6 +642,7 @@ async def sync_from_microsoft(db: Session = Depends(get_db), _auth=Depends(requi
                 db.add(new_employee)
                 db.commit()
                 db.refresh(new_employee)
+                clear_employees_cache()
                 synced_employees.append(new_employee)
 
         return synced_employees
@@ -550,6 +684,7 @@ async def sync_employee_to_microsoft(
         db_employee.last_synced_at = datetime.now()  # noqa: DTZ005
         db.commit()
         db.refresh(db_employee)
+        clear_employees_cache()
 
         return db_employee
 
@@ -594,6 +729,7 @@ async def sync_single_employee_from_microsoft(
         db_employee.last_synced_at = datetime.now()  # noqa: DTZ005
         db.commit()
         db.refresh(db_employee)
+        clear_employees_cache()
 
         return db_employee
 
@@ -613,6 +749,7 @@ async def trigger_background_sync(background_tasks: BackgroundTasks, _auth=Depen
     from core.background_tasks import sync_scheduler
 
     # Add sync task to background
+    clear_employees_cache()
     background_tasks.add_task(sync_scheduler.sync_employees_from_microsoft)
 
     return {

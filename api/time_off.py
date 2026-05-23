@@ -83,6 +83,12 @@ def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal |
             detail="end_date must be greater than or equal to start_date",
         )
 
+    if payload.time_unit == TimeUnitEnum.HALF_DAY and payload.start_date != payload.end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="half_day requests must use the same start_date and end_date",
+        )
+
     days_span = (payload.end_date - payload.start_date).days + 1
 
     if payload.time_unit == TimeUnitEnum.FULL_DAY:
@@ -115,6 +121,67 @@ def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal |
     hours = Decimal(total_seconds / 3600).quantize(DECIMAL_PLACES)
     days = (hours / Decimal(8)).quantize(DECIMAL_PLACES)
     return days, hours
+
+
+def _parse_time_value(value: str | None) -> time | None:
+    if not value:
+        return None
+    cleaned = value.replace("Z", "")
+    try:
+        return datetime.strptime(cleaned[:8], "%H:%M:%S").time()  # noqa: DTZ007
+    except ValueError:
+        return None
+
+
+def _time_ranges_overlap(start_a: time, end_a: time, start_b: time, end_b: time) -> bool:
+    return start_a < end_b and end_a > start_b
+
+
+def _assert_no_active_overlap(db: Session, employee_id: int, payload: TimeOffRequestCreate) -> None:
+    overlapping = db.exec(
+        select(TimeOffRequest).where(
+            TimeOffRequest.employee_id == employee_id,
+            TimeOffRequest.status.in_([RequestStatusEnum.PENDING.value, RequestStatusEnum.APPROVED.value]),
+            TimeOffRequest.start_date <= payload.end_date.strftime("%Y-%m-%d"),
+            TimeOffRequest.end_date >= payload.start_date.strftime("%Y-%m-%d"),
+        )
+    ).all()
+
+    for existing in overlapping:
+        existing_start = datetime.strptime(existing.start_date, "%Y-%m-%d").date()  # noqa: DTZ007
+        existing_end = datetime.strptime(existing.end_date, "%Y-%m-%d").date()  # noqa: DTZ007
+
+        # Hourly requests can coexist on the same day only when their time ranges do not overlap.
+        if (
+            payload.time_unit == TimeUnitEnum.HOURS
+            and existing.time_unit == TimeUnitEnum.HOURS.value
+            and payload.start_date == payload.end_date
+            and existing_start == existing_end
+            and payload.start_date == existing_start
+        ):
+            payload_start_time = _parse_time_value(_time_to_utc_str(payload.start_time) if payload.start_time else None)
+            payload_end_time = _parse_time_value(_time_to_utc_str(payload.end_time) if payload.end_time else None)
+            existing_start_time = _parse_time_value(existing.start_time)
+            existing_end_time = _parse_time_value(existing.end_time)
+
+            if (
+                payload_start_time
+                and payload_end_time
+                and existing_start_time
+                and existing_end_time
+                and not _time_ranges_overlap(
+                    payload_start_time,
+                    payload_end_time,
+                    existing_start_time,
+                    existing_end_time,
+                )
+            ):
+                continue
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The request overlaps with an existing pending or approved time off request",
+        )
 
 
 def _get_or_create_balance(db: Session, employee_id: int, absence_type: AbsenceTypeEnum, year: int) -> TimeOffBalance:
@@ -280,6 +347,7 @@ def create_request(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
     total_days, total_hours = _calculate_totals(payload)
+    _assert_no_active_overlap(db, employee_id, payload)
 
     start_time_str = None
     end_time_str = None

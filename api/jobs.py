@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
@@ -6,6 +7,7 @@ from bd.dependencies import get_db
 from models.countries import Countries
 from models.jobs import Jobs
 from schemas.jobs import Job, JobCreate, JobUpdate
+from schemas.pagination import PaginatedResponse
 
 router = APIRouter()
 
@@ -60,12 +62,27 @@ def create_job(job: JobCreate, db: Session = Depends(get_db), _auth=Depends(requ
 # ----------------------------
 # 📌 READ ALL
 # ----------------------------
-@router.get("", response_model=list[Job])
+@router.get("", response_model=list[Job] | PaginatedResponse[Job])
 def get_jobs(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
     db: Session = Depends(get_db),
 ):
-    jobs = db.exec(select(Jobs)).all()
-    return [job_to_schema(job, db) for job in jobs]
+    jobs = db.exec(select(Jobs).order_by(Jobs.posted_at.desc(), Jobs.job_id.desc()).offset(skip).limit(limit)).all()
+    items = [job_to_schema(job, db) for job in jobs]
+
+    if not with_meta:
+        return items
+
+    total = db.exec(select(func.count()).select_from(Jobs)).one()
+    return PaginatedResponse[Job](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------

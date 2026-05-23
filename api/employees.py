@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime
+import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -125,7 +126,28 @@ def employee_to_schema(db_employee: Employees) -> Employee:
         last_synced_at=db_employee.last_synced_at,
         country_name=db_employee.country.name if db_employee.country else None,
         roles=roles,
+        has_license=False,
+        has_active_license=False,
     )
+
+
+async def enrich_employee_license_flags(schema: Employee, azure_oid: str | None) -> Employee:
+    if not azure_oid:
+        schema.has_license = False
+        schema.has_active_license = False
+        return schema
+
+    try:
+        license_details = await graph_client.get_user_license_details(azure_oid)
+        has_m365_license = len(license_details) > 0
+        schema.has_license = has_m365_license
+        schema.has_active_license = has_m365_license
+    except Exception:
+        logger.exception("Failed to load Microsoft 365 licenses for employee azure_oid=%s", azure_oid)
+        schema.has_license = False
+        schema.has_active_license = False
+
+    return schema
 
 
 async def upsert_employee_from_microsoft_user(db: Session, ms_user: dict) -> Employees:
@@ -305,27 +327,42 @@ async def validate_and_resolve_manager(db: Session, employee_id: int, update_dat
 # 📌 READ ALL
 # ----------------------------
 @router.get("", response_model=list[Employee] | PaginatedResponse[Employee])
-def get_employees(
+async def get_employees(
     skip: int = Query(0, ge=0),
     limit: int = Query(1000, ge=1, le=1000),
     with_meta: bool = Query(False),
+    include_license_status: bool = Query(False),
+    license_filter: str = Query("all", pattern="^(all|with_license|without_license|with_active_license)$"),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    employees = db.exec(
+    statement = (
         select(Employees)
         .join(Countries, isouter=True)
         .options(selectinload(Employees.roles))
         .order_by(Employees.display_name, Employees.employee_id)
-        .offset(skip)
-        .limit(limit)
-    ).all()
-    items = [employee_to_schema(emp) for emp in employees]
+    )
+    employees = db.exec(statement).all()
+    if include_license_status:
+        items = await asyncio.gather(
+            *[enrich_employee_license_flags(employee_to_schema(emp), emp.azure_oid) for emp in employees]
+        )
+
+        if license_filter == "with_license":
+            items = [item for item in items if item.has_license]
+        elif license_filter == "without_license":
+            items = [item for item in items if not item.has_license]
+        elif license_filter == "with_active_license":
+            items = [item for item in items if item.has_active_license]
+    else:
+        items = [employee_to_schema(emp) for emp in employees]
+
+    total = len(items)
+    items = items[skip : skip + limit]
 
     if not with_meta:
         return items
 
-    total = db.exec(select(func.count()).select_from(Employees)).one()
     return PaginatedResponse[Employee](
         items=items,
         total=total,
@@ -339,7 +376,7 @@ def get_employees(
 # 📌 READ ONE
 # ----------------------------
 @router.get("/{employee_id}", response_model=Employee)
-def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+async def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     db_employee = db.exec(
         select(Employees)
         .join(Countries, isouter=True)
@@ -348,7 +385,7 @@ def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=Depends(
     ).first()
     if not db_employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-    return employee_to_schema(db_employee)
+    return await enrich_employee_license_flags(employee_to_schema(db_employee), db_employee.azure_oid)
 
 
 # ----------------------------
@@ -459,7 +496,7 @@ async def assign_role_to_employee(
     db.commit()
 
     # Return updated employee with roles
-    return get_employee(employee_id, db, _auth)
+    return await get_employee(employee_id, db, _auth)
 
 
 @router.delete("/{employee_id}/roles/{role_id}", response_model=Employee)
@@ -480,7 +517,7 @@ async def remove_role_from_employee(
     db.commit()
 
     # Return updated employee with roles
-    return get_employee(employee_id, db, _auth)
+    return await get_employee(employee_id, db, _auth)
 
 
 @router.get("/{employee_id}/roles", response_model=list[EmployeeRole])

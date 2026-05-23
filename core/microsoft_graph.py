@@ -183,6 +183,12 @@ class MicrosoftGraphClient:
         endpoint = f"/users/{user_id}?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode&$expand=manager($select=displayName,mail,userPrincipalName)"
         return await self._make_request("GET", endpoint)
 
+    async def get_user_license_details(self, user_id: str) -> list[dict[str, Any]]:
+        """Get assigned Microsoft 365 license details for a user."""
+        endpoint = f"/users/{user_id}/licenseDetails"
+        data = await self._make_request("GET", endpoint)
+        return data.get("value", [])
+
     async def find_user_by_display_name(self, display_name: str) -> dict[str, Any] | None:
         """Find a Microsoft user by exact displayName."""
         if not display_name or not display_name.strip():

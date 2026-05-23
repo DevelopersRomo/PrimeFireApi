@@ -76,6 +76,8 @@ class Employee(SQLModel):
 
     country_name: str | None = None
     roles: list[EmployeeRole] = []
+    has_license: bool = False
+    has_active_license: bool = False
 
 
 class EmployeeRead(SQLModel):

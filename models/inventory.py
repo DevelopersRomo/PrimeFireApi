@@ -1,0 +1,47 @@
+from datetime import date, datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Optional
+
+from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from models.products import Products
+
+
+class Warehouses(SQLModel, table=True):
+    __tablename__ = "warehouses"
+    __table_args__ = {"schema": "dbo"}
+
+    warehouse_id: int | None = Field(default=None, primary_key=True, index=True)
+    name: str = Field(max_length=100)
+    location: str | None = Field(default=None, max_length=200)
+    is_active: bool = Field(default=True)
+
+    movements: list["InventoryMovements"] = Relationship(back_populates="warehouse")
+
+
+class InventoryMovements(SQLModel, table=True):
+    __tablename__ = "inventory_movements"
+    __table_args__ = {"schema": "dbo"}
+
+    movement_id: int | None = Field(default=None, primary_key=True, index=True)
+
+    product_id: int = Field(foreign_key="dbo.products.id")
+    warehouse_id: int | None = Field(default=None, foreign_key="dbo.warehouses.warehouse_id")
+
+    movement_type: str = Field(max_length=20)  # IN, OUT, ADJUSTMENT
+    quantity: Decimal = Field(max_digits=18, decimal_places=2)
+
+    movement_date: date = Field(default_factory=date.today)
+
+    project: str | None = Field(default=None, max_length=150)
+    po_number: str | None = Field(default=None, max_length=100)
+
+    reference_type: str | None = Field(default=None, max_length=50)
+    reference_id: int | None = Field(default=None)
+
+    notes: str | None = Field(default=None, max_length=500)
+    created_by: str | None = Field(default=None, max_length=100)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    warehouse: Optional["Warehouses"] = Relationship(back_populates="movements")

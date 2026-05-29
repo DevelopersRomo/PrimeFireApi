@@ -1,5 +1,6 @@
 import enum
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Column, ForeignKey
@@ -106,8 +107,8 @@ class Tickets(SQLModel, table=True):
     assigned_to: int | None = Field(default=None, foreign_key="dbo.employees.employee_id")
 
     # Timestamps
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: utcnow())
+    updated_at: datetime = Field(default_factory=lambda: utcnow())
     in_progress_at: datetime | None = Field(default=None)
 
     # Relationships
@@ -138,7 +139,7 @@ class TicketRecurrenceConfig(SQLModel, table=True):
     next_occurrence: datetime | None = Field(default=None)
     parent_ticket_id: int | None = Field(default=None)  # no FK: app handles integrity
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: utcnow())
 
     ticket: Optional[Tickets] = Relationship(
         back_populates="recurrence_config",

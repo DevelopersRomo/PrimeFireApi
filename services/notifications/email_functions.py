@@ -64,16 +64,22 @@ async def send_outlook_email(
     Returns:
         (success: bool, message_id: str | None, error_message: str | None)
     """
+    logger.info(f"[SEND_OUTLOOK_EMAIL] Starting email send - send_as={send_as_email}, subject='{subject}', to_count={len(to_emails)}")
+    
     headers = await get_graph_api_auth_headers()
     if not headers:
+        logger.error(f"[SEND_OUTLOOK_EMAIL] Failed to get authentication headers")
         return False, None, "Failed to get authentication headers"
+    logger.info(f"[SEND_OUTLOOK_EMAIL] Authentication headers obtained successfully")
 
     validated_to = []
     for email in to_emails:
         parsed = parse_email_list(email)
         validated_to.extend(parsed)
+    logger.info(f"[SEND_OUTLOOK_EMAIL] Validated recipient emails: {validated_to}")
 
     if not validated_to:
+        logger.error(f"[SEND_OUTLOOK_EMAIL] No valid recipient emails found")
         return False, None, "No valid recipient emails"
 
     validated_cc = []
@@ -81,12 +87,14 @@ async def send_outlook_email(
         for email in cc_emails:
             parsed = parse_email_list(email)
             validated_cc.extend(parsed)
+    logger.info(f"[SEND_OUTLOOK_EMAIL] CC emails: {validated_cc if validated_cc else 'none'}")
 
     validated_bcc = []
     if bcc_emails:
         for email in bcc_emails:
             parsed = parse_email_list(email)
             validated_bcc.extend(parsed)
+    logger.info(f"[SEND_OUTLOOK_EMAIL] BCC emails: {validated_bcc if validated_bcc else 'none'}")
 
     message = {
         "message": {
@@ -107,6 +115,7 @@ async def send_outlook_email(
         message["message"]["bccRecipients"] = [{"emailAddress": {"address": email}} for email in validated_bcc]
 
     if attachments:
+        logger.info(f"[SEND_OUTLOOK_EMAIL] Adding {len(attachments)} attachment(s)")
         message["message"]["attachments"] = [
             {
                 "@odata.type": "#microsoft.graph.fileAttachment",
@@ -118,6 +127,7 @@ async def send_outlook_email(
         ]
 
     url = f"https://graph.microsoft.com/v1.0/users/{send_as_email}/sendMail"
+    logger.info(f"[SEND_OUTLOOK_EMAIL] Graph API URL: {url}")
 
     max_retries = 3
     last_error = None
@@ -125,28 +135,31 @@ async def send_outlook_email(
     async with get_retry_client() as client:
         for attempt in range(max_retries):
             try:
+                logger.info(f"[SEND_OUTLOOK_EMAIL] Attempt {attempt + 1}/{max_retries} - posting to Graph API")
                 response = await client.post(url, headers=headers, json=message)
                 response.raise_for_status()
 
                 message_id = response.headers.get("x-request-id") or response.headers.get("request-id")
-
-                logger.info(f"Email sent successfully to {validated_to}. Message ID: {message_id}")
+                logger.info(f"[SEND_OUTLOOK_EMAIL] ✅ Email sent successfully to {validated_to}. Message ID: {message_id}, Status: {response.status_code}")
                 return True, message_id, None
 
             except httpx.HTTPStatusError as e:
-                last_error = f"HTTP {e.response.status_code}: {e.response.text}"
+                last_error = f"HTTP {e.response.status_code}: {e.response.text[:500]}"
+                logger.warning(f"[SEND_OUTLOOK_EMAIL] Attempt {attempt + 1}/{max_retries} failed - {last_error}")
                 if e.response.status_code < 500:
+                    logger.error(f"[SEND_OUTLOOK_EMAIL] Client error (4xx) - not retrying. Status: {e.response.status_code}")
                     break
-                logger.warning(f"Attempt {attempt + 1}/{max_retries} failed: {last_error}")
             except Exception as e:
                 last_error = str(e)
-                logger.warning(f"Attempt {attempt + 1}/{max_retries} failed: {last_error}")
+                logger.warning(f"[SEND_OUTLOOK_EMAIL] Attempt {attempt + 1}/{max_retries} failed - {last_error}")
 
             if attempt < max_retries - 1:
-                await asyncio.sleep(2**attempt)
+                wait_time = 2**attempt
+                logger.info(f"[SEND_OUTLOOK_EMAIL] Waiting {wait_time} seconds before retry...")
+                await asyncio.sleep(wait_time)
 
     error_msg = f"Failed to send email after {max_retries} attempts: {last_error}"
-    logger.error(error_msg)
+    logger.error(f"[SEND_OUTLOOK_EMAIL] ❌ {error_msg}")
     return False, None, error_msg
 
 

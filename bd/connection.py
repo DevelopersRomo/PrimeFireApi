@@ -111,7 +111,12 @@ def create_engine_from_env(prefix="DB"):
     database_url = f"mssql+pyodbc:///?odbc_connect={quote_plus(odbc_connect)}"
 
     # Configure engine options based on driver
-    engine_kwargs = {"echo": echo}
+    engine_kwargs = {
+        "echo": echo,
+        # Disable setinputsizes to avoid pyodbc HY104 "Invalid precision value (0)"
+        # errors when binding datetime/None parameters to DATETIME columns.
+        "use_setinputsizes": False,
+    }
 
     # Old SQL Server driver doesn't support OUTPUT clause for returning identity values
     if is_old_driver:

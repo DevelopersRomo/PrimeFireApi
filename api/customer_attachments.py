@@ -1,5 +1,6 @@
 import os
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 from pathlib import Path
 from uuid import uuid4
 
@@ -152,7 +153,7 @@ def create_attachment(
         file_type=final_file_type,
         file_path=rel_path,
         created_by=current_employee_id,
-        created_at=datetime.now(UTC),
+        created_at=utcnow(),
     )
 
     db.add(db_att)

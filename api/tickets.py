@@ -1,10 +1,14 @@
+import logging
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, and_, or_, select
+
+logger = logging.getLogger(__name__)
 
 from api.dependencies import get_current_employee, get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
@@ -457,19 +461,24 @@ def create_ticket(
 ):
     """Create a new ticket. Creator is automatically set to the authenticated user."""
     current_employee_id = user_permissions["employee"]["employee_id"]
+    logger.info(f"[TICKET_CREATE] Starting ticket creation by employee_id={current_employee_id}")
+    logger.info(f"[TICKET_CREATE] Ticket details - title={ticket.title}, priority={ticket.priority}, assigned_to={ticket.assigned_to}")
 
     # Validate assigned employee exists if provided
     if ticket.assigned_to:
         assigned_employee = db.exec(select(Employees).filter(Employees.employee_id == ticket.assigned_to)).first()
         if not assigned_employee:
+            logger.error(f"[TICKET_CREATE] Assigned employee not found: employee_id={ticket.assigned_to}")
             raise HTTPException(status_code=404, detail="Assigned employee not found")
 
         # Scope check: caller must have permission to assign to this employee
         allowed_ids = get_assignable_employee_ids(user_permissions, db)
         if ticket.assigned_to not in allowed_ids:
+            logger.error(f"[TICKET_CREATE] Permission denied to assign to employee_id={ticket.assigned_to}")
             raise HTTPException(status_code=403, detail="You do not have permission to assign tickets to this employee")
 
     # Create ticket
+    logger.info(f"[TICKET_CREATE] Creating database ticket record")
     db_ticket = Tickets(
         title=ticket.title,
         description=ticket.description,
@@ -479,25 +488,28 @@ def create_ticket(
         sla=ticket.sla,
         created_by=current_employee_id,
         assigned_to=ticket.assigned_to,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        created_at=utcnow(),
+        updated_at=utcnow(),
     )
 
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)
+    logger.info(f"[TICKET_CREATE] Ticket saved to DB with ticket_id={db_ticket.ticket_id}")
 
     # Create recurrence config if recurrence_type is set
     if ticket.recurrence_type and ticket.recurrence_type != TicketRecurrenceType.NONE:
+        logger.info(f"[TICKET_CREATE] Creating recurrence config for ticket_id={db_ticket.ticket_id}, type={ticket.recurrence_type}")
         recurrence_config = TicketRecurrenceConfig(
             ticket_id=db_ticket.ticket_id,
             recurrence_type=ticket.recurrence_type,
-            next_occurrence=_calculate_next_occurrence(datetime.now(UTC), ticket.recurrence_type),
+            next_occurrence=_calculate_next_occurrence(utcnow(), ticket.recurrence_type),
             parent_ticket_id=None,  # This is the parent/original ticket
             is_active=True,
         )
         db.add(recurrence_config)
         db.commit()
+        logger.info(f"[TICKET_CREATE] Recurrence config created for ticket_id={db_ticket.ticket_id}")
 
     # Load relationships for response
     db_ticket = db.exec(
@@ -512,6 +524,7 @@ def create_ticket(
 
     # Send notification if ticket has assignee and assignee is different from creator
     if db_ticket.assigned_to and db_ticket.assignee and db_ticket.assigned_to != current_employee_id:
+        logger.info(f"[TICKET_NOTIFY] Scheduling notification for ticket_id={db_ticket.ticket_id}, assignee_email={db_ticket.assignee.email}")
         background_tasks.add_task(
             notify_ticket_created,
             ticket_id=db_ticket.ticket_id,
@@ -528,6 +541,9 @@ def create_ticket(
             action_url=f"{settings.APP_URL}/tickets/{db_ticket.ticket_id}",
             notify_assignee=True,
         )
+        logger.info(f"[TICKET_NOTIFY] Notification task added to background queue for ticket_id={db_ticket.ticket_id}")
+    else:
+        logger.info(f"[TICKET_NOTIFY] Skipping notification - assigned_to={db_ticket.assigned_to}, same_as_creator={db_ticket.assigned_to == current_employee_id}")
 
     return ticket_to_schema(db_ticket)
 
@@ -594,7 +610,7 @@ async def update_ticket(
     # Set in_progress_at when ticket moves to in_progress for the first time
     new_status = ticket_update.status
     if new_status == TicketStatus.IN_PROGRESS and db_ticket.in_progress_at is None:
-        db_ticket.in_progress_at = datetime.now(UTC)
+        db_ticket.in_progress_at = utcnow()
 
     # Handle recurrence: DELETE config if ticket is set to inactive (closed/resolved)
     if new_status == TicketStatus.INACTIVE and db_ticket.recurrence_config:
@@ -612,20 +628,20 @@ async def update_ticket(
             db_ticket.recurrence_config.recurrence_type = recurrence_type
             db_ticket.recurrence_config.is_active = True
             db_ticket.recurrence_config.next_occurrence = _calculate_next_occurrence(
-                datetime.now(UTC), recurrence_type
+                utcnow(), recurrence_type
             )
         else:
             recurrence_config = TicketRecurrenceConfig(
                 ticket_id=db_ticket.ticket_id,
                 recurrence_type=recurrence_type,
-                next_occurrence=_calculate_next_occurrence(datetime.now(UTC), recurrence_type),
+                next_occurrence=_calculate_next_occurrence(utcnow(), recurrence_type),
                 parent_ticket_id=None,
                 is_active=True,
             )
             db.add(recurrence_config)
 
     # Update timestamp
-    db_ticket.updated_at = datetime.now(UTC)
+    db_ticket.updated_at = utcnow()
 
     db.commit()
     db.refresh(db_ticket)

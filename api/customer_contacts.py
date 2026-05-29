@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
@@ -57,7 +58,7 @@ def create_customer_contact(
         name=contact.name,
         email=contact.email,
         phone=contact.phone,
-        created_at=datetime.now(UTC),
+        created_at=utcnow(),
     )
 
     db.add(db_contact)
@@ -90,7 +91,7 @@ def update_customer_contact(
     for key, value in update_data.items():
         setattr(db_contact, key, value)
 
-    db_contact.updated_at = datetime.now(UTC)
+    db_contact.updated_at = utcnow()
     db.commit()
     db.refresh(db_contact)
 

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -267,7 +268,7 @@ def create_customer(
         primary_phone=customer.primary_phone,
         primary_address_id=primary_address_id,
         created_by=current_employee.employee_id,
-        created_at=datetime.now(UTC),
+        created_at=utcnow(),
     )
 
     db.add(db_customer)
@@ -325,7 +326,7 @@ def update_customer(
     for key, value in update_data.items():
         setattr(db_customer, key, value)
 
-    db_customer.updated_at = datetime.now(UTC)
+    db_customer.updated_at = utcnow()
     db.commit()
     db.refresh(db_customer)
 

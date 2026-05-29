@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 from dateutil.relativedelta import relativedelta
 
 from sqlmodel import Session, select
@@ -48,7 +49,7 @@ class TicketRecurrenceScheduler:
         generate child tickets, and update the next_occurrence.
         Returns statistics about the processed tickets.
         """
-        now = datetime.now(UTC)
+        now = utcnow()
         stats = {"processed": 0, "created": 0, "errors": 0, "skipped": 0}
 
         try:
@@ -95,8 +96,8 @@ class TicketRecurrenceScheduler:
                             sla=parent_ticket.sla,
                             created_by=parent_ticket.created_by,
                             assigned_to=parent_ticket.assigned_to,
-                            created_at=datetime.now(UTC),
-                            updated_at=datetime.now(UTC),
+                            created_at=utcnow(),
+                            updated_at=utcnow(),
                         )
                         db.add(child_ticket)
                         db.flush()  # Get the new ticket_id
@@ -121,7 +122,7 @@ class TicketRecurrenceScheduler:
                         db.rollback()
                         continue
 
-            self.last_run = datetime.now(UTC)
+            self.last_run = utcnow()
             return stats
 
         except Exception as e:

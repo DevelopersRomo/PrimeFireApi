@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Column, String
@@ -22,6 +23,6 @@ class Addresses(SQLModel, table=True):
     google_place_id: str | None = Field(default=None, max_length=255)
     is_validated: bool = Field(default=False)
     validated_at: datetime | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: utcnow())
 
     country: Optional["Countries"] = Relationship()

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import selectinload
@@ -66,7 +67,7 @@ def create_customer_note(
         customer_id=customer_id,
         note_text=note.note_text,
         created_by=current_employee.employee_id,
-        created_at=datetime.now(UTC),
+        created_at=utcnow(),
     )
 
     db.add(db_note)
@@ -104,7 +105,7 @@ def update_customer_note(
     for key, value in update_data.items():
         setattr(db_note, key, value)
 
-    db_note.updated_at = datetime.now(UTC)
+    db_note.updated_at = utcnow()
     db.commit()
     db.refresh(db_note)
 

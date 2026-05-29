@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import selectinload
@@ -82,7 +83,7 @@ def create_message(
         ticket_id=ticket_id,
         user_id=current_employee.employee_id,
         message_txt=payload.message_txt,
-        created_at=datetime.now(UTC),
+        created_at=utcnow(),
     )
     db.add(db_msg)
     db.commit()
@@ -133,8 +134,8 @@ def update_message(
     update_data = payload.model_dump(exclude_unset=True)
     for k, v in update_data.items():
         setattr(db_msg, k, v)
-    db_msg.updated_at = datetime.now(UTC)
-    db_msg.edited_at = datetime.now(UTC)
+    db_msg.updated_at = utcnow()
+    db_msg.edited_at = utcnow()
     db.add(db_msg)
     db.commit()
     db.refresh(db_msg)

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from core.datetime_utils import utcnow
 
 from sqlmodel import Field, SQLModel
 
@@ -15,6 +16,6 @@ class Jobs(SQLModel, table=True):
     salary_min: float | None = None
     salary_max: float | None = None
     status: str = Field(default="active", max_length=20)
-    posted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    posted_at: datetime = Field(default_factory=lambda: utcnow())
     employee_id: int | None = None
     country_id: int | None = Field(default=None, foreign_key="dbo.countries.country_id")

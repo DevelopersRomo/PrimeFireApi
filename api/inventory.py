@@ -132,6 +132,33 @@ def update_warehouse(
     return db_warehouse
 
 
+@router.delete("/warehouses/{warehouse_id}")
+def delete_warehouse(
+    warehouse_id: int,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    db_warehouse = db.exec(select(Warehouses).where(Warehouses.warehouse_id == warehouse_id)).first()
+
+    if not db_warehouse:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+
+    has_movements = db.exec(
+        select(InventoryMovements).where(InventoryMovements.warehouse_id == warehouse_id)
+    ).first()
+
+    if has_movements:
+        raise HTTPException(
+            status_code=400,
+            detail="Warehouse cannot be deleted because it has inventory movements",
+        )
+
+    db.delete(db_warehouse)
+    db.commit()
+
+    return {"message": "Warehouse deleted successfully"}
+
+
 # ----------------------------
 # MOVEMENTS
 # ----------------------------

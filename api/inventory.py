@@ -1,11 +1,13 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
-from models.inventory import InventoryMovements, Warehouses
+from helpers.date_helpers import format_display_date
+from models.inventory import InventoryMovements, WarehouseLocations, Warehouses
 from models.products import Products
 from schemas.inventory import (
     InventoryMovement,
@@ -13,6 +15,9 @@ from schemas.inventory import (
     InventoryStock,
     Warehouse,
     WarehouseCreate,
+    WarehouseLocation,
+    WarehouseLocationCreate,
+    WarehouseLocationUpdate,
     WarehouseUpdate,
 )
 
@@ -70,6 +75,103 @@ def movement_to_schema(db: Session, movement: InventoryMovements) -> InventoryMo
     )
 
 
+def normalize_location_name(name: str) -> str:
+    normalized = name.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Location name is required")
+    if len(normalized) > 200:
+        raise HTTPException(status_code=400, detail="Location name cannot exceed 200 characters")
+    return normalized
+
+
+def get_location_by_id(db: Session, location_id: int | None) -> WarehouseLocations | None:
+    if location_id is None:
+        return None
+    location = db.exec(
+        select(WarehouseLocations).where(WarehouseLocations.warehouse_location_id == location_id)
+    ).first()
+    if not location:
+        raise HTTPException(status_code=404, detail="Warehouse location not found")
+    return location
+
+
+def get_existing_location_by_name(db: Session, name: str) -> WarehouseLocations | None:
+    normalized = normalize_location_name(name)
+    return db.exec(
+        select(WarehouseLocations).where(func.lower(WarehouseLocations.name) == normalized.lower())
+    ).first()
+
+
+# ----------------------------
+# WAREHOUSE LOCATIONS
+# ----------------------------
+
+
+@router.get("/warehouse-locations", response_model=list[WarehouseLocation])
+def get_warehouse_locations(
+    search: str | None = Query(default=None),
+    active_only: bool = True,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    query = select(WarehouseLocations)
+
+    if active_only:
+        query = query.where(WarehouseLocations.is_active == True)  # noqa: E712
+
+    if search:
+        query = query.where(func.lower(WarehouseLocations.name).contains(search.strip().lower()))
+
+    return db.exec(query.order_by(WarehouseLocations.name)).all()
+
+
+@router.post("/warehouse-locations", response_model=WarehouseLocation)
+def create_warehouse_location(
+    location: WarehouseLocationCreate,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    name = normalize_location_name(location.name)
+    existing = get_existing_location_by_name(db, name)
+
+    if existing:
+        raise HTTPException(status_code=400, detail="Warehouse location already exists")
+
+    db_location = WarehouseLocations(name=name, is_active=True)
+    db.add(db_location)
+    db.commit()
+    db.refresh(db_location)
+
+    return db_location
+
+
+@router.patch("/warehouse-locations/{location_id}", response_model=WarehouseLocation)
+def update_warehouse_location(
+    location_id: int,
+    location: WarehouseLocationUpdate,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    db_location = get_location_by_id(db, location_id)
+    if not db_location:
+        raise HTTPException(status_code=404, detail="Warehouse location not found")
+
+    if location.name is not None:
+        name = normalize_location_name(location.name)
+        existing = get_existing_location_by_name(db, name)
+        if existing and existing.warehouse_location_id != location_id:
+            raise HTTPException(status_code=400, detail="Warehouse location already exists")
+        db_location.name = name
+
+    if location.is_active is not None:
+        db_location.is_active = location.is_active
+
+    db.commit()
+    db.refresh(db_location)
+
+    return db_location
+
+
 # ----------------------------
 # WAREHOUSES
 # ----------------------------
@@ -100,7 +202,22 @@ def create_warehouse(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    db_warehouse = Warehouses(**warehouse.model_dump())
+    data = warehouse.model_dump()
+    location = get_location_by_id(db, warehouse.location_id)
+
+    if location:
+        data["location"] = location.name
+    elif warehouse.location:
+        existing_location = get_existing_location_by_name(db, warehouse.location)
+        if not existing_location:
+            existing_location = WarehouseLocations(name=normalize_location_name(warehouse.location))
+            db.add(existing_location)
+            db.commit()
+            db.refresh(existing_location)
+        data["location_id"] = existing_location.warehouse_location_id
+        data["location"] = existing_location.name
+
+    db_warehouse = Warehouses(**data)
 
     db.add(db_warehouse)
     db.commit()
@@ -122,6 +239,19 @@ def update_warehouse(
         raise HTTPException(status_code=404, detail="Warehouse not found")
 
     update_data = warehouse.model_dump(exclude_unset=True)
+
+    if "location_id" in update_data:
+        location = get_location_by_id(db, warehouse.location_id)
+        update_data["location"] = location.name if location else None
+    elif warehouse.location:
+        existing_location = get_existing_location_by_name(db, warehouse.location)
+        if not existing_location:
+            existing_location = WarehouseLocations(name=normalize_location_name(warehouse.location))
+            db.add(existing_location)
+            db.commit()
+            db.refresh(existing_location)
+        update_data["location_id"] = existing_location.warehouse_location_id
+        update_data["location"] = existing_location.name
 
     for key, value in update_data.items():
         setattr(db_warehouse, key, value)
@@ -195,7 +325,7 @@ def get_inventory_movement(
 def create_inventory_movement(
     movement: InventoryMovementCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    current_employee=Depends(get_current_employee),
 ):
     movement_type = movement.movement_type.upper().strip()
 
@@ -226,6 +356,7 @@ def create_inventory_movement(
 
     data = movement.model_dump()
     data["movement_type"] = movement_type
+    data["created_by"] = current_employee.display_name
 
     db_movement = InventoryMovements(**data)
 
@@ -240,34 +371,34 @@ def create_inventory_movement(
 def create_inventory_entry(
     movement: InventoryMovementCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    current_employee=Depends(get_current_employee),
 ):
     movement.movement_type = "IN"
-    return create_inventory_movement(movement, db, _auth)
+    return create_inventory_movement(movement, db, current_employee)
 
 
 @router.post("/outputs", response_model=InventoryMovement)
 def create_inventory_output(
     movement: InventoryMovementCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    current_employee=Depends(get_current_employee),
 ):
     movement.movement_type = "OUT"
-    return create_inventory_movement(movement, db, _auth)
+    return create_inventory_movement(movement, db, current_employee)
 
 
 @router.post("/adjustments", response_model=InventoryMovement)
 def create_inventory_adjustment(
     movement: InventoryMovementCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    current_employee=Depends(get_current_employee),
 ):
     movement.movement_type = "ADJUSTMENT"
 
     if movement.quantity == 0:
         raise HTTPException(status_code=400, detail="Adjustment quantity cannot be zero")
 
-    return create_inventory_movement(movement, db, _auth)
+    return create_inventory_movement(movement, db, current_employee)
 
 
 # ----------------------------

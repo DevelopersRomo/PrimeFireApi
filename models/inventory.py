@@ -14,10 +14,23 @@ class Warehouses(SQLModel, table=True):
 
     warehouse_id: int | None = Field(default=None, primary_key=True, index=True)
     name: str = Field(max_length=100)
+    location_id: int | None = Field(default=None, foreign_key="dbo.warehouse_locations.warehouse_location_id")
     location: str | None = Field(default=None, max_length=200)
     is_active: bool = Field(default=True)
 
+    location_ref: Optional["WarehouseLocations"] = Relationship(back_populates="warehouses")
     movements: list["InventoryMovements"] = Relationship(back_populates="warehouse")
+
+
+class WarehouseLocations(SQLModel, table=True):
+    __tablename__ = "warehouse_locations"
+    __table_args__ = {"schema": "dbo"}
+
+    warehouse_location_id: int | None = Field(default=None, primary_key=True, index=True)
+    name: str = Field(max_length=200, unique=True, index=True)
+    is_active: bool = Field(default=True)
+
+    warehouses: list[Warehouses] = Relationship(back_populates="location_ref")
 
 
 class InventoryMovements(SQLModel, table=True):

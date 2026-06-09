@@ -6,11 +6,14 @@ from sqlmodel import SQLModel
 
 class WarehouseCreate(SQLModel):
     name: str
+    location_id: int | None = None
     location: str | None = None
+    is_active: bool = True
 
 
 class WarehouseUpdate(SQLModel):
     name: str | None = None
+    location_id: int | None = None
     location: str | None = None
     is_active: bool | None = None
 
@@ -18,7 +21,23 @@ class WarehouseUpdate(SQLModel):
 class Warehouse(SQLModel):
     warehouse_id: int | None = None
     name: str
+    location_id: int | None = None
     location: str | None = None
+    is_active: bool = True
+
+
+class WarehouseLocationCreate(SQLModel):
+    name: str
+
+
+class WarehouseLocationUpdate(SQLModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class WarehouseLocation(SQLModel):
+    warehouse_location_id: int | None = None
+    name: str
     is_active: bool = True
 
 

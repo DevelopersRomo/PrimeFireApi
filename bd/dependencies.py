@@ -6,13 +6,90 @@ from jose import JWTError  # type: ignore[import-untyped]
 from jose import jwt as jose_jwt  # type: ignore[import-untyped]
 from sqlmodel import Session
 
-from bd.connection import SessionLocal, SessionSync
+from bd.connection import SessionLocal, SessionPrimeFire
 from bd.multitenancy import ConnectionManager
 from core.config import settings
 
 # Reuse secret from auth module
 SECRET_KEY = settings.BACKEND_CLIENT_SECRET or "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
+PRIMEFIRE_EMAIL_DOMAINS = ("@primefire.us", "@primefire.do")
+
+
+def get_claim_email(payload: dict) -> str | None:
+    """Return the best email-like claim from an Azure AD token payload."""
+    for claim in ("preferred_username", "upn", "email", "unique_name", "sub"):
+        value = payload.get(claim)
+        if isinstance(value, str) and "@" in value:
+            return value.lower()
+    return None
+
+
+def is_primefire_email(email: str | None) -> bool:
+    return bool(email and email.lower().endswith(PRIMEFIRE_EMAIL_DOMAINS))
+
+
+def get_primefire_session() -> Session:
+    """Create a PrimeFire DB session without falling back to the main DB."""
+    if SessionPrimeFire is None:
+        raise HTTPException(
+            status_code=500,
+            detail="PRIMEFIRE_DB_SERVER is not configured. Azure AD PrimeFire users cannot be routed safely.",
+        )
+    return SessionPrimeFire()
+
+
+def _extract_bearer_token(request: Request | None) -> str | None:
+    if not request:
+        return None
+
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return None
+
+    try:
+        scheme, token = auth_header.split(" ", 1)
+    except ValueError:
+        return None
+
+    return token if scheme.lower() == "bearer" else None
+
+
+def _get_token_route(token: str | None) -> tuple[str | None, bool, str | None]:
+    if not token:
+        return None, False, None
+
+    try:
+        payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": True})
+        return payload.get("tenant_key"), False, None
+    except (ValueError, JWTError):
+        pass
+
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+    except Exception:
+        return None, False, None
+
+    return None, "oid" in payload, get_claim_email(payload)
+
+
+def _validate_tenant_exists(tenant_key: str) -> None:
+    from sqlmodel import select
+
+    from models.tenants import Tenants
+
+    main_db = SessionLocal()
+    try:
+        tenant = main_db.exec(select(Tenants).where(Tenants.db_connection_key == tenant_key)).first()
+        if not tenant:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tenant '{tenant_key}' not found in database. Available tenants can be checked at /tenants/list-all",
+            )
+        if not tenant.is_active:
+            raise HTTPException(status_code=400, detail=f"Tenant '{tenant_key}' is not active")
+    finally:
+        main_db.close()
 
 
 # Dependency function to get DB session
@@ -21,62 +98,19 @@ def get_db(request: Request = None) -> Generator[Session, None, None]:
     Get DB session.
     1. Checks X-Tenant-ID header.
     2. Checks tenant_key from Internal JWT token.
-    3. Checks if it's an Azure AD token (oid claim) -> Connects to PrimeFire DB (SessionSync).
+    3. Checks if it's an Azure AD token with @primefire.us/@primefire.do -> Connects to PrimeFire DB.
     4. Otherwise connects to Main DB (DevRomo).
     """
-    tenant_key = None
+    tenant_key = request.headers.get("X-Tenant-ID") if request else None
     is_azure_token = False
+    azure_email = None
 
-    # 1. Check header first
-    if request:
-        tenant_key = request.headers.get("X-Tenant-ID")
-
-        # 2. If no header, try to extract from JWT token
-        if not tenant_key:
-            auth_header = request.headers.get("Authorization")
-            if auth_header:
-                try:
-                    scheme, token = auth_header.split(" ", 1)
-                    if scheme.lower() == "bearer":
-                        # Try Internal JWT first
-                        try:
-                            payload = jose_jwt.decode(
-                                token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": True}
-                            )
-                            tenant_key = payload.get("tenant_key")
-                        except (ValueError, JWTError):
-                            # Not internal, check if Azure AD
-                            try:
-                                # Decode without verification just to check claims
-                                # Verification happens in require_authentication dependency
-                                payload = jwt.decode(token, options={"verify_signature": False})
-                                if "oid" in payload:
-                                    is_azure_token = True
-                            except Exception:
-                                pass
-                except Exception:
-                    pass  # Invalid header format
+    if not tenant_key:
+        tenant_key, is_azure_token, azure_email = _get_token_route(_extract_bearer_token(request))
 
     if tenant_key:
         try:
-            # First verify tenant exists in DB
-            from sqlmodel import select
-
-            from models.tenants import Tenants
-
-            main_db = SessionLocal()
-            try:
-                tenant = main_db.exec(select(Tenants).where(Tenants.db_connection_key == tenant_key)).first()
-                if not tenant:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Tenant '{tenant_key}' not found in database. Available tenants can be checked at /tenants/list-all",
-                    )
-                if not tenant.is_active:
-                    raise HTTPException(status_code=400, detail=f"Tenant '{tenant_key}' is not active")
-            finally:
-                main_db.close()
-
+            _validate_tenant_exists(tenant_key)
             db = ConnectionManager.get_session(tenant_key)
         except HTTPException:
             raise
@@ -88,8 +122,12 @@ def get_db(request: Request = None) -> Generator[Session, None, None]:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error connecting to tenant '{tenant_key}': {e!s}")
     elif is_azure_token:
-        # Azure AD users go to PrimeFire DB
-        db = SessionSync()
+        if not is_primefire_email(azure_email):
+            raise HTTPException(
+                status_code=403,
+                detail="Azure AD user is not allowed for this database route.",
+            )
+        db = get_primefire_session()
     else:
         # Internal users without tenant go to Main DB (DevRomo)
         db = SessionLocal()

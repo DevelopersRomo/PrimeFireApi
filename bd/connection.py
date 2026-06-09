@@ -128,13 +128,19 @@ def create_engine_from_env(prefix="DB"):
 # Create main engine
 engine = create_engine_from_env("DB")
 
-# Create sync engine (fallback to main engine if PRIMEFIRE_DB_SERVER is not set or sync is disabled)
+# Create PrimeFire engine. This is intentionally independent from employee sync:
+# Azure AD users from @primefire.us / @primefire.do must never fall back to DB_*.
+primefire_engine = create_engine_from_env("PRIMEFIRE_DB") if os.getenv("PRIMEFIRE_DB_SERVER") else None
+
+# Create sync engine. Keep it separate from main DB; when sync is disabled/misconfigured,
+# callers must fail explicitly instead of silently using DB_SERVER.
 sync_enabled = os.getenv("SYNC_EMPLOYEES_PRIMEFIRE", "True").lower() == "true"
-sync_engine = create_engine_from_env("PRIMEFIRE_DB") if sync_enabled and os.getenv("PRIMEFIRE_DB_SERVER") else engine
+sync_engine = primefire_engine if sync_enabled else None
 
 # Create the session
 SessionLocal = sessionmaker(bind=engine, class_=Session)
-SessionSync = sessionmaker(bind=sync_engine, class_=Session)
+SessionPrimeFire = sessionmaker(bind=primefire_engine, class_=Session) if primefire_engine else None
+SessionSync = sessionmaker(bind=sync_engine, class_=Session) if sync_engine else None
 
 
 def create_db_and_tables() -> None:

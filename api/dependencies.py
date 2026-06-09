@@ -9,7 +9,7 @@ from jose import JWTError  # type: ignore[import-untyped]
 from jose import jwt as jose_jwt  # type: ignore[import-untyped]
 from sqlmodel import Session, select
 
-from bd.dependencies import get_db
+from bd.dependencies import get_db, get_primefire_session, is_primefire_email
 from bd.multitenancy import ConnectionManager
 from core.config import settings
 from models.employees import Employees
@@ -160,17 +160,24 @@ async def get_current_employee(
 
         employee = db.exec(select(Employees).where(Employees.email == email)).first()
     else:
-        # Azure AD - Buscar en BD de Sincronización (PrimeFire)
-        from bd.connection import SessionSync
-
+        azure_email = (
+            token_data.get("preferred_username")
+            or token_data.get("upn")
+            or token_data.get("email")
+            or token_data.get("unique_name")
+            or token_data.get("sub")
+        )
+        if not is_primefire_email(azure_email):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Azure AD user is not allowed for PrimeFire.",
+            )
         azure_oid = token_data.get("oid")
 
-        # Usar una sesión separada para la BD de sincronización
-        with SessionSync() as sync_db:
-            employee = sync_db.exec(select(Employees).where(Employees.azure_oid == azure_oid)).first()
+        with get_primefire_session() as primefire_db:
+            employee = primefire_db.exec(select(Employees).where(Employees.azure_oid == azure_oid)).first()
             if employee:
-                # Desvincular el objeto de la sesión para poder usarlo fuera del bloque with
-                sync_db.expunge(employee)
+                primefire_db.expunge(employee)
 
     if not employee:
         raise HTTPException(
@@ -202,13 +209,9 @@ async def get_current_employee_with_permissions(
     Get current employee with their roles and permissions.
     Returns a dict with employee info, roles, and permissions grouped by module.
     """
-    from bd.connection import SessionSync
     from models.employees import EmployeeRoles, Roles
     from models.modules import Modules, RoleModules
 
-    # Determinar qué base de datos usar
-    # Si es usuario Azure AD (tiene 'oid'), usar SessionSync (PrimeFire)
-    # Si es interno, usar db (DevRomo/Tenant)
     is_azure_user = token_data and "oid" in token_data
 
     # Función auxiliary para obtener permisos usando una sesión específica
@@ -298,9 +301,19 @@ async def get_current_employee_with_permissions(
         }
 
     if is_azure_user:
-        # Usar sesión de PrimeFire para usuarios de Microsoft
-        with SessionSync() as sync_db:
-            return get_permissions_with_session(sync_db)
+        azure_email = (
+            token_data.get("preferred_username")
+            or token_data.get("upn")
+            or token_data.get("email")
+            or token_data.get("unique_name")
+            or token_data.get("sub")
+        )
+        if not is_primefire_email(azure_email):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Azure AD user is not allowed for PrimeFire.",
+            )
+        with get_primefire_session() as primefire_db:
+            return get_permissions_with_session(primefire_db)
     else:
-        # Usar sesión estándar para usuarios internos
         return get_permissions_with_session(db)

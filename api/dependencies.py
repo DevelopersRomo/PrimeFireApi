@@ -11,12 +11,13 @@ from sqlmodel import Session, select
 
 from bd.dependencies import get_db, get_primefire_session, is_primefire_email
 from bd.multitenancy import ConnectionManager
+from core.azure_token import looks_like_azure_token, validate_azure_token
 from core.config import settings
 from models.employees import Employees
 from models.tenants import TenantEmployees, Tenants
 
-# Reuse secret from auth module or config
-SECRET_KEY = settings.BACKEND_CLIENT_SECRET
+# Internal JWT signing secret (see core/config.py)
+SECRET_KEY = settings.jwt_secret
 ALGORITHM = "HS256"
 
 
@@ -71,14 +72,9 @@ async def simple_token_validator(
     except JWTError:
         pass  # Not our token, try Azure
 
-    # 2. Try Azure AD (RS256 - validation handled by library usually, here simplified)
-    try:
-        payload = jwt.decode(token, options={"verify_signature": False})
-        # Basic check to see if it looks like Azure token
-        if "oid" in payload or "upn" in payload:
-            return payload
-    except Exception:
-        pass
+    # 2. Try Azure AD (RS256): full signature/audience/issuer validation via JWKS
+    if looks_like_azure_token(token):
+        return validate_azure_token(token)
 
     # If we reached here, token is invalid or unknown
     raise HTTPException(

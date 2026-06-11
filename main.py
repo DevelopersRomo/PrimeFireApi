@@ -51,6 +51,39 @@ if not _os.environ.get("PYTEST_RUNNING"):
     create_db_and_tables()
 
 
+_scheduler_lock_handle = None
+
+
+def _acquire_scheduler_lock() -> bool:
+    """Con varios workers (--workers N) cada proceso ejecuta lifespan.
+
+    Los schedulers (sync de empleados, recurrencia de tickets) deben correr en
+    UN solo worker o se duplicarian N veces. Se decide con un file-lock
+    no bloqueante: el primer worker que lo toma es el "scheduler worker".
+    Multiplataforma (fcntl en Linux/Azure, msvcrt en Windows dev).
+    """
+    global _scheduler_lock_handle
+    import os
+    import tempfile
+
+    lock_path = os.path.join(tempfile.gettempdir(), "primefire_api_schedulers.lock")
+    try:
+        handle = open(lock_path, "a+")
+        try:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except ImportError:
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        _scheduler_lock_handle = handle  # mantener vivo el lock todo el proceso
+        return True
+    except OSError:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
@@ -58,9 +91,11 @@ async def lifespan(app: FastAPI):
     with suppress(Exception):
         await AZURE_AUTH_SCHEME.openid_config.load_config()
 
+    is_scheduler_worker = _acquire_scheduler_lock()
+
     sync_task = None
 
-    if settings.SYNC_EMPLOYEES_PRIMEFIRE:
+    if settings.SYNC_EMPLOYEES_PRIMEFIRE and is_scheduler_worker:
         try:
             from core.background_tasks import sync_scheduler
 
@@ -77,16 +112,17 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    # Start ticket recurrence scheduler
+    # Start ticket recurrence scheduler (solo en el scheduler worker)
     recurrence_task = None
-    try:
-        from core.ticket_recurrence_scheduler import recurrence_scheduler
+    if is_scheduler_worker:
+        try:
+            from core.ticket_recurrence_scheduler import recurrence_scheduler
 
-        recurrence_task = asyncio.create_task(
-            recurrence_scheduler.start(interval_seconds=settings.RECURRENCE_JOB_INTERVAL_HOURS * 3600)
-        )
-    except Exception:
-        pass
+            recurrence_task = asyncio.create_task(
+                recurrence_scheduler.start(interval_seconds=settings.RECURRENCE_JOB_INTERVAL_HOURS * 3600)
+            )
+        except Exception:
+            pass
 
     yield
 

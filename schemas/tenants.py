@@ -72,6 +72,7 @@ class TenantLogoCreate(SQLModel):
     secondary_color: str | None = None
     tertiary_color: str | None = None
     fav_icon: str | None = None
+    auth_provider: str = "password"
 
 
 class TenantLogoUpdate(SQLModel):
@@ -85,6 +86,7 @@ class TenantLogoUpdate(SQLModel):
     secondary_color: str | None = None
     tertiary_color: str | None = None
     fav_icon: str | None = None
+    auth_provider: str | None = None
 
 
 class TenantLogoRead(SQLModel):
@@ -100,5 +102,6 @@ class TenantLogoRead(SQLModel):
     secondary_color: str | None = None
     tertiary_color: str | None = None
     fav_icon: str | None = None
+    auth_provider: str = "password"
     created_at: datetime
     updated_at: datetime | None = None

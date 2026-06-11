@@ -110,8 +110,22 @@ DB_ECHO=False
 ### Development
 
 ```bash
-uvicorn main:app --reload
+# Igual que produccion: 3 workers
+uvicorn main:app --port 8000 --workers 3
 ```
+
+> **Nota:** `--reload` NO es compatible con `--workers` (uvicorn lo ignora y
+> levanta 1 solo proceso). Si necesitas hot-reload mientras desarrollas:
+>
+> ```bash
+> uvicorn main:app --reload
+> ```
+>
+> Con 3 workers ten en cuenta:
+> - El cache de `/employees` es por-proceso: va firmado por tenant, se valida
+>   con un marker de DB (altas/bajas) y tiene TTL de 5 min.
+> - Los schedulers (sync de empleados, recurrencia de tickets) corren en UN
+>   solo worker gracias a un file-lock (`primefire_api_schedulers.lock` en temp).
 
 The API will be available at: `http://localhost:8000`
 The API URL swagger http://localhost:8000/docs
@@ -119,7 +133,7 @@ The API URL swagger http://localhost:8000/docs
 ### Production
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 3
 ```
 
 ### Run Tests

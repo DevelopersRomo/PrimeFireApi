@@ -56,6 +56,27 @@ class Settings(BaseSettings):
 
     SCOPE_DESCRIPTION: str = "user_impersonation"
 
+    # Internal JWT signing (do NOT reuse the Azure client secret in new deployments)
+    JWT_SECRET_KEY: str = Field(
+        default="",
+        validation_alias="JWT_SECRET_KEY",
+        description="Secret used to sign internal HS256 JWTs (access/refresh/magic-link tokens)",
+    )
+    # Extra Azure AD tenant ids allowed to authenticate (comma separated), for future N tenants
+    AZURE_ALLOWED_TENANT_IDS: str = Field(
+        default="",
+        validation_alias="AZURE_ALLOWED_TENANT_IDS",
+        description="Comma-separated additional Azure AD tenant ids accepted by token validation",
+    )
+
+    @property
+    def jwt_secret(self) -> str:
+        """Internal JWT signing secret. Falls back to BACKEND_CLIENT_SECRET for backwards compat."""
+        secret = self.JWT_SECRET_KEY or self.BACKEND_CLIENT_SECRET
+        if not secret:
+            raise RuntimeError("JWT_SECRET_KEY (or BACKEND_CLIENT_SECRET) must be configured")
+        return secret
+
     # Microsoft Graph API credentials (for service-to-service)
     MICROSOFT_TENANT_ID: str = Field(
         default="", validation_alias="MICROSOFT_TENANT_ID", description="Microsoft tenant ID for Graph API"

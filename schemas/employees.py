@@ -76,8 +76,9 @@ class Employee(SQLModel):
 
     country_name: str | None = None
     roles: list[EmployeeRole] = []
-    has_license: bool = False
-    has_active_license: bool = False
+    # None = no aplica (tenant sin Microsoft); False = sin licencia (marcar en rojo)
+    has_license: bool | None = None
+    has_active_license: bool | None = None
 
 
 class EmployeeRead(SQLModel):

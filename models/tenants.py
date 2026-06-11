@@ -52,6 +52,7 @@ class TenantLogos(SQLModel, table=True):
     secondary_color: str | None = Field(default=None, max_length=50)
     tertiary_color: str | None = Field(default=None, max_length=50)
     fav_icon: str | None = Field(default=None, max_length=500)
+    auth_provider: str = Field(default="password", max_length=20)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime | None = Field(default=None)
 

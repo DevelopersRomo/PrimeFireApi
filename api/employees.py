@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
-from bd.dependencies import get_db
+from bd.dependencies import get_db, get_tenant_cache_scope
 from core.microsoft_graph import graph_client
 from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
@@ -20,8 +20,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-EMPLOYEES_CACHE_TTL_SECONDS = 60 * 60
-_employees_list_cache: dict[tuple[bool, str], tuple[float, list[Employee]]] = {}
+# TTL corto: con varios workers el cache es por-proceso, asi que el staleness
+# maximo entre workers queda acotado a este TTL (las altas/bajas se detectan
+# antes via el marker de DB).
+EMPLOYEES_CACHE_TTL_SECONDS = 300
+# Key: (tenant_scope, include_license_status, license_filter) — el tenant_scope
+# firma la clave para que un tenant nunca reciba el cache de otro.
+# Value: (cached_at, db_marker, items)
+_employees_list_cache: dict[tuple[str, bool, str], tuple[float, tuple, list[Employee]]] = {}
 
 
 def clear_employees_cache() -> None:
@@ -29,21 +35,33 @@ def clear_employees_cache() -> None:
     _employees_list_cache.clear()
 
 
-def get_cached_employee_items(cache_key: tuple[bool, str]) -> list[Employee] | None:
+def employees_db_marker(db: Session) -> tuple:
+    """Marcador barato de cambios (altas/bajas) en la tabla de empleados.
+
+    Permite que un worker detecte mutaciones hechas en OTRO worker sin
+    esperar el TTL: si count/max cambian, la entrada de cache se descarta.
+    """
+    from sqlalchemy import func
+
+    row = db.exec(select(func.count(Employees.employee_id), func.max(Employees.employee_id))).one()
+    return tuple(row)
+
+
+def get_cached_employee_items(cache_key: tuple[str, bool, str], db_marker: tuple) -> list[Employee] | None:
     cached = _employees_list_cache.get(cache_key)
     if not cached:
         return None
 
-    cached_at, items = cached
-    if time.monotonic() - cached_at >= EMPLOYEES_CACHE_TTL_SECONDS:
+    cached_at, cached_marker, items = cached
+    if time.monotonic() - cached_at >= EMPLOYEES_CACHE_TTL_SECONDS or cached_marker != db_marker:
         _employees_list_cache.pop(cache_key, None)
         return None
 
     return [item.model_copy(deep=True) for item in items]
 
 
-def set_cached_employee_items(cache_key: tuple[bool, str], items: list[Employee]) -> None:
-    _employees_list_cache[cache_key] = (time.monotonic(), [item.model_copy(deep=True) for item in items])
+def set_cached_employee_items(cache_key: tuple[str, bool, str], db_marker: tuple, items: list[Employee]) -> None:
+    _employees_list_cache[cache_key] = (time.monotonic(), db_marker, [item.model_copy(deep=True) for item in items])
 
 
 def normalize_country_to_code(country_name: str) -> str | None:
@@ -159,8 +177,10 @@ def employee_to_schema(db_employee: Employees) -> Employee:
 
 async def enrich_employee_license_flags(schema: Employee, azure_oid: str | None) -> Employee:
     if not azure_oid:
-        schema.has_license = False
-        schema.has_active_license = False
+        # Sin identidad Microsoft la licencia NO APLICA (None), no es "sin licencia".
+        # El frontend solo marca en rojo has_license === false.
+        schema.has_license = None
+        schema.has_active_license = None
         return schema
 
     try:
@@ -363,9 +383,18 @@ async def get_employees(
     license_filter: str = Query("all", pattern="^(all|with_license|without_license|with_active_license)$"),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
+    tenant_scope: str = Depends(get_tenant_cache_scope),
 ):
-    cache_key = (include_license_status, license_filter)
-    items = get_cached_employee_items(cache_key)
+    # Hoy solo PrimeFire autentica con Microsoft; los tenants user/pass no
+    # tienen licencias M365, asi que no se consulta Graph ni se filtra por licencia.
+    # (Futuro: si un tenant N usa Microsoft, agregar su scope aqui.)
+    is_microsoft_tenant = tenant_scope == "primefire"
+    effective_license_status = include_license_status and is_microsoft_tenant
+    effective_license_filter = license_filter if is_microsoft_tenant else "all"
+
+    db_marker = employees_db_marker(db)
+    cache_key = (tenant_scope, effective_license_status, effective_license_filter)
+    items = get_cached_employee_items(cache_key, db_marker)
 
     if items is None:
         statement = (
@@ -375,23 +404,23 @@ async def get_employees(
             .order_by(Employees.display_name, Employees.employee_id)
         )
         employees = db.exec(statement).all()
-        if include_license_status:
+        if effective_license_status:
             items = list(
                 await asyncio.gather(
                     *[enrich_employee_license_flags(employee_to_schema(emp), emp.azure_oid) for emp in employees]
                 )
             )
 
-            if license_filter == "with_license":
+            if effective_license_filter == "with_license":
                 items = [item for item in items if item.has_license]
-            elif license_filter == "without_license":
+            elif effective_license_filter == "without_license":
                 items = [item for item in items if not item.has_license]
-            elif license_filter == "with_active_license":
+            elif effective_license_filter == "with_active_license":
                 items = [item for item in items if item.has_active_license]
         else:
             items = [employee_to_schema(emp) for emp in employees]
 
-        set_cached_employee_items(cache_key, items)
+        set_cached_employee_items(cache_key, db_marker, items)
 
     total = len(items)
     items = items[skip : skip + limit]
@@ -412,7 +441,12 @@ async def get_employees(
 # 📌 READ ONE
 # ----------------------------
 @router.get("/{employee_id}", response_model=Employee)
-async def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+async def get_employee(
+    employee_id: int,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+    tenant_scope: str = Depends(get_tenant_cache_scope),
+):
     db_employee = db.exec(
         select(Employees)
         .join(Countries, isouter=True)
@@ -421,7 +455,13 @@ async def get_employee(employee_id: int, db: Session = Depends(get_db), _auth=De
     ).first()
     if not db_employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-    return await enrich_employee_license_flags(employee_to_schema(db_employee), db_employee.azure_oid)
+    schema = employee_to_schema(db_employee)
+    if tenant_scope != "primefire":
+        # Tenant user/pass: licencias M365 no aplican
+        schema.has_license = None
+        schema.has_active_license = None
+        return schema
+    return await enrich_employee_license_flags(schema, db_employee.azure_oid)
 
 
 # ----------------------------

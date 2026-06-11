@@ -1,6 +1,5 @@
 from collections.abc import Generator
 
-import jwt  # type: ignore[import-untyped]
 from fastapi import HTTPException, Request
 from jose import JWTError  # type: ignore[import-untyped]
 from jose import jwt as jose_jwt  # type: ignore[import-untyped]
@@ -8,10 +7,11 @@ from sqlmodel import Session
 
 from bd.connection import SessionLocal, SessionPrimeFire
 from bd.multitenancy import ConnectionManager
+from core.azure_token import looks_like_azure_token, validate_azure_token
 from core.config import settings
 
-# Reuse secret from auth module
-SECRET_KEY = settings.BACKEND_CLIENT_SECRET or "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+# Internal JWT signing secret (see core/config.py). No hardcoded fallback.
+SECRET_KEY = settings.jwt_secret
 ALGORITHM = "HS256"
 PRIMEFIRE_EMAIL_DOMAINS = ("@primefire.us", "@primefire.do")
 
@@ -65,12 +65,12 @@ def _get_token_route(token: str | None) -> tuple[str | None, bool, str | None]:
     except (ValueError, JWTError):
         pass
 
-    try:
-        payload = jwt.decode(token, options={"verify_signature": False})
-    except Exception:
-        return None, False, None
+    # Azure AD token: full signature/audience/issuer validation via JWKS
+    if looks_like_azure_token(token):
+        payload = validate_azure_token(token)
+        return None, True, get_claim_email(payload)
 
-    return None, "oid" in payload, get_claim_email(payload)
+    return None, False, None
 
 
 def _validate_tenant_exists(tenant_key: str) -> None:
@@ -95,18 +95,14 @@ def _validate_tenant_exists(tenant_key: str) -> None:
 # Dependency function to get DB session
 def get_db(request: Request = None) -> Generator[Session, None, None]:
     """
-    Get DB session.
-    1. Checks X-Tenant-ID header.
-    2. Checks tenant_key from Internal JWT token.
-    3. Checks if it's an Azure AD token with @primefire.us/@primefire.do -> Connects to PrimeFire DB.
-    4. Otherwise connects to Main DB (DevRomo).
-    """
-    tenant_key = request.headers.get("X-Tenant-ID") if request else None
-    is_azure_token = False
-    azure_email = None
+    Get DB session. Tenant routing derives ONLY from the verified bearer token:
+    1. tenant_key claim from a verified Internal JWT -> tenant DB.
+    2. Verified Azure AD token with @primefire.us/@primefire.do -> PrimeFire DB.
+    3. Otherwise -> Main DB (DevRomo).
 
-    if not tenant_key:
-        tenant_key, is_azure_token, azure_email = _get_token_route(_extract_bearer_token(request))
+    NOTE: the X-Tenant-ID header is intentionally ignored (it allowed cross-tenant access).
+    """
+    tenant_key, is_azure_token, azure_email = _get_token_route(_extract_bearer_token(request))
 
     if tenant_key:
         try:
@@ -136,6 +132,20 @@ def get_db(request: Request = None) -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def get_tenant_cache_scope(request: Request = None) -> str:
+    """Identificador del tenant del request, para FIRMAR claves de cache.
+
+    Evita fugas cross-tenant: un cache global en memoria nunca debe servir
+    datos de un tenant a usuarios de otro. Deriva SOLO del token verificado.
+    """
+    tenant_key, is_azure_token, _ = _get_token_route(_extract_bearer_token(request))
+    if tenant_key:
+        return f"tenant:{tenant_key}"
+    if is_azure_token:
+        return "primefire"
+    return "main"
 
 
 # Dependency function to always get MAIN DB session (ignores tenant headers)

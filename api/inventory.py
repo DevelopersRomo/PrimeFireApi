@@ -6,9 +6,8 @@ from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
-from helpers.date_helpers import format_display_date
 from models.inventory import InventoryMovements, WarehouseLocations, Warehouses
-from models.products import Products
+from models.products import ProductCategories, ProductFamilies, Products
 from schemas.inventory import (
     InventoryMovement,
     InventoryMovementCreate,
@@ -35,7 +34,7 @@ def get_current_stock(db: Session, product_id: int, warehouse_id: int | None = N
 
     movements = db.exec(query).all()
 
-    stock = Decimal("0")
+    stock = Decimal(0)
 
     for movement in movements:
         if movement.movement_type == "IN":
@@ -73,6 +72,20 @@ def movement_to_schema(db: Session, movement: InventoryMovements) -> InventoryMo
         product_code=getattr(product, "code", None) if product else None,
         warehouse_name=warehouse.name if warehouse else None,
     )
+
+
+def get_product_family_name(db: Session, product: Products) -> str | None:
+    if not product.family_id:
+        return None
+    family = db.get(ProductFamilies, product.family_id)
+    return family.name if family else None
+
+
+def get_product_category_name(db: Session, product: Products) -> str | None:
+    if not product.category_id:
+        return None
+    category = db.get(ProductCategories, product.category_id)
+    return category.name if category else None
 
 
 def normalize_location_name(name: str) -> str:
@@ -178,8 +191,7 @@ def update_warehouse_location(
 
 @router.get("/warehouses", response_model=list[Warehouse])
 def get_warehouses(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    warehouses = db.exec(select(Warehouses)).all()
-    return warehouses
+    return db.exec(select(Warehouses)).all()
 
 
 @router.get("/warehouses/{warehouse_id}", response_model=Warehouse)
@@ -419,9 +431,9 @@ def get_inventory_stock(
             select(InventoryMovements).where(InventoryMovements.product_id == product.id)
         ).all()
 
-        total_in = Decimal("0")
-        total_out = Decimal("0")
-        total_adjustment = Decimal("0")
+        total_in = Decimal(0)
+        total_out = Decimal(0)
+        total_adjustment = Decimal(0)
 
         for movement in movements:
             if movement.movement_type == "IN":
@@ -446,8 +458,8 @@ def get_inventory_stock(
                 product_id=product.id,
                 code=getattr(product, "code", None),
                 name=product.name,
-                family=getattr(product, "family", None),
-                category=getattr(product, "category", None),
+                family=get_product_family_name(db, product),
+                category=get_product_category_name(db, product),
                 size=getattr(product, "size", None),
                 material_type=getattr(product, "material_type", None),
                 unit=getattr(product, "unit", None),

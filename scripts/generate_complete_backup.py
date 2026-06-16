@@ -144,13 +144,14 @@ def topological_sort_tables(tables, dependencies):
     return sorted_tables
 
 
-def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None) -> None:
-    """Generate complete backup of entire database with ALL data.
+def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None, backup_type="full") -> None:
+    """Generate complete backup of entire database.
 
     Args:
         target_table: Optional single table to backup
         db_prefix: Database prefix for environment variables (e.g., 'DB', 'PRIMEFIRE_DB')
         backup_dir: Custom backup directory (optional)
+        backup_type: 'full' for structure + data, 'structure' for schema only
     """
     SessionLocal = get_session_local(db_prefix)
     database_name = os.getenv(f"{db_prefix}_DATABASE", "unknown")
@@ -161,18 +162,23 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None)
         backup_dir = os.path.join(pathlib.Path(pathlib.Path(__file__).parent).parent, "bd", "sql", "backups")  # noqa: PTH118
 
     pathlib.Path(backup_dir).mkdir(exist_ok=True, parents=True)
+    type_suffix = "_structure" if backup_type == "structure" else ""
     output_file = os.path.join(  # noqa: PTH118
         backup_dir,
-        f"complete_backup_{database_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql",  # noqa: DTZ005
+        f"complete_backup_{database_name}{type_suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql",  # noqa: DTZ005
     )
 
     with pathlib.Path(output_file).open("w", encoding="utf-8") as f:
         f.write(f"USE [{database_name}]\n")
         f.write("GO\n\n")
-        f.write("/****** COMPLETE DATABASE BACKUP WITH ALL DATA ******/\n")
+        backup_label = "STRUCTURE ONLY" if backup_type == "structure" else "COMPLETE DATABASE BACKUP WITH ALL DATA"
+        f.write(f"/****** {backup_label} ******/\n")
         f.write(f"/****** Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ******/\n")  # noqa: DTZ005
         f.write(f"/****** Database: {database_name} on {server_name} ******/\n")
-        f.write("/****** This script contains ALL table structures and ALL data ******/\n\n")
+        if backup_type == "structure":
+            f.write("/****** This script contains table structures ONLY (no data) ******/\n\n")
+        else:
+            f.write("/****** This script contains ALL table structures and ALL data ******/\n\n")
 
         with SessionLocal() as session:
             # Get all tables or a single table
@@ -266,51 +272,52 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None)
                 f.write("\n) ON [PRIMARY]\n")
                 f.write("GO\n\n")
 
-            # Third pass: Insert data for ALL tables in dependency order
-            f.write("\n-- =============================================\n")
-            f.write("-- INSERT DATA FOR ALL TABLES\n")
-            f.write("-- =============================================\n\n")
-
+            # Third pass: Insert data for ALL tables in dependency order (only for full backups)
             total_records = 0
             tables_with_data = []
 
-            for table in sorted_tables:
-                if table not in tables:
-                    continue
+            if backup_type == "full":
+                f.write("\n-- =============================================\n")
+                f.write("-- INSERT DATA FOR ALL TABLES\n")
+                f.write("-- =============================================\n\n")
 
-                columns, rows = get_table_data(session, table)
+                for table in sorted_tables:
+                    if table not in tables:
+                        continue
 
-                if rows:
-                    tables_with_data.append((table, len(rows)))
-                    total_records += len(rows)
+                    columns, rows = get_table_data(session, table)
 
-                    f.write(f"\n-- Data for {table} ({len(rows)} records)\n")
+                    if rows:
+                        tables_with_data.append((table, len(rows)))
+                        total_records += len(rows)
 
-                    # Check if table has identity column
-                    has_identity_query = f"""
-                    SELECT COUNT(*)
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = '{table}'
-                    AND COLUMNPROPERTY(OBJECT_ID('{table}'), COLUMN_NAME, 'IsIdentity') = 1
-                    """
-                    has_identity_result = session.exec(text(has_identity_query))
-                    has_identity = has_identity_result.fetchone()[0] > 0
+                        f.write(f"\n-- Data for {table} ({len(rows)} records)\n")
 
-                    if has_identity:
-                        f.write(f"SET IDENTITY_INSERT [dbo].[{table}] ON\n")
+                        # Check if table has identity column
+                        has_identity_query = f"""
+                        SELECT COUNT(*)
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_NAME = '{table}'
+                        AND COLUMNPROPERTY(OBJECT_ID('{table}'), COLUMN_NAME, 'IsIdentity') = 1
+                        """
+                        has_identity_result = session.exec(text(has_identity_query))
+                        has_identity = has_identity_result.fetchone()[0] > 0
+
+                        if has_identity:
+                            f.write(f"SET IDENTITY_INSERT [dbo].[{table}] ON\n")
+                            f.write("GO\n\n")
+
+                        for row in rows:
+                            col_names = ", ".join([f"[{col}]" for col in columns])
+                            values = ", ".join([format_value(val) for val in row])
+                            f.write(f"INSERT [dbo].[{table}] ({col_names}) VALUES ({values})\n")
+
+                        if has_identity:
+                            f.write(f"\nSET IDENTITY_INSERT [dbo].[{table}] OFF\n")
+
                         f.write("GO\n\n")
-
-                    for row in rows:
-                        col_names = ", ".join([f"[{col}]" for col in columns])
-                        values = ", ".join([format_value(val) for val in row])
-                        f.write(f"INSERT [dbo].[{table}] ({col_names}) VALUES ({values})\n")
-
-                    if has_identity:
-                        f.write(f"\nSET IDENTITY_INSERT [dbo].[{table}] OFF\n")
-
-                    f.write("GO\n\n")
-                else:
-                    f.write(f"\n-- {table}: No data to insert\n\n")
+                    else:
+                        f.write(f"\n-- {table}: No data to insert\n\n")
 
             # Fourth pass: Add foreign keys
             f.write("\n-- =============================================\n")
@@ -342,17 +349,20 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None)
             f.write("\n-- =============================================\n")
             f.write("-- BACKUP SUMMARY\n")
             f.write("-- =============================================\n")
+            f.write(f"-- Backup Type: {backup_type.upper()}\n")
             f.write(f"-- Total Tables: {len(tables)}\n")
-            f.write(f"-- Total Records: {total_records}\n")
-            f.write("-- \n")
-            f.write("-- Data per table:\n")
-
-            for table, count in tables_with_data:
-                f.write(f"--   {table}: {count} records\n")
-
+            if backup_type == "full":
+                f.write(f"-- Total Records: {total_records}\n")
+                f.write("-- \n")
+                f.write("-- Data per table:\n")
+                for table, count in tables_with_data:
+                    f.write(f"--   {table}: {count} records\n")
             f.write("-- =============================================\n")
-            f.write("\nPRINT 'Complete backup restored successfully!'\n")
-            f.write(f"PRINT 'Total records inserted: {total_records}'\n")
+            f.write("\nPRINT 'Backup restored successfully!'\n")
+            if backup_type == "full":
+                f.write(f"PRINT 'Total records inserted: {total_records}'\n")
+            else:
+                f.write("PRINT 'Structure only - no data inserted'\n")
             f.write("GO\n")
 
 
@@ -362,6 +372,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--db", default="DB", help="Database prefix for environment variables (e.g., DB, PRIMEFIRE_DB). Default: DB"
     )
+    parser.add_argument(
+        "--type",
+        choices=["full", "structure"],
+        default="full",
+        help="Backup type: 'full' (structure + data) or 'structure' (schema only). Default: full",
+    )
     parser.add_argument("--backup-dir", default=None, help="Custom backup directory (optional)")
     args = parser.parse_args()
-    generate_complete_backup(target_table=args.table, db_prefix=args.db, backup_dir=args.backup_dir)
+    generate_complete_backup(target_table=args.table, db_prefix=args.db, backup_dir=args.backup_dir, backup_type=args.type)

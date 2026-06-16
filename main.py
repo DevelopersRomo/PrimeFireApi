@@ -30,6 +30,7 @@ from api.notifications import router as notifications_router
 from api.permissions import router as permissions_router
 from api.products import router as products_router
 from api.quotations import router as quotations_router
+from api.quotation_items import router as quotation_items_router
 from api.roles import router as roles_router
 from api.tenants import router as tenants_router
 from api.ticket_attachments import router as ticket_attachments_router
@@ -37,6 +38,7 @@ from api.ticket_messages import router as ticket_messages_router
 from api.tickets import router as tickets_router
 from api.time_off import router as time_off_router
 from api.timesheet import router as timesheet_router
+from api.inventory import router as inventory_router
 
 # DB
 from bd.connection import create_db_and_tables
@@ -276,9 +278,7 @@ class OpenCORSMiddleware(BaseHTTPMiddleware):
             return response
         return await call_next(request)
 
-
 app.add_middleware(OpenCORSMiddleware)
-
 
 # Routers
 app.include_router(licenses_router, prefix="/licenses", tags=["licenses"])
@@ -303,10 +303,12 @@ app.include_router(customers_router, prefix="/customers", tags=["customers"])
 app.include_router(customer_notes_router, tags=["customer_notes"])
 app.include_router(customer_contacts_router, tags=["customer_contacts"])
 app.include_router(customer_attachments_router, tags=["customer_attachments"])
+app.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])  
 
 # IMPORTANT
 app.include_router(products_router, prefix="/products", tags=["products"])
 app.include_router(quotations_router)  # prefix already defined in router
+app.include_router(quotation_items_router)
 app.include_router(backups_router, prefix="/backups", tags=["backups"])
 
 

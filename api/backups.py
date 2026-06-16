@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import sys
 from datetime import datetime
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
@@ -40,13 +41,13 @@ class BackupResponse(BaseModel):
     backup_files: list = []
 
 
-def run_backup(db_prefix: str) -> dict:
+def run_backup(db_prefix: str, backup_type: str = "full") -> dict:
     """Ejecuta el script de backup para una base de datos específica."""
     script_path = pathlib.Path(__file__).parent.parent / "scripts" / "generate_complete_backup.py"
 
     try:
         result = subprocess.run(
-            [sys.executable, str(script_path), "--db", db_prefix, "--backup-dir", BACKUP_DIR],
+            [sys.executable, str(script_path), "--db", db_prefix, "--type", backup_type, "--backup-dir", BACKUP_DIR],
             capture_output=True,
             text=True,
             check=False,
@@ -62,11 +63,16 @@ def run_backup(db_prefix: str) -> dict:
 
 
 @router.post("/trigger", response_model=BackupResponse)
-async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authentication)):
+async def trigger_backup(
+    db_prefix: str = "all",
+    backup_type: Literal["full", "structure"] = "full",
+    _: dict = Depends(require_authentication),
+):
     """
     Trigger un backup manual de la base de datos.
 
     - **db_prefix**: "DB", "PRIMEFIRE_DB", o "all" (por defecto ejecuta ambos)
+    - **backup_type**: "full" (estructura + datos) o "structure" (solo estructura)
     """
     results = []
     backup_files = []
@@ -78,7 +84,7 @@ async def trigger_backup(db_prefix: str = "all", _: dict = Depends(require_authe
         db_prefixes = [db_prefix]
 
     for prefix in db_prefixes:
-        result = run_backup(prefix)
+        result = run_backup(prefix, backup_type)
         results.append(result)
 
         if result["success"]:

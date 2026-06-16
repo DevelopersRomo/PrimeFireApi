@@ -1,6 +1,34 @@
 """Date and time helper functions."""
 
+from datetime import date, datetime
 from decimal import Decimal
+
+
+def format_display_date(value: date | datetime | str | None) -> str | None:
+    """Format a date/datetime to display format 'May 21, 2026'.
+
+    Args:
+        value: date, datetime, ISO string, or None
+
+    Returns:
+        Formatted string like 'May 21, 2026' or None if input is None
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return value
+
+    if isinstance(value, datetime):
+        return value.strftime("%b %d, %Y").replace(" 0", " ")
+
+    if isinstance(value, date):
+        return value.strftime("%b %d, %Y").replace(" 0", " ")
+
+    return str(value)
 
 
 def format_hours_minutes(minutes: int) -> str:

@@ -1,9 +1,10 @@
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Column, String
 from sqlmodel import Field, Relationship, SQLModel
+
+from core.datetime_utils import utcnow
 
 if TYPE_CHECKING:
     from models.countries import Countries
@@ -15,7 +16,9 @@ class Addresses(SQLModel, table=True):
 
     address_id: int | None = Field(default=None, primary_key=True, index=True)
     address_1: str = Field(sa_column=Column("address_1", String(200)), max_length=200)
-    address_2: str | None = Field(sa_column=Column("address_2", String(200), nullable=True, default=None), max_length=200)
+    address_2: str | None = Field(
+        sa_column=Column("address_2", String(200), nullable=True, default=None), max_length=200
+    )
     city: str = Field(max_length=100)
     state: str = Field(max_length=100)
     zip_code: str = Field(max_length=20)
@@ -23,6 +26,6 @@ class Addresses(SQLModel, table=True):
     google_place_id: str | None = Field(default=None, max_length=255)
     is_validated: bool = Field(default=False)
     validated_at: datetime | None = None
-    created_at: datetime = Field(default_factory=lambda: utcnow())
+    created_at: datetime = Field(default_factory=utcnow)
 
     country: Optional["Countries"] = Relationship()

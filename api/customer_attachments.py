@@ -1,6 +1,4 @@
 import os
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,6 +10,7 @@ from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
+from core.datetime_utils import utcnow
 from models.customers import CustomerAttachments, Customers
 from schemas.customers import CustomerAttachment, CustomerEmployee
 

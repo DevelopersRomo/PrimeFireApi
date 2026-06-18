@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# TTL corto: con varios workers el cache es por-proceso, asi que el staleness
-# maximo entre workers queda acotado a este TTL (las altas/bajas se detectan
-# antes via el marker de DB).
+# Short TTL: with multiple workers, the cache is per-process, so the maximum
+# staleness between workers is limited by this TTL. Inserts/deletes are detected
+# earlier via the DB marker.
 EMPLOYEES_CACHE_TTL_SECONDS = 300
 # Key: (tenant_scope, include_license_status, license_filter) — el tenant_scope
 # firma la clave para que un tenant nunca reciba el cache de otro.
@@ -38,7 +38,7 @@ def clear_employees_cache() -> None:
 def employees_db_marker(db: Session) -> tuple:
     """Marcador barato de cambios (altas/bajas) en la tabla de empleados.
 
-    Permite que un worker detecte mutaciones hechas en OTRO worker sin
+    Allows a worker to detect mutations made in another worker without
     esperar el TTL: si count/max cambian, la entrada de cache se descarta.
     """
     from sqlalchemy import func
@@ -318,13 +318,14 @@ async def validate_and_resolve_manager(db: Session, employee_id: int, update_dat
         return update_data
 
     if manager_email:
-        try:
+        try:  # noqa: PLW0717
             resolved_manager_id = await resolve_manager_employee_id(
                 db, manager_email=manager_email, manager_name=manager_name
             )
             if not resolved_manager_id:
                 raise HTTPException(
-                    status_code=400, detail="manager_email is invalid. Manager must exist in Microsoft or SQL employees."
+                    status_code=400,
+                    detail="manager_email is invalid. Manager must exist in Microsoft or SQL employees.",
                 )
             if resolved_manager_id == employee_id:
                 raise HTTPException(status_code=400, detail="Employee cannot be their own manager")
@@ -345,7 +346,7 @@ async def validate_and_resolve_manager(db: Session, employee_id: int, update_dat
             )
 
     if manager_name:
-        try:
+        try:  # noqa: PLW0717
             resolved_manager_id = await resolve_manager_employee_id(db, manager_name=manager_name)
             if not resolved_manager_id:
                 raise HTTPException(status_code=400, detail="Manager must exist in Microsoft or SQL employees")
@@ -496,7 +497,7 @@ async def update_employee(
 
     synced = False
     if db_employee.azure_oid and needs_microsoft_sync:
-        try:
+        try:  # noqa: PLW0717
             # Resolve country_id to ISO code for Microsoft Graph, including explicit clears.
             if "country_id" in update_data:
                 update_data["country"] = None
@@ -634,7 +635,7 @@ async def sync_from_microsoft(db: Session = Depends(get_db), _auth=Depends(requi
     Sync all users from Microsoft 365 to local database.
     Creates new employees if they don't exist, updates existing ones.
     """
-    try:
+    try:  # noqa: PLW0717
         ms_users = await graph_client.get_all_users()
         synced_employees = []
 
@@ -709,7 +710,7 @@ async def sync_employee_to_microsoft(
     if not db_employee.azure_oid:
         raise HTTPException(status_code=400, detail="Employee does not have azure_oid. Cannot sync to Microsoft 365.")
 
-    try:
+    try:  # noqa: PLW0717
         # Convert employee to Graph format
         employee_dict = db_employee.model_dump()
         graph_data = graph_client.map_employee_to_graph_user(employee_dict)
@@ -750,7 +751,7 @@ async def sync_single_employee_from_microsoft(
     if not db_employee.azure_oid:
         raise HTTPException(status_code=400, detail="Employee does not have azure_oid. Cannot sync from Microsoft 365.")
 
-    try:
+    try:  # noqa: PLW0717
         # Fetch from Microsoft
         ms_user = await graph_client.get_user(db_employee.azure_oid)
         employee_data = graph_client.map_graph_user_to_employee(ms_user)

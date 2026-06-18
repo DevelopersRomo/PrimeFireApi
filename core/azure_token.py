@@ -105,7 +105,7 @@ def validate_azure_token(token: str) -> dict[str, Any]:
 
     issuer = str(payload.get("iss", ""))
     valid_issuer = (
-        issuer.startswith("https://login.microsoftonline.com/") or issuer.startswith("https://sts.windows.net/")
+        issuer.startswith(("https://login.microsoftonline.com/", "https://sts.windows.net/"))
     ) and tid in issuer.lower()
     if not valid_issuer:
         raise _unauthorized("Invalid token issuer")

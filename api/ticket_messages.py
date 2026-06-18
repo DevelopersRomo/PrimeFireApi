@@ -1,6 +1,3 @@
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
-
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -8,6 +5,7 @@ from sqlmodel import Session, select
 from api.dependencies import get_current_employee, get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
 from core.config import settings
+from core.datetime_utils import utcnow
 from models.employees import Employees
 from models.ticket_messages import TicketMessages
 from models.tickets import Tickets
@@ -98,7 +96,8 @@ def create_message(
             message_id=db_msg.ticket_message_id,
             message_text=payload.message_txt or "",
             commenter_id=current_employee.employee_id,
-            commenter_name=current_employee.display_name or f"{current_employee.first_name} {current_employee.last_name}",
+            commenter_name=current_employee.display_name
+            or f"{current_employee.first_name} {current_employee.last_name}",
             commenter_email=current_employee.email or "",
             ticket_creator_id=ticket.created_by,
             ticket_creator_email=ticket.creator.email,

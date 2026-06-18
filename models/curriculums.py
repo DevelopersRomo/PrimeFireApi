@@ -1,7 +1,8 @@
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
+from datetime import datetime
 
 from sqlmodel import Field, SQLModel
+
+from core.datetime_utils import utcnow
 
 
 class Curriculums(SQLModel, table=True):
@@ -16,5 +17,5 @@ class Curriculums(SQLModel, table=True):
     curriculum_path: str | None = Field(default=None, max_length=255)
     cover_letter: str | None = Field(default=None, max_length=1000)
     status: str = Field(default="pending", max_length=20)
-    submitted_at: datetime = Field(default_factory=lambda: utcnow())
+    submitted_at: datetime = Field(default_factory=utcnow)
     employee_id: int | None = None

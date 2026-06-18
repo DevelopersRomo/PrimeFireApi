@@ -1,12 +1,13 @@
 import asyncio
+import contextlib
 import logging
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
-from dateutil.relativedelta import relativedelta
+from datetime import datetime
 
+from dateutil.relativedelta import relativedelta
 from sqlmodel import Session, select
 
 from bd.connection import sync_engine as engine
+from core.datetime_utils import utcnow
 from models.tickets import TicketRecurrenceConfig, TicketRecurrenceType, TicketStatus, Tickets
 
 logger = logging.getLogger(__name__)
@@ -19,17 +20,17 @@ def _calculate_next_occurrence(from_date: datetime, recurrence_type: TicketRecur
     """Calculate the next occurrence date based on recurrence type."""
     if recurrence_type == TicketRecurrenceType.DAILY:
         return from_date + relativedelta(days=1)
-    elif recurrence_type == TicketRecurrenceType.WEEKLY:
+    if recurrence_type == TicketRecurrenceType.WEEKLY:
         return from_date + relativedelta(weeks=1)
-    elif recurrence_type == TicketRecurrenceType.BIWEEKLY:
+    if recurrence_type == TicketRecurrenceType.BIWEEKLY:
         return from_date + relativedelta(weeks=2)
-    elif recurrence_type == TicketRecurrenceType.TRIWEEKLY:
+    if recurrence_type == TicketRecurrenceType.TRIWEEKLY:
         return from_date + relativedelta(weeks=3)
-    elif recurrence_type == TicketRecurrenceType.MONTHLY:
+    if recurrence_type == TicketRecurrenceType.MONTHLY:
         return from_date + relativedelta(months=1)
-    elif recurrence_type == TicketRecurrenceType.BIMONTHLY:
+    if recurrence_type == TicketRecurrenceType.BIMONTHLY:
         return from_date + relativedelta(months=2)
-    elif recurrence_type == TicketRecurrenceType.YEARLY:
+    if recurrence_type == TicketRecurrenceType.YEARLY:
         return from_date + relativedelta(years=1)
     return from_date
 
@@ -42,6 +43,60 @@ class TicketRecurrenceScheduler:
         self.last_run: datetime | None = None
         self._task: asyncio.Task | None = None
         self.interval_seconds = DEFAULT_INTERVAL_SECONDS
+
+    def _process_single_config(self, config: TicketRecurrenceConfig, db: Session, stats: dict[str, int]) -> None:
+        """Process a single recurrence config, creating a child ticket if due."""
+        try:  # noqa: PLW0717
+            # Load the parent ticket
+            parent_ticket = db.exec(select(Tickets).where(Tickets.ticket_id == config.ticket_id)).first()
+
+            if not parent_ticket:
+                # Parent ticket was deleted, deactivate this config
+                config.is_active = False
+                db.commit()
+                stats["skipped"] += 1
+                return
+
+            # Only create child ticket if parent is still open (not closed/done)
+            if parent_ticket.status in {TicketStatus.CLOSED, TicketStatus.DONE}:
+                # Parent ticket is closed — deactivate recurrence
+                config.is_active = False
+                db.commit()
+                stats["skipped"] += 1
+                return
+
+            # Create the child ticket
+            child_ticket = Tickets(
+                title=parent_ticket.title,
+                description=parent_ticket.description,
+                status=TicketStatus.TODO,
+                priority=parent_ticket.priority,
+                ticket_type=parent_ticket.ticket_type,
+                sla=parent_ticket.sla,
+                created_by=parent_ticket.created_by,
+                assigned_to=parent_ticket.assigned_to,
+                created_at=utcnow(),
+                updated_at=utcnow(),
+            )
+            db.add(child_ticket)
+            db.flush()  # Get the new ticket_id
+
+            # Update the parent's config with new next_occurrence
+            config.next_occurrence = _calculate_next_occurrence(config.next_occurrence, config.recurrence_type)
+            config.parent_ticket_id = child_ticket.ticket_id
+
+            db.commit()
+            stats["created"] += 1
+            logger.info(
+                f"Created recurring ticket #{child_ticket.ticket_id} "
+                f"(parent #{parent_ticket.ticket_id}, "
+                f"next occurrence: {config.next_occurrence})"
+            )
+
+        except Exception as e:
+            stats["errors"] += 1
+            logger.exception(f"Error processing recurrence config #{config.config_id}: {e}")
+            db.rollback()
 
     def process_recurring_tickets(self) -> dict:
         """
@@ -57,70 +112,15 @@ class TicketRecurrenceScheduler:
                 # Find all configs that are due (next_occurrence <= now)
                 configs = db.exec(
                     select(TicketRecurrenceConfig).where(
-                        TicketRecurrenceConfig.is_active == True,
-                        TicketRecurrenceConfig.next_occurrence != None,
+                        TicketRecurrenceConfig.is_active,
+                        TicketRecurrenceConfig.next_occurrence is not None,
                         TicketRecurrenceConfig.next_occurrence <= now,
                     )
                 ).all()
 
                 for config in configs:
                     stats["processed"] += 1
-                    try:
-                        # Load the parent ticket
-                        parent_ticket = db.exec(
-                            select(Tickets).where(Tickets.ticket_id == config.ticket_id)
-                        ).first()
-
-                        if not parent_ticket:
-                            # Parent ticket was deleted, deactivate this config
-                            config.is_active = False
-                            db.commit()
-                            stats["skipped"] += 1
-                            continue
-
-                        # Only create child ticket if parent is still open (not closed/done)
-                        if parent_ticket.status in (TicketStatus.CLOSED, TicketStatus.DONE):
-                            # Parent ticket is closed — deactivate recurrence
-                            config.is_active = False
-                            db.commit()
-                            stats["skipped"] += 1
-                            continue
-
-                        # Create the child ticket
-                        child_ticket = Tickets(
-                            title=parent_ticket.title,
-                            description=parent_ticket.description,
-                            status=TicketStatus.TODO,
-                            priority=parent_ticket.priority,
-                            ticket_type=parent_ticket.ticket_type,
-                            sla=parent_ticket.sla,
-                            created_by=parent_ticket.created_by,
-                            assigned_to=parent_ticket.assigned_to,
-                            created_at=utcnow(),
-                            updated_at=utcnow(),
-                        )
-                        db.add(child_ticket)
-                        db.flush()  # Get the new ticket_id
-
-                        # Update the parent's config with new next_occurrence
-                        config.next_occurrence = _calculate_next_occurrence(
-                            config.next_occurrence, config.recurrence_type
-                        )
-                        config.parent_ticket_id = child_ticket.ticket_id
-
-                        db.commit()
-                        stats["created"] += 1
-                        logger.info(
-                            f"Created recurring ticket #{child_ticket.ticket_id} "
-                            f"(parent #{parent_ticket.ticket_id}, "
-                            f"next occurrence: {config.next_occurrence})"
-                        )
-
-                    except Exception as e:
-                        stats["errors"] += 1
-                        logger.exception(f"Error processing recurrence config #{config.config_id}: {e}")
-                        db.rollback()
-                        continue
+                    self._process_single_config(config, db, stats)
 
             self.last_run = utcnow()
             return stats
@@ -184,10 +184,8 @@ class TicketRecurrenceScheduler:
 
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
 
         logger.info("Ticket recurrence scheduler stopped")
 

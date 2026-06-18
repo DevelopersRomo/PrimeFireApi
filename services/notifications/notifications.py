@@ -10,6 +10,7 @@ To disable notifications, set SEND_NOTIFICATIONS=false in environment variables.
 """
 
 import logging
+
 from sqlmodel import select
 
 from bd.connection import SessionLocal
@@ -70,7 +71,7 @@ def _normalize_app_url(url: str) -> str:
     if cleaned.startswith("https://"):
         return cleaned
     if cleaned.startswith("http://"):
-        return f"https://{cleaned[len('http://'):]}"
+        return f"https://{cleaned[len('http://') :]}"
     return f"https://{cleaned}"
 
 
@@ -93,7 +94,7 @@ def _resolve_email_branding(tenant_key: str | None) -> dict:
         return branding
 
     db = SessionLocal()
-    try:
+    try:  # noqa: PLW0717
         tenant = db.exec(select(Tenants).where(Tenants.db_connection_key == tenant_key)).first()
         if not tenant:
             return branding
@@ -303,7 +304,7 @@ async def send_time_off_notification(
         logger.info("Notifications disabled - skipping time off notification")
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
-    try:
+    try:  # noqa: PLW0717
         absence_type_display = format_absence_type(notification_data.absence_type)
 
         if action_type == "approved":
@@ -391,12 +392,14 @@ async def send_ticket_assigned_notification(
 ) -> NotificationResponse:
     """Send notification when a ticket is assigned to someone."""
     logger.info(f"[SEND_TICKET_ASSIGNED] Starting - ticket_id={notification_data.ticket_id}, to_email={to_email}")
-    
+
     if not _should_send_notification():
-        logger.info(f"[SEND_TICKET_ASSIGNED] Notifications disabled - returning early for ticket_id={notification_data.ticket_id}")
+        logger.info(
+            f"[SEND_TICKET_ASSIGNED] Notifications disabled - returning early for ticket_id={notification_data.ticket_id}"
+        )
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
-    try:
+    try:  # noqa: PLW0717
         logger.info(f"[SEND_TICKET_ASSIGNED] Building notification HTML for ticket_id={notification_data.ticket_id}")
         title = "Ticket Assigned to You"
         message_body = f"A ticket has been assigned to you: {notification_data.title}"
@@ -429,16 +432,18 @@ async def send_ticket_assigned_notification(
             action_url=notification_data.action_url,
             action_text="View Ticket",
         )
-        logger.info(f"[SEND_TICKET_ASSIGNED] HTML body generated successfully for ticket_id={notification_data.ticket_id}")
+        logger.info(
+            f"[SEND_TICKET_ASSIGNED] HTML body generated successfully for ticket_id={notification_data.ticket_id}"
+        )
 
         to_emails = parse_email_list(to_email)
         logger.info(f"[SEND_TICKET_ASSIGNED] Parsed recipient emails: {to_emails}")
-        
+
         cc_emails = parse_email_list(cc_email) if cc_email else None
 
         sender_email = getattr(settings, "BOT_EMAIL", None)
         if not sender_email:
-            logger.error(f"[SEND_TICKET_ASSIGNED] BOT_EMAIL not configured!")
+            logger.error("[SEND_TICKET_ASSIGNED] BOT_EMAIL not configured!")
             return NotificationResponse(
                 success=False,
                 error_message="No sender email configured (BOT_EMAIL)",
@@ -456,14 +461,20 @@ async def send_ticket_assigned_notification(
         )
 
         if success:
-            logger.info(f"[SEND_TICKET_ASSIGNED] Email sent successfully for ticket_id={notification_data.ticket_id}, message_id={message_id}")
+            logger.info(
+                f"[SEND_TICKET_ASSIGNED] Email sent successfully for ticket_id={notification_data.ticket_id}, message_id={message_id}"
+            )
             return NotificationResponse(success=True, message_id=message_id)
-        
-        logger.error(f"[SEND_TICKET_ASSIGNED] Email send failed for ticket_id={notification_data.ticket_id}, error={error_message}")
+
+        logger.error(
+            f"[SEND_TICKET_ASSIGNED] Email send failed for ticket_id={notification_data.ticket_id}, error={error_message}"
+        )
         return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
-        logger.exception(f"[SEND_TICKET_ASSIGNED] Exception occurred for ticket_id={notification_data.ticket_id}: {e!s}")
+        logger.exception(
+            f"[SEND_TICKET_ASSIGNED] Exception occurred for ticket_id={notification_data.ticket_id}: {e!s}"
+        )
         return NotificationResponse(
             success=False,
             error_message=f"Error sending ticket assigned notification: {e!s}",
@@ -477,12 +488,14 @@ async def send_ticket_created_notification(
 ) -> NotificationResponse:
     """Send notification when a ticket is created."""
     logger.info(f"[SEND_TICKET_CREATED] Starting - ticket_id={notification_data.ticket_id}, to_email={to_email}")
-    
+
     if not _should_send_notification():
-        logger.info(f"[SEND_TICKET_CREATED] Notifications disabled - returning early for ticket_id={notification_data.ticket_id}")
+        logger.info(
+            f"[SEND_TICKET_CREATED] Notifications disabled - returning early for ticket_id={notification_data.ticket_id}"
+        )
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
-    try:
+    try:  # noqa: PLW0717
         logger.info(f"[SEND_TICKET_CREATED] Building notification HTML for ticket_id={notification_data.ticket_id}")
         title = "New Ticket Created"
         message_body = f"A new ticket has been created: {notification_data.title}"
@@ -518,16 +531,18 @@ async def send_ticket_created_notification(
             action_url=notification_data.action_url,
             action_text="View Ticket",
         )
-        logger.info(f"[SEND_TICKET_CREATED] HTML body generated successfully for ticket_id={notification_data.ticket_id}")
+        logger.info(
+            f"[SEND_TICKET_CREATED] HTML body generated successfully for ticket_id={notification_data.ticket_id}"
+        )
 
         to_emails = parse_email_list(to_email)
         logger.info(f"[SEND_TICKET_CREATED] Parsed recipient emails: {to_emails}")
-        
+
         cc_emails = parse_email_list(cc_email) if cc_email else None
 
         sender_email = getattr(settings, "BOT_EMAIL", None)
         if not sender_email:
-            logger.error(f"[SEND_TICKET_CREATED] BOT_EMAIL not configured!")
+            logger.error("[SEND_TICKET_CREATED] BOT_EMAIL not configured!")
             return NotificationResponse(
                 success=False,
                 error_message="No sender email configured (BOT_EMAIL)",
@@ -545,10 +560,14 @@ async def send_ticket_created_notification(
         )
 
         if success:
-            logger.info(f"[SEND_TICKET_CREATED] Email sent successfully for ticket_id={notification_data.ticket_id}, message_id={message_id}")
+            logger.info(
+                f"[SEND_TICKET_CREATED] Email sent successfully for ticket_id={notification_data.ticket_id}, message_id={message_id}"
+            )
             return NotificationResponse(success=True, message_id=message_id)
-        
-        logger.error(f"[SEND_TICKET_CREATED] Email send failed for ticket_id={notification_data.ticket_id}, error={error_message}")
+
+        logger.error(
+            f"[SEND_TICKET_CREATED] Email send failed for ticket_id={notification_data.ticket_id}, error={error_message}"
+        )
         return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
@@ -569,7 +588,7 @@ async def send_ticket_message_notification(
         logger.info("Notifications disabled - skipping ticket message notification")
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
-    try:
+    try:  # noqa: PLW0717
         title = "New Comment on Ticket"
         message_body = f"{notification_data.commenter_name} commented on ticket: {notification_data.ticket_title}"
 
@@ -635,7 +654,7 @@ async def send_user_approval_notification(
         logger.info("Notifications disabled - skipping user approval notification")
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
-    try:
+    try:  # noqa: PLW0717
         title = "Account Approved and Ready"
         message_body = "Your account has been approved and is now ready to use."
 
@@ -838,8 +857,10 @@ async def notify_ticket_created(
     """
     logger.info(f"[NOTIFY_TICKET_CREATED] Starting notification process for ticket_id={ticket_id}")
     logger.info(f"[NOTIFY_TICKET_CREATED] Created by: {created_by_name} ({created_by_email})")
-    logger.info(f"[NOTIFY_TICKET_CREATED] Assigned to: {assigned_to_name} ({assigned_to_email}), notify_assignee={notify_assignee}")
-    
+    logger.info(
+        f"[NOTIFY_TICKET_CREATED] Assigned to: {assigned_to_name} ({assigned_to_email}), notify_assignee={notify_assignee}"
+    )
+
     notification_data = TicketNotificationData(
         ticket_id=ticket_id,
         title=title,
@@ -858,7 +879,9 @@ async def notify_ticket_created(
         notification_data=notification_data,
         to_email=created_by_email,
     )
-    logger.info(f"[NOTIFY_TICKET_CREATED] Creator notification result: success={creator_notification.success}, message_id={creator_notification.message_id}, error={creator_notification.error_message}")
+    logger.info(
+        f"[NOTIFY_TICKET_CREATED] Creator notification result: success={creator_notification.success}, message_id={creator_notification.message_id}, error={creator_notification.error_message}"
+    )
 
     assignee_notification = None
     if notify_assignee and assigned_to_email and assigned_to_email != created_by_email:
@@ -867,9 +890,13 @@ async def notify_ticket_created(
             notification_data=notification_data,
             to_email=assigned_to_email,
         )
-        logger.info(f"[NOTIFY_TICKET_CREATED] Assignee notification result: success={assignee_notification.success}, message_id={assignee_notification.message_id}, error={assignee_notification.error_message}")
+        logger.info(
+            f"[NOTIFY_TICKET_CREATED] Assignee notification result: success={assignee_notification.success}, message_id={assignee_notification.message_id}, error={assignee_notification.error_message}"
+        )
     else:
-        logger.info(f"[NOTIFY_TICKET_CREATED] Skipping assignee notification: notify_assignee={notify_assignee}, assigned_to_email={assigned_to_email}, same_as_creator={assigned_to_email == created_by_email}")
+        logger.info(
+            f"[NOTIFY_TICKET_CREATED] Skipping assignee notification: notify_assignee={notify_assignee}, assigned_to_email={assigned_to_email}, same_as_creator={assigned_to_email == created_by_email}"
+        )
 
     logger.info(f"[NOTIFY_TICKET_CREATED] Notification process completed for ticket_id={ticket_id}")
     return creator_notification, assignee_notification
@@ -1018,7 +1045,7 @@ async def send_custom_notification(
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
     try:
-        html_body = generate_notification_html(
+        return await _send_custom_notification(
             title=title,
             sub_title=sub_title,
             action_type=action_type,
@@ -1028,36 +1055,61 @@ async def send_custom_notification(
             fields=fields,
             action_url=action_url,
             action_text=action_text,
+            to_email=to_email,
+            cc_email=cc_email,
         )
-
-        to_emails = parse_email_list(to_email)
-        cc_emails = parse_email_list(cc_email) if cc_email else None
-
-        sender_email = getattr(settings, "BOT_EMAIL", None)
-        if not sender_email:
-            return NotificationResponse(
-                success=False,
-                error_message="No sender email configured (BOT_EMAIL)",
-            )
-
-        subject = title
-        success, message_id, error_message = await send_outlook_email(
-            send_as_email=sender_email,
-            to_emails=to_emails,
-            subject=subject,
-            body=html_body,
-            cc_emails=cc_emails,
-        )
-
-        if success:
-            return NotificationResponse(success=True, message_id=message_id)
-        return NotificationResponse(success=False, error_message=error_message)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
             error_message=f"Error sending custom notification: {e!s}",
         )
+
+
+async def _send_custom_notification(
+    *,
+    title: str,
+    message_body: str,
+    to_email: str,
+    cc_email: str | None,
+    action_type: str,
+    sub_title: str | None,
+    performed_by_name: str | None,
+    performed_by_email: str | None,
+    fields: list[NotificationField] | None,
+    action_url: str | None,
+    action_text: str,
+) -> NotificationResponse:
+    html_body = generate_notification_html(
+        title=title,
+        sub_title=sub_title,
+        action_type=action_type,
+        message_body=message_body,
+        performed_by_name=performed_by_name,
+        performed_by_email=performed_by_email,
+        fields=fields,
+        action_url=action_url,
+        action_text=action_text,
+    )
+    to_emails = parse_email_list(to_email)
+    cc_emails = parse_email_list(cc_email) if cc_email else None
+    sender_email = getattr(settings, "BOT_EMAIL", None)
+    if not sender_email:
+        return NotificationResponse(
+            success=False,
+            error_message="No sender email configured (BOT_EMAIL)",
+        )
+
+    success, message_id, error_message = await send_outlook_email(
+        send_as_email=sender_email,
+        to_emails=to_emails,
+        subject=title,
+        body=html_body,
+        cc_emails=cc_emails,
+    )
+    if success:
+        return NotificationResponse(success=True, message_id=message_id)
+    return NotificationResponse(success=False, error_message=error_message)
 
 
 async def notify_teams(
@@ -1105,66 +1157,71 @@ async def send_timesheet_notification(
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
     try:
-        if notification_data.notification_type == "regular_hours":
-            title = "Regular Hours Completed"
-            message_body = (
-                "You have completed your regular hours of work. You may continue working or clock out when ready."
-            )
-            action_type = "info"
-        elif notification_data.notification_type == "overtime":
-            title = "Overtime Limit Reached"
-            message_body = "You have reached the overtime limit. Clock out has been performed automatically."
-            action_type = "warning"
-        else:
-            title = "TimeSheet Update"
-            message_body = "Your timesheet has been updated."
-            action_type = "info"
-
-        fields = [
-            NotificationField(label="Employee", value=notification_data.employee_name),
-            NotificationField(label="Hours Worked", value=format_hours_to_readable(notification_data.hours_worked)),
-        ]
-
-        if notification_data.customer_name:
-            fields.append(NotificationField(label="Customer", value=notification_data.customer_name))
-
-        if notification_data.clock_in_time:
-            fields.append(NotificationField(label="Clock In Time", value=notification_data.clock_in_time))
-
-        html_body = generate_notification_html(
-            title=title,
-            sub_title="TimeSheet Notification",
-            action_type=action_type,
-            message_body=message_body,
-            fields=fields,
-        )
-
-        to_emails = parse_email_list(to_email)
-
-        sender_email = getattr(settings, "BOT_EMAIL", None)
-        if not sender_email:
-            return NotificationResponse(
-                success=False,
-                error_message="No sender email configured (BOT_EMAIL)",
-            )
-
-        subject = title
-        success, message_id, error_message = await send_outlook_email(
-            send_as_email=sender_email,
-            to_emails=to_emails,
-            subject=subject,
-            body=html_body,
-        )
-
-        if success:
-            return NotificationResponse(success=True, message_id=message_id)
-        return NotificationResponse(success=False, error_message=error_message)
+        return await _send_timesheet_notification(notification_data, to_email)
 
     except Exception as e:
         return NotificationResponse(
             success=False,
             error_message=f"Error sending timesheet notification: {e!s}",
         )
+
+
+def _timesheet_notification_content(notification_type: str) -> tuple[str, str, str]:
+    if notification_type == "regular_hours":
+        return (
+            "Regular Hours Completed",
+            "You have completed your regular hours of work. You may continue working or clock out when ready.",
+            "info",
+        )
+    if notification_type == "overtime":
+        return (
+            "Overtime Limit Reached",
+            "You have reached the overtime limit. Clock out has been performed automatically.",
+            "warning",
+        )
+    return "TimeSheet Update", "Your timesheet has been updated.", "info"
+
+
+def _timesheet_notification_fields(notification_data: TimeSheetNotificationData) -> list[NotificationField]:
+    fields = [
+        NotificationField(label="Employee", value=notification_data.employee_name),
+        NotificationField(label="Hours Worked", value=format_hours_to_readable(notification_data.hours_worked)),
+    ]
+    if notification_data.customer_name:
+        fields.append(NotificationField(label="Customer", value=notification_data.customer_name))
+    if notification_data.clock_in_time:
+        fields.append(NotificationField(label="Clock In Time", value=notification_data.clock_in_time))
+    return fields
+
+
+async def _send_timesheet_notification(
+    notification_data: TimeSheetNotificationData,
+    to_email: str,
+) -> NotificationResponse:
+    title, message_body, action_type = _timesheet_notification_content(notification_data.notification_type)
+    html_body = generate_notification_html(
+        title=title,
+        sub_title="TimeSheet Notification",
+        action_type=action_type,
+        message_body=message_body,
+        fields=_timesheet_notification_fields(notification_data),
+    )
+    sender_email = getattr(settings, "BOT_EMAIL", None)
+    if not sender_email:
+        return NotificationResponse(
+            success=False,
+            error_message="No sender email configured (BOT_EMAIL)",
+        )
+
+    success, message_id, error_message = await send_outlook_email(
+        send_as_email=sender_email,
+        to_emails=parse_email_list(to_email),
+        subject=title,
+        body=html_body,
+    )
+    if success:
+        return NotificationResponse(success=True, message_id=message_id)
+    return NotificationResponse(success=False, error_message=error_message)
 
 
 async def notify_timesheet_hours(

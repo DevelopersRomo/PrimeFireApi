@@ -12,7 +12,7 @@ license = { text = "MIT" }
 [tool.ruff]
 exclude = [
     "venv", ".venv", "alembic",
-    "skills", ".claude", "tests",
+    "skills", "uploads", "scripts", ".claude", "tests",
     ".bzr",
     ".direnv",
     ".eggs",
@@ -185,14 +185,14 @@ filterwarnings = [
 ]
 
 [tool.codespell]
-skip = "bd/sql/backups,venv,.venv,docs,*.md"
+skip = "./bd/sql/backups,./bd/sql/backups/*,./skills,./skills/*,./uploads,./uploads/*,./scripts,./scripts/*,venv,.venv,docs,*.md"
 count = true
 ignore-words-list = "MOR, Calle, Infarction, nin, LIEN, responsable, momento, Comercial, Lien, OT, RepId, Cliente, cliente, Anual, bulle, TE, mis, caracteres, ser, requiere, visibles, acording, waranty, asigned, informacion, posible, hace, te"
 
 [tool.mypy]
 explicit_package_bases = true
 ignore_missing_imports = true
-exclude = ["skills"]
+exclude = ["skills", "uploads", "scripts"]
 disable_error_code = [
     "arg-type",
     "union-attr",

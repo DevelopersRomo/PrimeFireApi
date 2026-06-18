@@ -211,12 +211,66 @@ class EmployeeSyncScheduler:
         self.sync_interval_hours = 24  # Sync every 24 hours by default
         self._task: asyncio.Task | None = None
 
+    async def _process_ms_user(self, ms_user: dict, db: Session, stats: dict[str, int]) -> None:
+        """Process a single Microsoft Graph user during sync."""
+        try:  # noqa: PLW0717
+            # Filter only PrimeFire domains
+            email = ms_user.get("userPrincipalName") or ms_user.get("mail")
+            if not email or not is_primefire_domain(email):
+                # Debug: log skipped users
+                logger.debug(f"Skipping user {email} - not PrimeFire domain")
+                return  # Skip non-PrimeFire users
+
+            stats["primefire_users"] += 1
+            logger.debug(f"✅ Processing PrimeFire user: {email}")
+
+            # Get country from Graph user data
+            graph_country = ms_user.get("country")
+            country_id, country_created = (
+                get_or_create_country_id(db, graph_country) if graph_country else (None, False)
+            )
+
+            if country_created:
+                stats["countries_created"] += 1
+
+            employee_data = graph_client.map_graph_user_to_employee(ms_user)
+            employee_data["last_synced_at"] = datetime.now()  # noqa: DTZ005
+            employee_data["country_id"] = country_id
+
+            employee_data["manager_employee_id"] = await resolve_manager_employee_id(
+                db,
+                manager_email=employee_data.get("manager_email"),
+                manager_name=employee_data.get("manager"),
+            )
+
+            stats["processed"] += 1
+
+            # Check if employee exists by azure_oid
+            existing = db.exec(select(Employees).filter(Employees.azure_oid == employee_data["azure_oid"])).first()
+
+            if existing:
+                # Update existing employee
+                for key, value in employee_data.items():
+                    if value is not None:
+                        setattr(existing, key, value)
+                stats["updated"] += 1
+            else:
+                # Create new employee
+                new_employee = Employees(**employee_data)
+                db.add(new_employee)
+                stats["created"] += 1
+
+            db.commit()
+
+        except Exception:
+            stats["errors"] += 1
+
     async def sync_employees_from_microsoft(self) -> dict:
         """
         Sync all employees from Microsoft 365 to local database
         Returns sync statistics.
         """
-        try:
+        try:  # noqa: PLW0717
             logger.info("Starting automatic sync from Microsoft 365...")
 
             ms_users = await graph_client.get_all_users()
@@ -234,60 +288,7 @@ class EmployeeSyncScheduler:
 
             with Session(engine) as db:
                 for ms_user in ms_users:
-                    try:
-                        # Filter only PrimeFire domains
-                        email = ms_user.get("userPrincipalName") or ms_user.get("mail")
-                        if not email or not is_primefire_domain(email):
-                            # Debug: log skipped users
-                            logger.debug(f"Skipping user {email} - not PrimeFire domain")
-                            continue  # Skip non-PrimeFire users
-
-                        stats["primefire_users"] += 1
-                        logger.debug(f"✅ Processing PrimeFire user: {email}")
-
-                        # Get country from Graph user data
-                        graph_country = ms_user.get("country")
-                        country_id, country_created = (
-                            get_or_create_country_id(db, graph_country) if graph_country else (None, False)
-                        )
-
-                        if country_created:
-                            stats["countries_created"] += 1
-
-                        employee_data = graph_client.map_graph_user_to_employee(ms_user)
-                        employee_data["last_synced_at"] = datetime.now()  # noqa: DTZ005
-                        employee_data["country_id"] = country_id
-                        employee_data["manager_employee_id"] = await resolve_manager_employee_id(
-                            db,
-                            manager_email=employee_data.get("manager_email"),
-                            manager_name=employee_data.get("manager"),
-                        )
-
-                        stats["processed"] += 1
-
-                        # Check if employee exists by azure_oid
-                        existing = db.exec(
-                            select(Employees).filter(Employees.azure_oid == employee_data["azure_oid"])
-                        ).first()
-
-                        if existing:
-                            # Update existing employee
-                            for key, value in employee_data.items():
-                                if value is not None:
-                                    setattr(existing, key, value)
-                            stats["updated"] += 1
-                        else:
-                            # Create new employee
-                            new_employee = Employees(**employee_data)
-                            db.add(new_employee)
-                            stats["created"] += 1
-
-                        db.commit()
-
-                    except Exception:
-                        stats["errors"] += 1
-                        continue
-
+                    await self._process_ms_user(ms_user, db, stats)
             self.last_sync = datetime.now()  # noqa: DTZ005
 
             return {**stats, "timestamp": sync_timestamp}

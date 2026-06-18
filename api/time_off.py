@@ -385,7 +385,7 @@ def create_request(
     manager_email = employee_exists.manager_email
     recipient_email = manager_email or "info@primefire.us"
     support_cc_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
-    
+
     background_tasks.add_task(
         notify_time_off_submitted,
         request_id=time_off_request.request_id,
@@ -449,7 +449,7 @@ def approve_request(
     # Notify requester
     requester = db.exec(select(Employees).where(Employees.employee_id == request.employee_id)).first()
     if requester and requester.email:
-                background_tasks.add_task(
+        background_tasks.add_task(
             notify_time_off_approved,
             request_id=request.request_id,
             employee_id=requester.employee_id,
@@ -511,7 +511,7 @@ def reject_request(
     # Notify requester
     requester = db.exec(select(Employees).where(Employees.employee_id == request.employee_id)).first()
     if requester and requester.email:
-                background_tasks.add_task(
+        background_tasks.add_task(
             notify_time_off_rejected,
             request_id=request.request_id,
             employee_id=requester.employee_id,

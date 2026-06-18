@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from pydantic import BaseModel
 
@@ -30,7 +30,7 @@ class HardwareInventoryCreate(HardwareInventoryBase):
 
 
 class HardwareInventoryUpdate(HardwareInventoryBase):
-    updated_at: datetime | None = datetime.utcnow()
+    updated_at: datetime | None = datetime.now(UTC)
 
 
 class HardwareInventoryRead(HardwareInventoryBase):

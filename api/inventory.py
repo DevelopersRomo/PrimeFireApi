@@ -110,9 +110,7 @@ def get_location_by_id(db: Session, location_id: int | None) -> WarehouseLocatio
 
 def get_existing_location_by_name(db: Session, name: str) -> WarehouseLocations | None:
     normalized = normalize_location_name(name)
-    return db.exec(
-        select(WarehouseLocations).where(func.lower(WarehouseLocations.name) == normalized.lower())
-    ).first()
+    return db.exec(select(WarehouseLocations).where(func.lower(WarehouseLocations.name) == normalized.lower())).first()
 
 
 # ----------------------------
@@ -188,6 +186,7 @@ def update_warehouse_location(
 # ----------------------------
 # WAREHOUSES
 # ----------------------------
+
 
 @router.get("/warehouses", response_model=list[Warehouse])
 def get_warehouses(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
@@ -285,9 +284,7 @@ def delete_warehouse(
     if not db_warehouse:
         raise HTTPException(status_code=404, detail="Warehouse not found")
 
-    has_movements = db.exec(
-        select(InventoryMovements).where(InventoryMovements.warehouse_id == warehouse_id)
-    ).first()
+    has_movements = db.exec(select(InventoryMovements).where(InventoryMovements.warehouse_id == warehouse_id)).first()
 
     if has_movements:
         raise HTTPException(
@@ -305,14 +302,13 @@ def delete_warehouse(
 # MOVEMENTS
 # ----------------------------
 
+
 @router.get("/movements", response_model=list[InventoryMovement])
 def get_inventory_movements(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    movements = db.exec(
-        select(InventoryMovements).order_by(InventoryMovements.created_at.desc())
-    ).all()
+    movements = db.exec(select(InventoryMovements).order_by(InventoryMovements.created_at.desc())).all()
 
     return [movement_to_schema(db, movement) for movement in movements]
 
@@ -323,9 +319,7 @@ def get_inventory_movement(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    movement = db.exec(
-        select(InventoryMovements).where(InventoryMovements.movement_id == movement_id)
-    ).first()
+    movement = db.exec(select(InventoryMovements).where(InventoryMovements.movement_id == movement_id)).first()
 
     if not movement:
         raise HTTPException(status_code=404, detail="Inventory movement not found")
@@ -417,6 +411,7 @@ def create_inventory_adjustment(
 # STOCK
 # ----------------------------
 
+
 @router.get("/stock", response_model=list[InventoryStock])
 def get_inventory_stock(
     db: Session = Depends(get_db),
@@ -427,9 +422,7 @@ def get_inventory_stock(
     result: list[InventoryStock] = []
 
     for product in products:
-        movements = db.exec(
-            select(InventoryMovements).where(InventoryMovements.product_id == product.id)
-        ).all()
+        movements = db.exec(select(InventoryMovements).where(InventoryMovements.product_id == product.id)).all()
 
         total_in = Decimal(0)
         total_out = Decimal(0)

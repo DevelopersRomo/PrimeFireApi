@@ -100,44 +100,8 @@ async def get_or_create_chat(user_email: str, recipient_email: str) -> str | Non
         logger.error(f"Failed to get user IDs. Bot: {bot_user_id}, Recipient: {recipient_user_id}")
         return None
 
-    # Try to find existing chat
-    url = f"https://graph.microsoft.com/v1.0/users/{bot_user_id}/chats"
-
     try:
-        async with get_retry_client() as client:
-            # List chats
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            chats_data = response.json()
-
-            # Look for 1:1 chat with recipient
-            for chat in chats_data.get("value", []):
-                if chat.get("chatType") == "oneOnOne":
-                    members = chat.get("members", [])
-                    for member in members:
-                        if member.get("id") == recipient_user_id:
-                            return chat.get("id")
-
-            # If no existing chat, create one
-            create_url = "https://graph.microsoft.com/v1.0/chats"
-            chat_data = {
-                "chatType": "oneOnOne",
-                "members": [
-                    {
-                        "@odata.type": "#microsoft.graph.aadUserConversationMember",
-                        "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{bot_user_id}')",
-                    },
-                    {
-                        "@odata.type": "#microsoft.graph.aadUserConversationMember",
-                        "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{recipient_user_id}')",
-                    },
-                ],
-            }
-
-            response = await client.post(create_url, headers=headers, json=chat_data)
-            response.raise_for_status()
-            new_chat = response.json()
-            return new_chat.get("id")
+        return await _get_or_create_chat(headers, bot_user_id, recipient_user_id)
 
     except httpx.HTTPStatusError as e:
         error_text = e.response.text
@@ -166,6 +130,54 @@ async def get_or_create_chat(user_email: str, recipient_email: str) -> str | Non
     except Exception as e:
         logger.exception(f"Error getting/creating chat: {e!s}")
         return None
+
+
+def _find_one_on_one_chat(chats_data: dict, recipient_user_id: str) -> str | None:
+    for chat in chats_data.get("value", []):
+        if chat.get("chatType") != "oneOnOne":
+            continue
+        for member in chat.get("members", []):
+            if member.get("id") == recipient_user_id:
+                return chat.get("id")
+    return None
+
+
+def _one_on_one_chat_payload(bot_user_id: str, recipient_user_id: str) -> dict:
+    return {
+        "chatType": "oneOnOne",
+        "members": [
+            {
+                "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{bot_user_id}')",
+            },
+            {
+                "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{recipient_user_id}')",
+            },
+        ],
+    }
+
+
+async def _get_or_create_chat(
+    headers: dict[str, str],
+    bot_user_id: str,
+    recipient_user_id: str,
+) -> str | None:
+    url = f"https://graph.microsoft.com/v1.0/users/{bot_user_id}/chats"
+    async with get_retry_client() as client:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        existing_chat_id = _find_one_on_one_chat(response.json(), recipient_user_id)
+        if existing_chat_id:
+            return existing_chat_id
+
+        response = await client.post(
+            "https://graph.microsoft.com/v1.0/chats",
+            headers=headers,
+            json=_one_on_one_chat_payload(bot_user_id, recipient_user_id),
+        )
+        response.raise_for_status()
+        return response.json().get("id")
 
 
 async def send_teams_message(

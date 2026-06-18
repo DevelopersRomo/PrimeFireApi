@@ -1,6 +1,3 @@
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
@@ -8,6 +5,7 @@ from sqlmodel import Session, and_, or_, select
 
 from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
+from core.datetime_utils import utcnow
 from models.addresses import Addresses
 from models.customers import (
     CustomerAttachments,

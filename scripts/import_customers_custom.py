@@ -1,41 +1,35 @@
 import json
 import os
+import pathlib
 import sys
 
 # Add the parent directory to sys.path so we can import from PrimeFireApi
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(pathlib.Path(pathlib.Path(pathlib.Path(__file__).resolve()).parent).parent)
 
 # Import all models to register with SQLModel
-import models.addresses
-import models.auth_tokens
-import models.countries
-import models.curriculums
-import models.customers
-import models.employees
-import models.hardware_inventory
-import models.jobs
-import models.licenses
-import models.modules
-import models.products
-import models.quotations
-import models.tenants
-import models.ticket_messages
-import models.tickets
-import models.time_off
-import models.timesheet
+
+import pathlib
 
 from sqlmodel import Session, select
+
 from bd.connection import engine
-from models.customers import Customers, CustomerTypeEnum, MarketEnum, DtdPotentialEnum, CustomerNotes, CustomerAlternateContacts, CustomerAttachments
 from models.addresses import Addresses
 from models.countries import Countries
-import models.employees
-import models.tickets
+from models.customers import (
+    CustomerAlternateContacts,
+    CustomerTypeEnum,
+    Customers,
+    MarketEnum,
+)
+
 
 def main():
-    json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tableConvert.com_zjvjkq.json")
-    
-    with open(json_path, "r", encoding="utf-8") as f:
+    json_path = os.path.join(
+        pathlib.Path(pathlib.Path(pathlib.Path(pathlib.Path(__file__).resolve()).parent).parent).parent,
+        "tableConvert.com_zjvjkq.json",
+    )
+
+    with pathlib.Path(json_path).open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     with Session(engine) as session:
@@ -44,13 +38,13 @@ def main():
         country_id = dr_country.country_id if dr_country else 1
 
         # We need a creator. Let's use 1.
-        creator_id = 1 
+        creator_id = 1
 
         processed_companies = set()
 
         for row in data:
             raw_customer_val = row.get("Customer", "").strip()
-            
+
             if not raw_customer_val:
                 continue
 
@@ -71,7 +65,7 @@ def main():
 
             processed_companies.add(company_name.lower())
 
-            # Check DB for existing 
+            # Check DB for existing
             existing = session.exec(select(Customers).where(Customers.company_name == company_name)).first()
             if existing:
                 continue
@@ -117,13 +111,13 @@ def main():
             customer = Customers(
                 customer_type=customer_type,
                 company_name=company_name[:200],
-                first_name=first_name if first_name else None,
-                last_name=last_name if last_name else None,
+                first_name=first_name or None,
+                last_name=last_name or None,
                 market=market,
                 primary_email=primary_email,
                 primary_phone=primary_phone,
                 primary_address_id=address.address_id,
-                created_by=creator_id
+                created_by=creator_id,
             )
             session.add(customer)
             session.commit()
@@ -132,26 +126,26 @@ def main():
             # ALTERNATE CONTACTS
             alt_contact_name = row.get("Secondary Contact", "").strip()
             alt_phone = row.get("Alt. Phone", "").strip()
-            
+
             if alt_contact_name or alt_phone:
                 alt = CustomerAlternateContacts(
                     customer_id=customer.customer_id,
-                    name=(alt_contact_name if alt_contact_name else "Alternate Contact")[:200],
+                    name=(alt_contact_name or "Alternate Contact")[:200],
                     phone=alt_phone[:20] if alt_phone else None,
                 )
                 session.add(alt)
 
             # NOTES
             notes_chunks = []
-            
+
             rnc = row.get("Bill to 2", "")
             if "RNC" in rnc:
                 notes_chunks.append(rnc)
-                
+
             terms = row.get("Terms", "").strip()
             if terms:
                 notes_chunks.append(f"Terms: {terms}")
-                
+
             credits = row.get("Credit Limit", "").strip()
             if credits:
                 notes_chunks.append(f"Credit Limit: {credits}")
@@ -168,19 +162,17 @@ def main():
                 note_text = "\n".join(notes_chunks)
                 # Avoid ORM insert for CustomerNotes due to pyodbc varchar(max) bug
                 from sqlalchemy import text
+
                 stmt = text(
                     "INSERT INTO dbo.customer_notes (customer_id, note_text, created_at, created_by) "
                     "VALUES (:customer_id, :note_text, GETUTCDATE(), :created_by)"
                 )
-                session.execute(stmt, {
-                    "customer_id": customer.customer_id,
-                    "note_text": note_text,
-                    "created_by": creator_id
-                })
+                session.execute(
+                    stmt, {"customer_id": customer.customer_id, "note_text": note_text, "created_by": creator_id}
+                )
 
             session.commit()
-            
-        print(f"Processed {len(processed_companies)} unique customers.")
+
 
 if __name__ == "__main__":
     main()

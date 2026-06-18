@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import jwt  # type: ignore[import-untyped]
 from fastapi import Depends, HTTPException, Request, status
 from fastapi import Request as FastAPIRequest
 from jose import JWTError  # type: ignore[import-untyped]

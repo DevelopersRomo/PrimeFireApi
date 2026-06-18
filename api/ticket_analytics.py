@@ -74,15 +74,14 @@ def get_ticket_stats(
         else:
             # Non-admin trying to filter by another user — deny
             raise PermissionError("Non-admin users can only view their own stats")
-    else:
-        # No user_id param — non-admin sees own, admin sees all by default
-        if not is_admin:
-            query = query.where(
-                or_(
-                    Tickets.created_by == current_employee_id,
-                    Tickets.assigned_to == current_employee_id,
-                )
+    # No user_id param — non-admin sees own, admin sees all by default
+    elif not is_admin:
+        query = query.where(
+            or_(
+                Tickets.created_by == current_employee_id,
+                Tickets.assigned_to == current_employee_id,
             )
+        )
         # Admins without user_id param see all (no filter)
 
     # Apply date range filter
@@ -157,12 +156,14 @@ def get_ticket_stats_users(
                 )
             )
         ).all()
-        result.append({
-            "employee_id": emp.employee_id,
-            "display_name": emp.display_name,
-            "email": emp.email,
-            "ticket_count": len(count),
-        })
+        result.append(
+            {
+                "employee_id": emp.employee_id,
+                "display_name": emp.display_name,
+                "email": emp.email,
+                "ticket_count": len(count),
+            }
+        )
 
     # Sort by display name
     result.sort(key=lambda x: x["display_name"] or "")

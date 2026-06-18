@@ -159,7 +159,7 @@ Commands for code formatting and linting:
 **Windows:**
 
 ```cmd
-ruff format . & ruff check . --fix --unsafe-fixes & codespell --check-filenames --count & mypy .
+ruff format .; ruff check . --fix --unsafe-fixes; codespell --check-filenames --count; mypy .
 ```
 
 **Mac/Linux:**

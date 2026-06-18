@@ -28,6 +28,7 @@ from models.timesheet import (
     TimeSheetPunchStatusEnum,
     TimeSheetSettings,
 )
+from schemas.pagination import PaginatedResponse
 from schemas.timesheet import (
     TimeSheetClockInCreate,
     TimeSheetClockOutCreate,
@@ -41,7 +42,6 @@ from schemas.timesheet import (
     TimeSheetSummaryResponse,
     TimeSheetSummaryTotals,
 )
-from schemas.pagination import PaginatedResponse
 from services.notifications.notifications import notify_timesheet_hours
 
 router = APIRouter(prefix="/api/v1", tags=["timesheet"])
@@ -722,7 +722,9 @@ def export_timesheet(
         local_day = _to_local_date(punch.clock_in_at, tzinfo).strftime("%Y-%m-%d")
 
         # Calculate regular and overtime
-        regular_minutes, overtime_minutes = calculate_regular_overtime(punch.worked_minutes or 0, overtime_daily_minutes)
+        regular_minutes, overtime_minutes = calculate_regular_overtime(
+            punch.worked_minutes or 0, overtime_daily_minutes
+        )
 
         # Check if it's a holiday
         is_holiday = local_day in holiday_dates
@@ -884,30 +886,32 @@ def list_punches_admin(
                 last_name=cust.last_name,
             )
 
-        result.append(TimeSheetPunchRead(
-            punch_id=punch.punch_id,
-            employee_id=punch.employee_id,
-            employee_name=employee_name,
-            customer_id=punch.customer_id,
-            customer=customer_data,
-            clock_in_at=punch.clock_in_at,
-            clock_out_at=punch.clock_out_at,
-            worked_minutes=punch.worked_minutes,
-            status=punch.status,
-            note=punch.note,
-            timezone=punch.timezone,
-            ip_address=punch.ip_address,
-            latitude=punch.latitude,
-            longitude=punch.longitude,
-            gps_accuracy=punch.gps_accuracy,
-            city=punch.city,
-            region=punch.region,
-            country=punch.country,
-            approved_by=punch.approved_by,
-            approved_at=punch.approved_at,
-            created_at=punch.created_at,
-            updated_at=punch.updated_at,
-        ))
+        result.append(
+            TimeSheetPunchRead(
+                punch_id=punch.punch_id,
+                employee_id=punch.employee_id,
+                employee_name=employee_name,
+                customer_id=punch.customer_id,
+                customer=customer_data,
+                clock_in_at=punch.clock_in_at,
+                clock_out_at=punch.clock_out_at,
+                worked_minutes=punch.worked_minutes,
+                status=punch.status,
+                note=punch.note,
+                timezone=punch.timezone,
+                ip_address=punch.ip_address,
+                latitude=punch.latitude,
+                longitude=punch.longitude,
+                gps_accuracy=punch.gps_accuracy,
+                city=punch.city,
+                region=punch.region,
+                country=punch.country,
+                approved_by=punch.approved_by,
+                approved_at=punch.approved_at,
+                created_at=punch.created_at,
+                updated_at=punch.updated_at,
+            )
+        )
 
     if not with_meta:
         return result
@@ -1024,7 +1028,9 @@ def export_punches_admin(
         local_day = _to_local_date(punch.clock_in_at, tzinfo).strftime("%Y-%m-%d")
 
         # Calculate regular and overtime
-        regular_minutes, overtime_minutes = calculate_regular_overtime(punch.worked_minutes or 0, overtime_daily_minutes)
+        regular_minutes, overtime_minutes = calculate_regular_overtime(
+            punch.worked_minutes or 0, overtime_daily_minutes
+        )
 
         # Check if it's a holiday
         is_holiday = local_day in holiday_dates
@@ -1101,7 +1107,9 @@ def update_punch(
     if punch.clock_out_at:
         ts_settings = _get_settings(db)
         daily_limit = (
-            int(float(ts_settings.overtime_daily_hours) * 60) if ts_settings and ts_settings.overtime_daily_hours else 480
+            int(float(ts_settings.overtime_daily_hours) * 60)
+            if ts_settings and ts_settings.overtime_daily_hours
+            else 480
         )
         punch.worked_minutes = _calculate_minutes(punch.clock_in_at, punch.clock_out_at, daily_limit)
 

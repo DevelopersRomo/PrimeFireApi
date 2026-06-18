@@ -12,11 +12,10 @@ sys.path.insert(0, str(project_root))
 backup_dir = os.path.join(project_root, "bd", "sql", "backups")  # noqa: PTH118
 pathlib.Path(backup_dir).mkdir(exist_ok=True, parents=True)
 
+from connection import create_engine_from_env
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
-
-from connection import create_engine_from_env
 
 
 def get_session_local(db_prefix="DB"):
@@ -380,4 +379,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--backup-dir", default=None, help="Custom backup directory (optional)")
     args = parser.parse_args()
-    generate_complete_backup(target_table=args.table, db_prefix=args.db, backup_dir=args.backup_dir, backup_type=args.type)
+    generate_complete_backup(
+        target_table=args.table, db_prefix=args.db, backup_dir=args.backup_dir, backup_type=args.type
+    )

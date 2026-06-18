@@ -66,15 +66,13 @@ class MicrosoftGraphClient:
         self._token = None
         self._token_expiry = None
 
-    async def _make_request(
-        self, method: str, endpoint: str, data: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def _make_request(self, method: str, endpoint: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         """Make authenticated request to Graph API with retry logic."""
         last_exception: Exception | None = None
         token_refreshed = False
 
         for attempt in range(MAX_RETRIES + 1):
-            try:
+            try:  # noqa: PLW0717
                 token = await self._get_access_token()
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 url = f"{self.graph_url}{endpoint}"
@@ -94,7 +92,7 @@ class MicrosoftGraphClient:
                         raise ValueError(f"Unsupported HTTP method: {method}")
 
                 # 401/403 → token may be stale or missing recently-granted permissions
-                if response.status_code in (401, 403) and not token_refreshed:
+                if response.status_code in {401, 403} and not token_refreshed:
                     self._invalidate_token()
                     token_refreshed = True
                     continue
@@ -126,7 +124,7 @@ class MicrosoftGraphClient:
                         error_body = response.text
                     except Exception:
                         error_body = "<unable to read response body>"
-                    logger.error(
+                    logger.exception(
                         "Graph API %s %s → %d\nRequest body: %s\nResponse: %s",
                         method,
                         endpoint,
@@ -157,14 +155,12 @@ class MicrosoftGraphClient:
                     await asyncio.sleep(wait)
                 continue
 
-            except httpx.HTTPStatusError as e:
+            except httpx.HTTPStatusError:
                 # Non-retryable HTTP error (4xx except 401/429) → fail immediately
                 raise
 
         # All retries exhausted
-        raise last_exception or RuntimeError(
-            f"Graph API {method} {endpoint} failed after {MAX_RETRIES} retries"
-        )
+        raise last_exception or RuntimeError(f"Graph API {method} {endpoint} failed after {MAX_RETRIES} retries")
 
     async def get_all_users(self) -> list[dict[str, Any]]:
         """Get all users from Microsoft 365."""
@@ -295,11 +291,11 @@ class MicrosoftGraphClient:
         for employee_field, graph_field in nullable_field_map.items():
             if employee_field in employee_data:
                 value = employee_data[employee_field]
-                graph_data[graph_field] = None if isinstance(value, str) and value == "" else value
+                graph_data[graph_field] = None if isinstance(value, str) and not value else value
 
         if "office_phone" in employee_data:
             office_phone = employee_data["office_phone"]
-            graph_data["businessPhones"] = [] if office_phone is None or office_phone == "" else [office_phone]
+            graph_data["businessPhones"] = [] if not office_phone else [office_phone]
 
         return graph_data
 

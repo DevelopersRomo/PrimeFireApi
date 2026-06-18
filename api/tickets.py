@@ -1,6 +1,5 @@
 import logging
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
+from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -8,9 +7,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, and_, or_, select
 
+from core.datetime_utils import utcnow
+
 logger = logging.getLogger(__name__)
 
-from api.dependencies import get_current_employee, get_current_employee_with_permissions, require_authentication
+from api.dependencies import get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
 from core.config import settings
 from models.employees import Employees
@@ -22,8 +23,8 @@ from models.tickets import (
     TicketStatus,
     Tickets,
 )
-from schemas.tickets import Ticket, TicketCreate, TicketEmployee, TicketUpdate
 from schemas.pagination import PaginatedResponse
+from schemas.tickets import Ticket, TicketCreate, TicketEmployee, TicketUpdate
 from services.notifications.notifications import (
     notify_ticket_created,
     send_ticket_assigned_notification,
@@ -75,9 +76,7 @@ def get_subordinate_ids(manager_id: int, db: Session) -> list[int]:
         to_process.clear()
 
         for current in current_batch:
-            rows = db.exec(
-                select(Employees.employee_id).where(Employees.manager_employee_id == current)
-            ).all()
+            rows = db.exec(select(Employees.employee_id).where(Employees.manager_employee_id == current)).all()
             for emp_id in rows:
                 if emp_id not in result:
                     result.add(emp_id)
@@ -118,7 +117,7 @@ def get_assignable_employee_ids(user_permissions: dict, db: Session) -> set[int]
     """
     if has_admin_actions(user_permissions):
         rows = db.exec(select(Employees.employee_id)).all()
-        return {row for row in rows}
+        return set(rows)
 
     employee_id = user_permissions["employee"]["employee_id"]
     subordinate_ids = get_subordinate_ids(employee_id, db)
@@ -127,7 +126,7 @@ def get_assignable_employee_ids(user_permissions: dict, db: Session) -> set[int]
         return {employee_id} | set(subordinate_ids)
 
     rows = db.exec(select(Employees.employee_id).where(Employees.department == "IT")).all()
-    return {row for row in rows}
+    return set(rows)
 
 
 def ticket_to_schema(db_ticket: Tickets) -> Ticket:
@@ -220,6 +219,7 @@ def get_ticket_stats(
     tickets = db.exec(query).all()
 
     from collections import defaultdict
+
     status_counts: dict = defaultdict(int)
     priority_counts: dict = defaultdict(int)
     ticket_type_counts: dict = defaultdict(int)
@@ -462,7 +462,9 @@ def create_ticket(
     """Create a new ticket. Creator is automatically set to the authenticated user."""
     current_employee_id = user_permissions["employee"]["employee_id"]
     logger.info(f"[TICKET_CREATE] Starting ticket creation by employee_id={current_employee_id}")
-    logger.info(f"[TICKET_CREATE] Ticket details - title={ticket.title}, priority={ticket.priority}, assigned_to={ticket.assigned_to}")
+    logger.info(
+        f"[TICKET_CREATE] Ticket details - title={ticket.title}, priority={ticket.priority}, assigned_to={ticket.assigned_to}"
+    )
 
     # Validate assigned employee exists if provided
     if ticket.assigned_to:
@@ -478,7 +480,7 @@ def create_ticket(
             raise HTTPException(status_code=403, detail="You do not have permission to assign tickets to this employee")
 
     # Create ticket
-    logger.info(f"[TICKET_CREATE] Creating database ticket record")
+    logger.info("[TICKET_CREATE] Creating database ticket record")
     db_ticket = Tickets(
         title=ticket.title,
         description=ticket.description,
@@ -499,7 +501,9 @@ def create_ticket(
 
     # Create recurrence config if recurrence_type is set
     if ticket.recurrence_type and ticket.recurrence_type != TicketRecurrenceType.NONE:
-        logger.info(f"[TICKET_CREATE] Creating recurrence config for ticket_id={db_ticket.ticket_id}, type={ticket.recurrence_type}")
+        logger.info(
+            f"[TICKET_CREATE] Creating recurrence config for ticket_id={db_ticket.ticket_id}, type={ticket.recurrence_type}"
+        )
         recurrence_config = TicketRecurrenceConfig(
             ticket_id=db_ticket.ticket_id,
             recurrence_type=ticket.recurrence_type,
@@ -524,7 +528,9 @@ def create_ticket(
 
     # Send notification if ticket has assignee and assignee is different from creator
     if db_ticket.assigned_to and db_ticket.assignee and db_ticket.assigned_to != current_employee_id:
-        logger.info(f"[TICKET_NOTIFY] Scheduling notification for ticket_id={db_ticket.ticket_id}, assignee_email={db_ticket.assignee.email}")
+        logger.info(
+            f"[TICKET_NOTIFY] Scheduling notification for ticket_id={db_ticket.ticket_id}, assignee_email={db_ticket.assignee.email}"
+        )
         background_tasks.add_task(
             notify_ticket_created,
             ticket_id=db_ticket.ticket_id,
@@ -543,7 +549,9 @@ def create_ticket(
         )
         logger.info(f"[TICKET_NOTIFY] Notification task added to background queue for ticket_id={db_ticket.ticket_id}")
     else:
-        logger.info(f"[TICKET_NOTIFY] Skipping notification - assigned_to={db_ticket.assigned_to}, same_as_creator={db_ticket.assigned_to == current_employee_id}")
+        logger.info(
+            f"[TICKET_NOTIFY] Skipping notification - assigned_to={db_ticket.assigned_to}, same_as_creator={db_ticket.assigned_to == current_employee_id}"
+        )
 
     return ticket_to_schema(db_ticket)
 
@@ -592,7 +600,9 @@ async def update_ticket(
 
     # Validate assigned employee exists if being updated
     if ticket_update.assigned_to is not None and ticket_update.assigned_to:  # If assigning to someone
-        assigned_employee = db.exec(select(Employees).filter(Employees.employee_id == ticket_update.assigned_to)).first()
+        assigned_employee = db.exec(
+            select(Employees).filter(Employees.employee_id == ticket_update.assigned_to)
+        ).first()
         if not assigned_employee:
             raise HTTPException(status_code=404, detail="Assigned employee not found")
 
@@ -627,9 +637,7 @@ async def update_ticket(
         elif db_ticket.recurrence_config:
             db_ticket.recurrence_config.recurrence_type = recurrence_type
             db_ticket.recurrence_config.is_active = True
-            db_ticket.recurrence_config.next_occurrence = _calculate_next_occurrence(
-                utcnow(), recurrence_type
-            )
+            db_ticket.recurrence_config.next_occurrence = _calculate_next_occurrence(utcnow(), recurrence_type)
         else:
             recurrence_config = TicketRecurrenceConfig(
                 ticket_id=db_ticket.ticket_id,

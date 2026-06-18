@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
@@ -43,6 +44,19 @@ def get_category_or_404(db: Session, category_id: int) -> ProductCategories:
     if not category:
         raise HTTPException(status_code=404, detail="Product category not found")
     return category
+
+
+def get_family_by_name(db: Session, name: str) -> ProductFamilies | None:
+    return db.exec(select(ProductFamilies).where(func.lower(ProductFamilies.name) == name.strip().lower())).first()
+
+
+def get_category_by_family_and_name(db: Session, family_id: int, name: str) -> ProductCategories | None:
+    return db.exec(
+        select(ProductCategories).where(
+            ProductCategories.family_id == family_id,
+            func.lower(ProductCategories.name) == name.strip().lower(),
+        )
+    ).first()
 
 
 def validate_product_catalog_refs(
@@ -185,9 +199,16 @@ def create_product_family(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
+    if get_family_by_name(db, family.name):
+        raise HTTPException(status_code=409, detail="Product family already exists")
+
     db_family = ProductFamilies(**family.model_dump())
     db.add(db_family)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Product family already exists") from exc
     db.refresh(db_family)
     return db_family
 
@@ -200,9 +221,18 @@ def update_product_family(
     _auth=Depends(require_authentication),
 ):
     db_family = get_family_or_404(db, family_id)
-    for key, value in family.model_dump(exclude_unset=True).items():
+    update_data = family.model_dump(exclude_unset=True)
+    if "name" in update_data:
+        existing = get_family_by_name(db, update_data["name"])
+        if existing and existing.id != family_id:
+            raise HTTPException(status_code=409, detail="Product family already exists")
+    for key, value in update_data.items():
         setattr(db_family, key, value)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Product family already exists") from exc
     db.refresh(db_family)
     return db_family
 
@@ -214,10 +244,13 @@ def delete_product_family(
     _auth=Depends(require_authentication),
 ):
     db_family = get_family_or_404(db, family_id)
-    has_categories = db.exec(select(ProductCategories).where(ProductCategories.family_id == family_id)).first()
-    has_products = db.exec(select(ProductCatalog).where(ProductCatalog.family_id == family_id)).first()
-    if has_categories or has_products:
+    has_products = db.exec(select(Products).where(Products.family_id == family_id)).first()
+    has_catalog_products = db.exec(select(ProductCatalog).where(ProductCatalog.family_id == family_id)).first()
+    if has_products or has_catalog_products:
         raise HTTPException(status_code=400, detail="Product family is in use")
+    categories = db.exec(select(ProductCategories).where(ProductCategories.family_id == family_id)).all()
+    for category in categories:
+        db.delete(category)
     db.delete(db_family)
     db.commit()
     return {"message": "Product family deleted successfully"}
@@ -245,9 +278,16 @@ def create_product_category(
     _auth=Depends(require_authentication),
 ):
     get_family_or_404(db, category.family_id)
+    if get_category_by_family_and_name(db, category.family_id, category.name):
+        raise HTTPException(status_code=409, detail="Product category already exists for this family")
+
     db_category = ProductCategories(**category.model_dump())
     db.add(db_category)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Product category already exists for this family") from exc
     db.refresh(db_category)
     return db_category
 
@@ -263,9 +303,18 @@ def update_product_category(
     update_data = category.model_dump(exclude_unset=True)
     if "family_id" in update_data:
         get_family_or_404(db, update_data["family_id"])
+    next_family_id = update_data.get("family_id", db_category.family_id)
+    next_name = update_data.get("name", db_category.name)
+    existing = get_category_by_family_and_name(db, next_family_id, next_name)
+    if existing and existing.id != category_id:
+        raise HTTPException(status_code=409, detail="Product category already exists for this family")
     for key, value in update_data.items():
         setattr(db_category, key, value)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Product category already exists for this family") from exc
     db.refresh(db_category)
     return db_category
 
@@ -277,8 +326,9 @@ def delete_product_category(
     _auth=Depends(require_authentication),
 ):
     db_category = get_category_or_404(db, category_id)
-    has_products = db.exec(select(ProductCatalog).where(ProductCatalog.category_id == category_id)).first()
-    if has_products:
+    has_products = db.exec(select(Products).where(Products.category_id == category_id)).first()
+    has_catalog_products = db.exec(select(ProductCatalog).where(ProductCatalog.category_id == category_id)).first()
+    if has_products or has_catalog_products:
         raise HTTPException(status_code=400, detail="Product category is in use")
     db.delete(db_category)
     db.commit()
@@ -612,7 +662,21 @@ def delete_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    catalog_code = resolve_catalog_code(product)
+    catalog_item = db.exec(select(ProductCatalog).where(ProductCatalog.code == catalog_code)).first()
+    if catalog_item:
+        catalog_spec = db.exec(
+            select(ProductSpecifications).where(ProductSpecifications.product_id == catalog_item.id)
+        ).first()
+        if catalog_spec:
+            db.delete(catalog_spec)
+        db.delete(catalog_item)
+
     db.delete(product)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Product is in use and cannot be deleted") from exc
 
     return {"message": "Product deleted successfully"}

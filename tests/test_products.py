@@ -120,6 +120,92 @@ def test_product_category_must_belong_to_family(client, auth_headers, db_session
     assert response.json()["detail"] == "Product category does not belong to selected family"
 
 
+def test_duplicate_product_category_returns_conflict(client, auth_headers, db_session: Session):
+    family = ProductFamilies(name="Duplicate Category Family")
+    db_session.add(family)
+    db_session.commit()
+    db_session.refresh(family)
+
+    category = ProductCategories(family_id=family.id, name="Device")
+    db_session.add(category)
+    db_session.commit()
+
+    response = client.post(
+        "/products/categories",
+        headers=auth_headers,
+        json={
+            "family_id": family.id,
+            "name": "Device",
+            "description": "Duplicate name in the same family",
+        },
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "Product category already exists for this family"
+
+
+def test_delete_family_without_products_deletes_its_categories(client, auth_headers, db_session: Session):
+    family = ProductFamilies(name="Unused Family")
+    db_session.add(family)
+    db_session.commit()
+    db_session.refresh(family)
+
+    category = ProductCategories(family_id=family.id, name="Unused Category")
+    db_session.add(category)
+    db_session.commit()
+    category_id = category.id
+    family_id = family.id
+
+    response = client.delete(f"/products/families/{family_id}", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    assert db_session.get(ProductCategories, category_id) is None
+    assert db_session.get(ProductFamilies, family_id) is None
+
+
+def test_delete_product_removes_synced_catalog_item(client, auth_headers, db_session: Session):
+    family = ProductFamilies(name="Delete Sync Family")
+    db_session.add(family)
+    db_session.commit()
+    db_session.refresh(family)
+
+    category = ProductCategories(family_id=family.id, name="Delete Sync Category")
+    db_session.add(category)
+    db_session.commit()
+    db_session.refresh(category)
+
+    create_response = client.post(
+        "/products",
+        headers=auth_headers,
+        json={
+            "name": "Synced Delete Product",
+            "type": "Product",
+            "sku": "SYNC-DELETE-001",
+            "code": "SYNC-DELETE-001",
+            "family_id": family.id,
+            "category_id": category.id,
+            "unit_price": 10,
+            "unit": "pieza",
+            "stock_quantity": 0,
+            "is_active": True,
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    product_id = create_response.json()["id"]
+
+    assert db_session.exec(select(ProductCatalog).where(ProductCatalog.code == "SYNC-DELETE-001")).first() is not None
+
+    delete_response = client.delete(f"/products/{product_id}", headers=auth_headers)
+
+    assert delete_response.status_code == 200, delete_response.text
+    db_session.expire_all()
+    assert db_session.exec(select(ProductCatalog).where(ProductCatalog.code == "SYNC-DELETE-001")).first() is None
+
+    category_delete_response = client.delete(f"/products/categories/{category.id}", headers=auth_headers)
+    assert category_delete_response.status_code == 200, category_delete_response.text
+
+
 def test_list_product_specification_options(client, auth_headers, db_session: Session):
     catalog_item = ProductCatalog(code="SPEC-001", name="Spec Product")
     db_session.add(catalog_item)

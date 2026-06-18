@@ -1,11 +1,12 @@
 import enum
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Column
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship, SQLModel
+
+from core.datetime_utils import utcnow
 
 if TYPE_CHECKING:
     from models.addresses import Addresses
@@ -63,7 +64,7 @@ class Customers(SQLModel, table=True):
     primary_email: str | None = Field(default=None, max_length=255)
     primary_phone: str | None = Field(default=None, max_length=20)
     primary_address_id: int | None = Field(default=None, foreign_key="dbo.addresses.address_id")
-    created_at: datetime = Field(default_factory=lambda: utcnow())
+    created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime | None = None
     created_by: int = Field(foreign_key="dbo.employees.employee_id")
 
@@ -87,7 +88,7 @@ class CustomerNotes(SQLModel, table=True):
     customer_note_id: int | None = Field(default=None, primary_key=True, index=True)
     customer_id: int = Field(foreign_key="dbo.customers.customer_id")
     note_text: str
-    created_at: datetime = Field(default_factory=lambda: utcnow())
+    created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime | None = None
     created_by: int = Field(foreign_key="dbo.employees.employee_id")
 
@@ -104,7 +105,7 @@ class CustomerAlternateContacts(SQLModel, table=True):
     name: str = Field(max_length=200)
     email: str | None = Field(default=None, max_length=255)
     phone: str | None = Field(default=None, max_length=20)
-    created_at: datetime = Field(default_factory=lambda: utcnow())
+    created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime | None = None
 
     customer: "Customers" = Relationship(back_populates="alternate_contacts")
@@ -119,7 +120,7 @@ class CustomerAttachments(SQLModel, table=True):
     file_name: str = Field(max_length=255)
     file_type: str | None = Field(default=None, max_length=100)
     file_path: str | None = Field(default=None, max_length=500)
-    created_at: datetime = Field(default_factory=lambda: utcnow())
+    created_at: datetime = Field(default_factory=utcnow)
     created_by: int = Field(foreign_key="dbo.employees.employee_id")
 
     customer: "Customers" = Relationship(back_populates="attachments")

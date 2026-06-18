@@ -18,9 +18,10 @@ def format_display_date(value: date | datetime | str | None) -> str | None:
 
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed_value = datetime.fromisoformat(value)
         except (ValueError, TypeError):
             return value
+        value = parsed_value
 
     if isinstance(value, datetime):
         return value.strftime("%b %d, %Y").replace(" 0", " ")

@@ -1,11 +1,6 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
-
-if TYPE_CHECKING:
-    from models.employees import EmployeeRoles
-    from models.tenants import TenantEmployees, TenantLogos
 
 
 class Tenants(SQLModel, table=True):

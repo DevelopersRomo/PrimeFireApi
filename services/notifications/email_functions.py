@@ -26,7 +26,7 @@ def _normalize_app_url(raw_url: str | None) -> str:
     if cleaned.startswith("https://"):
         return cleaned
     if cleaned.startswith("http://"):
-        return f"https://{cleaned[len('http://'):]}"
+        return f"https://{cleaned[len('http://') :]}"
     return f"https://{cleaned}"
 
 
@@ -64,13 +64,15 @@ async def send_outlook_email(
     Returns:
         (success: bool, message_id: str | None, error_message: str | None)
     """
-    logger.info(f"[SEND_OUTLOOK_EMAIL] Starting email send - send_as={send_as_email}, subject='{subject}', to_count={len(to_emails)}")
-    
+    logger.info(
+        f"[SEND_OUTLOOK_EMAIL] Starting email send - send_as={send_as_email}, subject='{subject}', to_count={len(to_emails)}"
+    )
+
     headers = await get_graph_api_auth_headers()
     if not headers:
-        logger.error(f"[SEND_OUTLOOK_EMAIL] Failed to get authentication headers")
+        logger.error("[SEND_OUTLOOK_EMAIL] Failed to get authentication headers")
         return False, None, "Failed to get authentication headers"
-    logger.info(f"[SEND_OUTLOOK_EMAIL] Authentication headers obtained successfully")
+    logger.info("[SEND_OUTLOOK_EMAIL] Authentication headers obtained successfully")
 
     validated_to = []
     for email in to_emails:
@@ -79,7 +81,7 @@ async def send_outlook_email(
     logger.info(f"[SEND_OUTLOOK_EMAIL] Validated recipient emails: {validated_to}")
 
     if not validated_to:
-        logger.error(f"[SEND_OUTLOOK_EMAIL] No valid recipient emails found")
+        logger.error("[SEND_OUTLOOK_EMAIL] No valid recipient emails found")
         return False, None, "No valid recipient emails"
 
     validated_cc = []
@@ -87,14 +89,14 @@ async def send_outlook_email(
         for email in cc_emails:
             parsed = parse_email_list(email)
             validated_cc.extend(parsed)
-    logger.info(f"[SEND_OUTLOOK_EMAIL] CC emails: {validated_cc if validated_cc else 'none'}")
+    logger.info(f"[SEND_OUTLOOK_EMAIL] CC emails: {validated_cc or 'none'}")
 
     validated_bcc = []
     if bcc_emails:
         for email in bcc_emails:
             parsed = parse_email_list(email)
             validated_bcc.extend(parsed)
-    logger.info(f"[SEND_OUTLOOK_EMAIL] BCC emails: {validated_bcc if validated_bcc else 'none'}")
+    logger.info(f"[SEND_OUTLOOK_EMAIL] BCC emails: {validated_bcc or 'none'}")
 
     message = {
         "message": {
@@ -140,14 +142,18 @@ async def send_outlook_email(
                 response.raise_for_status()
 
                 message_id = response.headers.get("x-request-id") or response.headers.get("request-id")
-                logger.info(f"[SEND_OUTLOOK_EMAIL] ✅ Email sent successfully to {validated_to}. Message ID: {message_id}, Status: {response.status_code}")
+                logger.info(
+                    f"[SEND_OUTLOOK_EMAIL] ✅ Email sent successfully to {validated_to}. Message ID: {message_id}, Status: {response.status_code}"
+                )
                 return True, message_id, None
 
             except httpx.HTTPStatusError as e:
                 last_error = f"HTTP {e.response.status_code}: {e.response.text[:500]}"
                 logger.warning(f"[SEND_OUTLOOK_EMAIL] Attempt {attempt + 1}/{max_retries} failed - {last_error}")
                 if e.response.status_code < 500:
-                    logger.error(f"[SEND_OUTLOOK_EMAIL] Client error (4xx) - not retrying. Status: {e.response.status_code}")
+                    logger.exception(
+                        f"[SEND_OUTLOOK_EMAIL] Client error (4xx) - not retrying. Status: {e.response.status_code}"
+                    )
                     break
             except Exception as e:
                 last_error = str(e)
@@ -202,7 +208,9 @@ async def send_notification_email(
 # --- EMAIL TEMPLATES FOR AUTH ---
 
 
-def build_password_recovery_email(*, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire") -> tuple[str, str]:
+def build_password_recovery_email(
+    *, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire"
+) -> tuple[str, str]:
     """Build password recovery email body and subject."""
     app_url = _normalize_app_url(app_url)
     reset_url = _build_auth_url(app_url=app_url, path="/reset-password", token=token)
@@ -308,7 +316,9 @@ def build_password_recovery_email(*, to_email: str, token: str, app_url: str, te
     return subject, body
 
 
-def build_magic_link_email(*, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire") -> tuple[str, str]:
+def build_magic_link_email(
+    *, to_email: str, token: str, app_url: str, tenant_title: str = "PrimeFire"
+) -> tuple[str, str]:
     """Build magic link email body and subject."""
     app_url = _normalize_app_url(app_url)
     login_url = _build_auth_url(app_url=app_url, path="/magic-login", token=token)
@@ -414,15 +424,21 @@ def build_magic_link_email(*, to_email: str, token: str, app_url: str, tenant_ti
     return subject, body
 
 
-async def send_password_recovery_email(*, to_email: str, token: str, app_url: str | None = None, tenant_title: str = "PrimeFire") -> tuple[bool, str | None]:
+async def send_password_recovery_email(
+    *, to_email: str, token: str, app_url: str | None = None, tenant_title: str = "PrimeFire"
+) -> tuple[bool, str | None]:
     """Send password recovery email. Returns (success, error_message)."""
     if app_url is None:
         app_url = getattr(settings, "APP_URL", "")
-    subject, body = build_password_recovery_email(to_email=to_email, token=token, app_url=app_url, tenant_title=tenant_title)
+    subject, body = build_password_recovery_email(
+        to_email=to_email, token=token, app_url=app_url, tenant_title=tenant_title
+    )
     return await send_notification_email(to_emails=[to_email], subject=subject, body=body)
 
 
-async def send_magic_link_email(*, to_email: str, token: str, app_url: str | None = None, tenant_title: str = "PrimeFire") -> tuple[bool, str | None]:
+async def send_magic_link_email(
+    *, to_email: str, token: str, app_url: str | None = None, tenant_title: str = "PrimeFire"
+) -> tuple[bool, str | None]:
     """Send magic link email. Returns (success, error_message)."""
     if app_url is None:
         app_url = getattr(settings, "APP_URL", "")

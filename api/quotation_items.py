@@ -1,13 +1,10 @@
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
-
-from models.quotations import Quotations
 from models.quotation_items import QuotationItems
+from models.quotations import Quotations
 from schemas.quotation_items import (
     QuotationItemCreate,
     QuotationItemRead,
@@ -49,10 +46,7 @@ def create_quotation_item(
 ):
     ensure_quotation_exists(db, quotation_id)
 
-    db_item = QuotationItems(
-        quotation_id=quotation_id,
-        **payload.model_dump(by_alias=False)
-    )
+    db_item = QuotationItems(quotation_id=quotation_id, **payload.model_dump(by_alias=False))
 
     db.add(db_item)
     db.commit()
@@ -60,7 +54,7 @@ def create_quotation_item(
     return db_item
 
 
-@router.get("/", response_model=List[QuotationItemRead])
+@router.get("/", response_model=list[QuotationItemRead])
 def get_quotation_items(
     quotation_id: int,
     db: Session = Depends(get_db),
@@ -68,9 +62,7 @@ def get_quotation_items(
 ):
     ensure_quotation_exists(db, quotation_id)
 
-    statement = select(QuotationItems).where(
-        QuotationItems.quotation_id == quotation_id
-    )
+    statement = select(QuotationItems).where(QuotationItems.quotation_id == quotation_id)
     return db.exec(statement).all()
 
 

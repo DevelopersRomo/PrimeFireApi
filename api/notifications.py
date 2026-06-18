@@ -1,10 +1,10 @@
 """Notification API endpoints."""
 
+import hashlib
+import time
 from asyncio import Lock
 from collections import deque
-import hashlib
 from secrets import compare_digest
-import time
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
@@ -192,7 +192,7 @@ async def send_notification(
 
     Requires authentication.
     """
-    try:
+    try:  # noqa: PLW0717
         if request.notification_type == "custom":
             if not request.custom:
                 raise HTTPException(

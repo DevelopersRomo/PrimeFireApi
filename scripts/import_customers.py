@@ -1,28 +1,35 @@
 import json
 import os
+import pathlib
 import sys
 
 # Add the parent directory to sys.path so we can import from PrimeFireApi
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(pathlib.Path(pathlib.Path(pathlib.Path(__file__).resolve()).parent).parent)
 
 from sqlmodel import Session, select
+
 from bd.connection import engine
-from models.customers import Customers, CustomerTypeEnum, CustomerNotes, CustomerAlternateContacts
 from models.addresses import Addresses
-from models.employees import Employees
 from models.countries import Countries
+from models.customers import CustomerAlternateContacts, CustomerNotes, CustomerTypeEnum, Customers
+from models.employees import Employees
+
 
 def normalize_customer_name(raw_name: str) -> str:
     if not raw_name:
         return ""
     if ":" in raw_name:
-        return raw_name.split(":")[0].strip()
+        return raw_name.split(":", maxsplit=1)[0].strip()
     return raw_name.strip()
 
+
 def import_customers():
-    json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'tableConvert.com_zjvjkq.json')
-    
-    with open(json_path, 'r', encoding='utf-8') as f:
+    json_path = os.path.join(
+        pathlib.Path(pathlib.Path(pathlib.Path(pathlib.Path(__file__).resolve()).parent).parent).parent,
+        "tableConvert.com_zjvjkq.json",
+    )
+
+    with pathlib.Path(json_path).open(encoding="utf-8") as f:
         data = json.load(f)
 
     with Session(engine) as session:
@@ -47,7 +54,7 @@ def import_customers():
                 company_name = row.get("Company", "Unknown Company").strip()
 
             email = row.get("Main Email", "").strip()
-            
+
             # Check for duplicates
             if company_name in processed_companies:
                 continue
@@ -62,13 +69,11 @@ def import_customers():
                     processed_emails.add(email)
                 continue
 
-            print(f"Importing: {company_name}")
-
             # Parse Address
             # Just do a best effort based on Ship to or Bill to
             address_text_1 = row.get("Bill to 3", "").strip() or row.get("Ship to 3", "").strip() or "N/A"
             address_text_2 = row.get("Bill to 4", "").strip() or row.get("Ship to 4", "").strip()
-            
+
             address = Addresses(
                 address_1=address_text_1[:200],
                 address_2=address_text_2[:200] if address_text_2 else None,
@@ -98,7 +103,7 @@ def import_customers():
                 primary_email=email[:255] if email else None,
                 primary_phone=phone[:20] if phone else None,
                 primary_address_id=address.address_id,
-                created_by=created_by_id
+                created_by=created_by_id,
             )
             session.add(customer)
             session.commit()
@@ -115,7 +120,7 @@ def import_customers():
                 alt_contact = CustomerAlternateContacts(
                     customer_id=customer.customer_id,
                     name=(secondary_contact or "Alternate Contact")[:200],
-                    phone=alt_phone[:20] if alt_phone else None
+                    phone=alt_phone[:20] if alt_phone else None,
                 )
                 session.add(alt_contact)
 
@@ -130,15 +135,12 @@ def import_customers():
 
             if note_content:
                 note = CustomerNotes(
-                    customer_id=customer.customer_id,
-                    note_text="\\n".join(note_content),
-                    created_by=created_by_id
+                    customer_id=customer.customer_id, note_text="\\n".join(note_content), created_by=created_by_id
                 )
                 session.add(note)
 
             session.commit()
 
-        print("Import completed successfully.")
 
 if __name__ == "__main__":
     import_customers()

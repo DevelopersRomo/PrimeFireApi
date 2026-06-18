@@ -1,11 +1,12 @@
 import enum
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship, SQLModel
+
+from core.datetime_utils import utcnow
 
 if TYPE_CHECKING:
     from models.employees import Employees
@@ -107,8 +108,8 @@ class Tickets(SQLModel, table=True):
     assigned_to: int | None = Field(default=None, foreign_key="dbo.employees.employee_id")
 
     # Timestamps
-    created_at: datetime = Field(default_factory=lambda: utcnow())
-    updated_at: datetime = Field(default_factory=lambda: utcnow())
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
     in_progress_at: datetime | None = Field(default=None)
 
     # Relationships
@@ -131,17 +132,15 @@ class TicketRecurrenceConfig(SQLModel, table=True):
     config_id: int | None = Field(default=None, primary_key=True, index=True)
     ticket_id: int | None = Field(
         default=None,
-        sa_column=Column(
-            ForeignKey("dbo.tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True
-        ),
+        sa_column=Column(ForeignKey("dbo.tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True),
     )
     recurrence_type: TicketRecurrenceType = Field(default=TicketRecurrenceType.NONE)
     next_occurrence: datetime | None = Field(default=None)
     parent_ticket_id: int | None = Field(default=None)  # no FK: app handles integrity
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=lambda: utcnow())
+    created_at: datetime = Field(default_factory=utcnow)
 
-    ticket: Optional[Tickets] = Relationship(
+    ticket: Tickets | None = Relationship(
         back_populates="recurrence_config",
         sa_relationship_kwargs={"foreign_keys": "TicketRecurrenceConfig.ticket_id"},
     )

@@ -39,7 +39,9 @@ async def create_permission(
 
     # Check if permission already exists
     existing = db.exec(
-        select(RoleModules).where(RoleModules.role_id == permission.role_id, RoleModules.module_id == permission.module_id)
+        select(RoleModules).where(
+            RoleModules.role_id == permission.role_id, RoleModules.module_id == permission.module_id
+        )
     ).first()
     if existing:
         raise HTTPException(

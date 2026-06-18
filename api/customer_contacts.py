@@ -1,11 +1,9 @@
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
+from core.datetime_utils import utcnow
 from models.customers import CustomerAlternateContacts, Customers
 from schemas.customers import CustomerAlternateContact, CustomerAlternateContactCreate, CustomerAlternateContactUpdate
 

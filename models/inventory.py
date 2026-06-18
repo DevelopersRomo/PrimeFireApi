@@ -1,11 +1,8 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from sqlmodel import Field, Relationship, SQLModel
-
-if TYPE_CHECKING:
-    from models.products import Products
 
 
 class Warehouses(SQLModel, table=True):

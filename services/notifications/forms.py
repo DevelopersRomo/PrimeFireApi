@@ -16,6 +16,67 @@ from services.notifications.schemas import (
 )
 
 
+def _form_notification_recipients(
+    notification_data: FormNotificationRequest,
+) -> tuple[list[str], list[str] | None, FormNotificationResponse | None]:
+    to_emails = parse_email_list(notification_data.to)
+    if not to_emails:
+        return (
+            [],
+            None,
+            FormNotificationResponse(
+                success=False,
+                error_message="No valid recipient emails",
+            ),
+        )
+
+    cc_emails = parse_email_list(notification_data.cc) if notification_data.cc else None
+    return to_emails, cc_emails, None
+
+
+def _form_notification_attachments(notification_data: FormNotificationRequest) -> list[EmailAttachment] | None:
+    if not notification_data.attach_pdf or not notification_data.pdf_file_name:
+        return None
+    return [
+        EmailAttachment(
+            name=notification_data.pdf_file_name,
+            content_type="application/pdf",
+            content_bytes="",
+        )
+    ]
+
+
+async def _send_form_notification(notification_data: FormNotificationRequest) -> FormNotificationResponse:
+    to_emails, cc_emails, error_response = _form_notification_recipients(notification_data)
+    if error_response:
+        return error_response
+
+    sender_email = getattr(settings, "BOT_EMAIL", None)
+    if not sender_email:
+        return FormNotificationResponse(
+            success=False,
+            error_message="No sender email configured (BOT_EMAIL)",
+        )
+
+    success, message_id, error_message = await send_outlook_email(
+        send_as_email=sender_email,
+        to_emails=to_emails,
+        subject=notification_data.subject,
+        body=generate_form_notification_html(notification_data),
+        cc_emails=cc_emails,
+        attachments=_form_notification_attachments(notification_data),
+    )
+    if success:
+        return FormNotificationResponse(
+            success=True,
+            message_id=message_id,
+        )
+    return FormNotificationResponse(
+        success=False,
+        error_message=error_message,
+    )
+
+
 def get_action_color(action_type: str) -> str:
     """Get color for action type."""
     colors = {
@@ -179,55 +240,7 @@ async def send_form_notification(
         FormNotificationResponse with success status and message_id or error_message
     """
     try:
-        to_emails = parse_email_list(notification_data.to)
-        if not to_emails:
-            return FormNotificationResponse(
-                success=False,
-                error_message="No valid recipient emails",
-            )
-
-        cc_emails = None
-        if notification_data.cc:
-            cc_emails = parse_email_list(notification_data.cc)
-
-        html_body = generate_form_notification_html(notification_data)
-
-        attachments = None
-        if notification_data.attach_pdf and notification_data.pdf_file_name:
-            attachments = [
-                EmailAttachment(
-                    name=notification_data.pdf_file_name,
-                    content_type="application/pdf",
-                    content_bytes="",
-                )
-            ]
-
-        sender_email = getattr(settings, "BOT_EMAIL", None)
-        if not sender_email:
-            return FormNotificationResponse(
-                success=False,
-                error_message="No sender email configured (BOT_EMAIL)",
-            )
-
-        success, message_id, error_message = await send_outlook_email(
-            send_as_email=sender_email,
-            to_emails=to_emails,
-            subject=notification_data.subject,
-            body=html_body,
-            cc_emails=cc_emails,
-            attachments=attachments,
-        )
-
-        if success:
-            return FormNotificationResponse(
-                success=True,
-                message_id=message_id,
-            )
-        return FormNotificationResponse(
-            success=False,
-            error_message=error_message,
-        )
-
+        return await _send_form_notification(notification_data)
     except Exception as e:
         return FormNotificationResponse(
             success=False,

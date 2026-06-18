@@ -1,5 +1,5 @@
 """
-MIGRACION COMPLETA: PascalCase -> snake_case (TODO EN UNA SOLA VUELLA)
+MIGRACION COMPLETA: PascalCase -> snake_case (TODO EN UNA SOLA VUELLA).
 
 Estrategia correcta:
 1. Renombrar tablas
@@ -11,6 +11,7 @@ Estrategia correcta:
 7. Recrear PKs en snake_case
 8. Recrear FKs en snake_case
 """
+
 import os
 import sys
 from pathlib import Path
@@ -48,7 +49,9 @@ def get_conn():
 def table_exists(name):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute(f"SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{name}' AND TABLE_SCHEMA = 'dbo'")
+    cursor.execute(
+        f"SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{name}' AND TABLE_SCHEMA = 'dbo'"
+    )
     exists = cursor.fetchone()[0] > 0
     cursor.close()
     conn.close()
@@ -58,7 +61,9 @@ def table_exists(name):
 def col_exists(table, col):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute(f"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table}' AND COLUMN_NAME = '{col}' AND TABLE_SCHEMA = 'dbo'")
+    cursor.execute(
+        f"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table}' AND COLUMN_NAME = '{col}' AND TABLE_SCHEMA = 'dbo'"
+    )
     exists = cursor.fetchone()[0] > 0
     cursor.close()
     conn.close()
@@ -73,19 +78,15 @@ def exec_sql(sql, desc="", quiet=False):
         conn.commit()
         cursor.close()
         conn.close()
-        if not quiet:
-            print(f"    [OK] {desc}")
         return True, None
     except Exception as e:
         cursor.close()
         conn.close()
-        if not quiet:
-            print(f"    [ERROR] {desc}: {e}")
         return False, str(e)
 
 
 def drop_all_constraints():
-    """Drop ALL constraints in the database - PKs, FKs, DEFAULTs"""
+    """Drop ALL constraints in the database - PKs, FKs, DEFAULTs."""
     conn = get_conn()
     cursor = conn.cursor()
 
@@ -101,11 +102,10 @@ def drop_all_constraints():
             try:
                 cursor.execute(sql)
                 conn.commit()
-                print(f"    [OK] DEFAULT constraint dropped")
             except:
                 pass
-    except Exception as e:
-        print(f"    [WARN] Error dropping defaults: {e}")
+    except Exception:
+        pass
 
     # Drop all FK constraints
     try:
@@ -119,11 +119,10 @@ def drop_all_constraints():
             try:
                 cursor.execute(sql)
                 conn.commit()
-                print(f"    [OK] FK dropped")
             except:
                 pass
-    except Exception as e:
-        print(f"    [WARN] Error dropping FKs: {e}")
+    except Exception:
+        pass
 
     # Drop all PK constraints (will fail if referenced by FKs, but we already tried to drop FKs)
     try:
@@ -138,18 +137,17 @@ def drop_all_constraints():
             try:
                 cursor.execute(sql)
                 conn.commit()
-                print(f"    [OK] PK dropped")
             except:
                 pass
-    except Exception as e:
-        print(f"    [WARN] Error dropping PKs: {e}")
+    except Exception:
+        pass
 
     cursor.close()
     conn.close()
 
 
 def col_has_data(table, col):
-    """Check if column has any non-NULL data"""
+    """Check if column has any non-NULL data."""
     reserved = {"key", "order", "group", "user", "password", "date", "time", "text"}
     col_q = f"[{col}]" if col.lower() in reserved else col
     conn = get_conn()
@@ -470,142 +468,262 @@ COLUMNS_TO_ADD = {
 # Mapeo de columnas PascalCase -> snake_case
 COLUMN_MAP = {
     "addresses": [
-        ("AddressId", "address_id"), ("Address1", "address_1"), ("Address2", "address_2"),
-        ("City", "city"), ("State", "state"), ("ZipCode", "zip_code"), ("CountryId", "country_id"),
-        ("GooglePlaceId", "google_place_id"), ("IsValidated", "is_validated"),
-        ("ValidatedAt", "validated_at"), ("CreatedAt", "created_at"),
+        ("AddressId", "address_id"),
+        ("Address1", "address_1"),
+        ("Address2", "address_2"),
+        ("City", "city"),
+        ("State", "state"),
+        ("ZipCode", "zip_code"),
+        ("CountryId", "country_id"),
+        ("GooglePlaceId", "google_place_id"),
+        ("IsValidated", "is_validated"),
+        ("ValidatedAt", "validated_at"),
+        ("CreatedAt", "created_at"),
     ],
     "countries": [("CountryId", "country_id")],
     "curriculums": [
-        ("CurriculumId", "curriculum_id"), ("JobId", "job_id"), ("CurriculumPath", "curriculum_path"),
-        ("CoverLetter", "cover_letter"), ("SubmittedAt", "submitted_at"), ("EmployeeId", "employee_id"),
+        ("CurriculumId", "curriculum_id"),
+        ("JobId", "job_id"),
+        ("CurriculumPath", "curriculum_path"),
+        ("CoverLetter", "cover_letter"),
+        ("SubmittedAt", "submitted_at"),
+        ("EmployeeId", "employee_id"),
     ],
     "customer_alternate_contacts": [
-        ("CustomerAlternateContactId", "customer_alternate_contact_id"), ("CustomerId", "customer_id"),
-        ("CreatedAt", "created_at"), ("UpdatedAt", "updated_at"),
+        ("CustomerAlternateContactId", "customer_alternate_contact_id"),
+        ("CustomerId", "customer_id"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
     ],
     "customer_attachments": [
-        ("CustomerAttachmentId", "customer_attachment_id"), ("CustomerId", "customer_id"),
-        ("CreatedAt", "created_at"), ("CreatedBy", "created_by"),
+        ("CustomerAttachmentId", "customer_attachment_id"),
+        ("CustomerId", "customer_id"),
+        ("CreatedAt", "created_at"),
+        ("CreatedBy", "created_by"),
     ],
     "customer_notes": [
-        ("CustomerNoteId", "customer_note_id"), ("CustomerId", "customer_id"),
-        ("CreatedAt", "created_at"), ("UpdatedAt", "updated_at"), ("CreatedBy", "created_by"),
+        ("CustomerNoteId", "customer_note_id"),
+        ("CustomerId", "customer_id"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
+        ("CreatedBy", "created_by"),
     ],
     "customers": [
-        ("CustomerId", "customer_id"), ("CustomerType", "customer_type"), ("DtdPotential", "dtd_potential"),
-        ("PrimaryAddressId", "primary_address_id"), ("CreatedAt", "created_at"),
-        ("UpdatedAt", "updated_at"), ("CreatedBy", "created_by"), ("CompanyName", "company_name"),
-        ("FirstName", "first_name"), ("LastName", "last_name"), ("AdditionalName", "additional_name"),
-        ("PrimaryEmail", "primary_email"), ("PrimaryPhone", "primary_phone"),
+        ("CustomerId", "customer_id"),
+        ("CustomerType", "customer_type"),
+        ("DtdPotential", "dtd_potential"),
+        ("PrimaryAddressId", "primary_address_id"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
+        ("CreatedBy", "created_by"),
+        ("CompanyName", "company_name"),
+        ("FirstName", "first_name"),
+        ("LastName", "last_name"),
+        ("AdditionalName", "additional_name"),
+        ("PrimaryEmail", "primary_email"),
+        ("PrimaryPhone", "primary_phone"),
     ],
     "departments": [("DepartmentId", "department_id")],
     "employee_roles": [("EmployeeId", "employee_id"), ("RoleId", "role_id")],
     "employees": [
-        ("EmployeeId", "employee_id"), ("CountryId", "country_id"), ("ManagerEmployeeId", "manager_employee_id"),
-        ("FirstName", "first_name"), ("LastName", "last_name"), ("DisplayName", "display_name"),
-        ("MobilePhone", "mobile_phone"), ("OfficePhone", "office_phone"), ("ManagerEmail", "manager_email"),
-        ("StreetAddress", "street_address"), ("PostalCode", "postal_code"), ("AzureOid", "azure_oid"),
-        ("AzureUpn", "azure_upn"), ("PasswordHash", "password_hash"), ("LastSyncedAt", "last_synced_at"),
+        ("EmployeeId", "employee_id"),
+        ("CountryId", "country_id"),
+        ("ManagerEmployeeId", "manager_employee_id"),
+        ("FirstName", "first_name"),
+        ("LastName", "last_name"),
+        ("DisplayName", "display_name"),
+        ("MobilePhone", "mobile_phone"),
+        ("OfficePhone", "office_phone"),
+        ("ManagerEmail", "manager_email"),
+        ("StreetAddress", "street_address"),
+        ("PostalCode", "postal_code"),
+        ("AzureOid", "azure_oid"),
+        ("AzureUpn", "azure_upn"),
+        ("PasswordHash", "password_hash"),
+        ("LastSyncedAt", "last_synced_at"),
     ],
     "external_users": [
-        ("ExternalUserId", "external_user_id"), ("TenantId", "tenant_id"),
-        ("PasswordHash", "password_hash"), ("CreatedAt", "created_at"),
+        ("ExternalUserId", "external_user_id"),
+        ("TenantId", "tenant_id"),
+        ("PasswordHash", "password_hash"),
+        ("CreatedAt", "created_at"),
     ],
     "hardware_inventory": [
-        ("HardwareID", "hardware_id"), ("EmployeeId", "employee_id"), ("SerialNumber", "serial_number"),
-        ("DeviceType", "device_type"), ("StorageType", "storage_type"), ("StorageSize_GB", "storage_size_gb"),
-        ("OperatingSystem", "operating_system"), ("WarrantyStartDate", "warranty_start_date"),
-        ("WarrantyEndDate", "warranty_end_date"), ("PurchaseDate", "purchase_date"),
-        ("CreatedAt", "created_at"), ("UpdatedAt", "updated_at"),
+        ("HardwareID", "hardware_id"),
+        ("EmployeeId", "employee_id"),
+        ("SerialNumber", "serial_number"),
+        ("DeviceType", "device_type"),
+        ("StorageType", "storage_type"),
+        ("StorageSize_GB", "storage_size_gb"),
+        ("OperatingSystem", "operating_system"),
+        ("WarrantyStartDate", "warranty_start_date"),
+        ("WarrantyEndDate", "warranty_end_date"),
+        ("PurchaseDate", "purchase_date"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
     ],
     "holidays": [("HolidayId", "holiday_id")],
     "jobs": [
-        ("JobId", "job_id"), ("CountryId", "country_id"), ("SalaryMin", "salary_min"),
-        ("SalaryMax", "salary_max"), ("PostedAt", "posted_at"), ("EmployeeId", "employee_id"),
+        ("JobId", "job_id"),
+        ("CountryId", "country_id"),
+        ("SalaryMin", "salary_min"),
+        ("SalaryMax", "salary_max"),
+        ("PostedAt", "posted_at"),
+        ("EmployeeId", "employee_id"),
     ],
     "licenses": [
-        ("LicenseId", "license_id"), ("CreatedAt", "created_at"), ("ExpiryDate", "expiry_date"),
+        ("LicenseId", "license_id"),
+        ("CreatedAt", "created_at"),
+        ("ExpiryDate", "expiry_date"),
         ("EmployeeId", "employee_id"),
     ],
     "modules": [
-        ("ModuleId", "module_id"), ("ModuleName", "module_name"), ("ModuleKey", "module_key"),
-        ("ParentModuleId", "parent_module_id"), ("CreatedAt", "created_at"), ("RouteUrl", "route_url"),
-        ("DisplayOrder", "display_order"), ("IsActive", "is_active"),
+        ("ModuleId", "module_id"),
+        ("ModuleName", "module_name"),
+        ("ModuleKey", "module_key"),
+        ("ParentModuleId", "parent_module_id"),
+        ("CreatedAt", "created_at"),
+        ("RouteUrl", "route_url"),
+        ("DisplayOrder", "display_order"),
+        ("IsActive", "is_active"),
     ],
     "products": [
-        ("Id", "id"), ("UnitPrice", "unit_price"), ("Cost", "cost"), ("TaxRate", "tax_rate"),
-        ("StockQuantity", "stock_quantity"), ("IsActive", "is_active"), ("CreatedAt", "created_at"),
+        ("Id", "id"),
+        ("UnitPrice", "unit_price"),
+        ("Cost", "cost"),
+        ("TaxRate", "tax_rate"),
+        ("StockQuantity", "stock_quantity"),
+        ("IsActive", "is_active"),
+        ("CreatedAt", "created_at"),
     ],
     "quotation_items": [
-        ("Id", "id"), ("QuotationId", "quotation_id"), ("ProductId", "product_id"),
+        ("Id", "id"),
+        ("QuotationId", "quotation_id"),
+        ("ProductId", "product_id"),
         ("UnitPrice", "unit_price"),
     ],
     "quotations": [
-        ("Id", "id"), ("CustomerId", "customer_id"), ("QuoteDate", "quote_date"),
-        ("ExpirationDate", "expiration_date"), ("CreatedAt", "created_at"),
+        ("Id", "id"),
+        ("CustomerId", "customer_id"),
+        ("QuoteDate", "quote_date"),
+        ("ExpirationDate", "expiration_date"),
+        ("CreatedAt", "created_at"),
     ],
     "role_modules": [
-        ("RoleId", "role_id"), ("ModuleId", "module_id"), ("CanView", "can_view"),
-        ("CanCreate", "can_create"), ("CanEdit", "can_edit"), ("CanDelete", "can_delete"),
-        ("CanExport", "can_export"), ("AdminActions", "admin_actions"), ("OtherActions", "other_actions"),
+        ("RoleId", "role_id"),
+        ("ModuleId", "module_id"),
+        ("CanView", "can_view"),
+        ("CanCreate", "can_create"),
+        ("CanEdit", "can_edit"),
+        ("CanDelete", "can_delete"),
+        ("CanExport", "can_export"),
+        ("AdminActions", "admin_actions"),
+        ("OtherActions", "other_actions"),
         ("AssignedAt", "assigned_at"),
     ],
     "roles": [("RoleId", "role_id"), ("RoleName", "role_name")],
     "tenant_employees": [
-        ("Id", "id"), ("TenantId", "tenant_id"), ("PasswordHash", "password_hash"),
+        ("Id", "id"),
+        ("TenantId", "tenant_id"),
+        ("PasswordHash", "password_hash"),
         ("CreatedAt", "created_at"),
     ],
     "tenant_logos": [
-        ("LogoId", "logo_id"), ("TenantId", "tenant_id"), ("CreatedAt", "created_at"),
-        ("UpdatedAt", "updated_at"), ("PathBackground", "path_background"),
-        ("PrimaryColor", "primary_color"), ("SecondaryColor", "secondary_color"),
-        ("TertiaryColor", "tertiary_color"), ("FavIcon", "fav_icon"),
+        ("LogoId", "logo_id"),
+        ("TenantId", "tenant_id"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
+        ("PathBackground", "path_background"),
+        ("PrimaryColor", "primary_color"),
+        ("SecondaryColor", "secondary_color"),
+        ("TertiaryColor", "tertiary_color"),
+        ("FavIcon", "fav_icon"),
     ],
     "tenants": [
-        ("TenantId", "tenant_id"), ("CreatedAt", "created_at"), ("IsActive", "is_active"),
+        ("TenantId", "tenant_id"),
+        ("CreatedAt", "created_at"),
+        ("IsActive", "is_active"),
         ("DbConnectionKey", "db_connection_key"),
     ],
     "ticket_attachments": [
-        ("TicketAttachmentId", "ticket_attachment_id"), ("TicketId", "ticket_id"),
-        ("TicketMessageId", "ticket_message_id"), ("CreatedAt", "created_at"),
+        ("TicketAttachmentId", "ticket_attachment_id"),
+        ("TicketId", "ticket_id"),
+        ("TicketMessageId", "ticket_message_id"),
+        ("CreatedAt", "created_at"),
     ],
     "ticket_messages": [
-        ("TicketMessageId", "ticket_message_id"), ("TicketId", "ticket_id"), ("UserId", "user_id"),
-        ("CreatedAt", "created_at"), ("UpdatedAt", "updated_at"), ("EditedAt", "edited_at"),
+        ("TicketMessageId", "ticket_message_id"),
+        ("TicketId", "ticket_id"),
+        ("UserId", "user_id"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
+        ("EditedAt", "edited_at"),
     ],
     "tickets": [
-        ("TicketId", "ticket_id"), ("CreatedBy", "created_by"), ("AssignedTo", "assigned_to"),
-        ("CreatedAt", "created_at"), ("UpdatedAt", "updated_at"),
+        ("TicketId", "ticket_id"),
+        ("CreatedBy", "created_by"),
+        ("AssignedTo", "assigned_to"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
     ],
     "time_off_balances": [
-        ("BalanceId", "balance_id"), ("EmployeeId", "employee_id"), ("EntitledDays", "entitled_days"),
-        ("UsedDays", "used_days"), ("PendingDays", "pending_days"), ("CarryoverDays", "carryover_days"),
+        ("BalanceId", "balance_id"),
+        ("EmployeeId", "employee_id"),
+        ("EntitledDays", "entitled_days"),
+        ("UsedDays", "used_days"),
+        ("PendingDays", "pending_days"),
+        ("CarryoverDays", "carryover_days"),
         ("AbsenceType", "absence_type"),
     ],
     "time_off_requests": [
-        ("RequestId", "request_id"), ("EmployeeId", "employee_id"), ("AbsenceType", "absence_type"),
-        ("TimeUnit", "time_unit"), ("StartDate", "start_date"), ("EndDate", "end_date"),
-        ("StartTime", "start_time"), ("EndTime", "end_time"), ("TotalHours", "total_hours"),
-        ("TotalDays", "total_days"), ("ReviewedBy", "reviewed_by"), ("ReviewedAt", "reviewed_at"),
-        ("ReviewNotes", "review_notes"), ("CreatedAt", "created_at"), ("UpdatedAt", "updated_at"),
+        ("RequestId", "request_id"),
+        ("EmployeeId", "employee_id"),
+        ("AbsenceType", "absence_type"),
+        ("TimeUnit", "time_unit"),
+        ("StartDate", "start_date"),
+        ("EndDate", "end_date"),
+        ("StartTime", "start_time"),
+        ("EndTime", "end_time"),
+        ("TotalHours", "total_hours"),
+        ("TotalDays", "total_days"),
+        ("ReviewedBy", "reviewed_by"),
+        ("ReviewedAt", "reviewed_at"),
+        ("ReviewNotes", "review_notes"),
+        ("CreatedAt", "created_at"),
+        ("UpdatedAt", "updated_at"),
     ],
     "timesheet_location_snapshots": [
-        ("SnapshotId", "snapshot_id"), ("EmployeeId", "employee_id"), ("CustomerId", "customer_id"),
-        ("IpAddress", "ip_address"), ("GpsAccuracy", "gps_accuracy"), ("LocationRaw", "location_raw"),
+        ("SnapshotId", "snapshot_id"),
+        ("EmployeeId", "employee_id"),
+        ("CustomerId", "customer_id"),
+        ("IpAddress", "ip_address"),
+        ("GpsAccuracy", "gps_accuracy"),
+        ("LocationRaw", "location_raw"),
         ("CapturedAt", "captured_at"),
     ],
     "timesheet_punches": [
-        ("PunchId", "punch_id"), ("EmployeeId", "employee_id"), ("CustomerId", "customer_id"),
-        ("ClockInAt", "clock_in_at"), ("ClockOutAt", "clock_out_at"), ("IpAddress", "ip_address"),
-        ("GpsAccuracy", "gps_accuracy"), ("LocationRaw", "location_raw"), ("WorkedMinutes", "worked_minutes"),
-        ("ApprovedBy", "approved_by"), ("ApprovedAt", "approved_at"), ("CreatedAt", "created_at"),
+        ("PunchId", "punch_id"),
+        ("EmployeeId", "employee_id"),
+        ("CustomerId", "customer_id"),
+        ("ClockInAt", "clock_in_at"),
+        ("ClockOutAt", "clock_out_at"),
+        ("IpAddress", "ip_address"),
+        ("GpsAccuracy", "gps_accuracy"),
+        ("LocationRaw", "location_raw"),
+        ("WorkedMinutes", "worked_minutes"),
+        ("ApprovedBy", "approved_by"),
+        ("ApprovedAt", "approved_at"),
+        ("CreatedAt", "created_at"),
         ("UpdatedAt", "updated_at"),
     ],
     "timesheet_settings": [
-        ("SettingId", "setting_id"), ("OvertimeDailyHours", "overtime_daily_hours"),
-        ("OvertimeWeeklyHours", "overtime_weekly_hours"), ("MaxOvertimeDailyHours", "max_overtime_daily_hours"),
-        ("RoundToMinutes", "round_to_minutes"), ("IsActive", "is_active"), ("CreatedAt", "created_at"),
+        ("SettingId", "setting_id"),
+        ("OvertimeDailyHours", "overtime_daily_hours"),
+        ("OvertimeWeeklyHours", "overtime_weekly_hours"),
+        ("MaxOvertimeDailyHours", "max_overtime_daily_hours"),
+        ("RoundToMinutes", "round_to_minutes"),
+        ("IsActive", "is_active"),
+        ("CreatedAt", "created_at"),
         ("UpdatedAt", "updated_at"),
     ],
 }
@@ -614,42 +732,28 @@ COLUMN_MAP = {
 def main():
     global ACTIVE_DB
 
-    print("=" * 60)
-    print("MIGRACION COMPLETA: PascalCase -> snake_case")
-    print("=" * 60)
-
     # ============================================================
     # PASO 1: Renombrar tablas
     # ============================================================
-    print("\n[1/8] Renombrando tablas PascalCase -> snake_case...")
     for old_name, new_name in TABLE_RENAMES.items():
         if table_exists(old_name) and not table_exists(new_name):
-            print(f"    {old_name} -> {new_name}...")
             success, _ = exec_sql(f"EXEC sp_rename 'dbo.{old_name}', '{new_name}'", f"rename {old_name}")
-            if success:
-                print(f"    [OK] {old_name} -> {new_name}")
-        elif table_exists(new_name):
-            print(f"    [SKIP] {new_name} (ya existe)")
-        elif table_exists(old_name):
-            print(f"    [SKIP] {old_name} (no existe)")
+        elif table_exists(new_name) or table_exists(old_name):
+            pass
 
     # ============================================================
     # PASO 2: Agregar columnas snake_case
     # ============================================================
-    print("\n[2/8] Agregando columnas snake_case...")
     for table, cols in COLUMNS_TO_ADD.items():
         if not table_exists(table):
             continue
         for col_name, col_type in cols:
             if not col_exists(table, col_name):
                 success, _ = exec_sql(f"ALTER TABLE dbo.{table} ADD {col_name} {col_type}", f"{table}.{col_name}")
-            else:
-                print(f"    [SKIP] {table}.{col_name} (ya existe)")
 
     # ============================================================
     # PASO 3: Copiar datos PascalCase -> snake_case
     # ============================================================
-    print("\n[3/8] Copiando datos a columnas snake_case...")
     for table, mappings in COLUMN_MAP.items():
         if not table_exists(table):
             continue
@@ -660,14 +764,12 @@ def main():
                     snake_q = f"[{snake_col}]" if snake_col.lower() in reserved else snake_col
                     pascal_q = f"[{pascal_col}]" if pascal_col.lower() in reserved else pascal_col
                     success, _ = exec_sql(
-                        f"UPDATE dbo.{table} SET {snake_q} = {pascal_q} WHERE {snake_q} IS NULL",
-                        f"{table}.{snake_col}"
+                        f"UPDATE dbo.{table} SET {snake_q} = {pascal_q} WHERE {snake_q} IS NULL", f"{table}.{snake_col}"
                     )
 
     # ============================================================
     # PASO 4: Hacer NOT NULL las columnas snake_case (solo si ya tiene datos)
     # ============================================================
-    print("\n[4/8] Haciendo NOT NULL las columnas snake_case...")
     not_null_types = {
         "INT": "INT",
         "NVARCHAR": "NVARCHAR(MAX)",
@@ -685,19 +787,17 @@ def main():
                 alter_type = not_null_types.get(base_type, col_type)
                 success, _ = exec_sql(
                     f"ALTER TABLE dbo.{table} ALTER COLUMN {col_name} {alter_type} NOT NULL",
-                    f"{table}.{col_name} NOT NULL"
+                    f"{table}.{col_name} NOT NULL",
                 )
 
     # ============================================================
     # PASO 5: Eliminar TODAS las constraints (PK, FK, DEFAULT)
     # ============================================================
-    print("\n[5/8] Eliminando TODAS las constraints (PK, FK, DEFAULT)...")
     drop_all_constraints()
 
     # ============================================================
     # PASO 6: Eliminar columnas PascalCase
     # ============================================================
-    print("\n[6/8] Eliminando columnas PascalCase...")
     for table, mappings in COLUMN_MAP.items():
         if not table_exists(table):
             continue
@@ -710,7 +810,6 @@ def main():
     # ============================================================
     # PASO 7: Recrear PKs en columnas snake_case
     # ============================================================
-    print("\n[7/8] Recreando PKs en columnas snake_case...")
     pk_columns = {
         "addresses": "address_id",
         "countries": "country_id",
@@ -748,20 +847,22 @@ def main():
         if not table_exists(table) or not pk_col:
             continue
         if col_exists(table, pk_col):
-            success, _ = exec_sql(
-                f"ALTER TABLE dbo.{table} ADD PRIMARY KEY ({pk_col})",
-                f"PK {table}.{pk_col}"
-            )
+            success, _ = exec_sql(f"ALTER TABLE dbo.{table} ADD PRIMARY KEY ({pk_col})", f"PK {table}.{pk_col}")
 
     # ============================================================
     # PASO 8: Recrear FKs en columnas snake_case
     # ============================================================
-    print("\n[8/8] Recreando FKs en columnas snake_case...")
     fk_definitions = [
         ("customer_notes", "fk_customer_notes_customers", "customer_id", "customers", "customer_id"),
         ("customer_attachments", "fk_customer_attachments_customers", "customer_id", "customers", "customer_id"),
         ("customer_attachments", "fk_customer_attachments_employees", "created_by", "employees", "employee_id"),
-        ("customer_alternate_contacts", "fk_customer_alternate_contacts_customers", "customer_id", "customers", "customer_id"),
+        (
+            "customer_alternate_contacts",
+            "fk_customer_alternate_contacts_customers",
+            "customer_id",
+            "customers",
+            "customer_id",
+        ),
         ("customers", "fk_customers_addresses", "primary_address_id", "addresses", "address_id"),
         ("customers", "fk_customers_employees", "created_by", "employees", "employee_id"),
         ("addresses", "fk_addresses_countries", "country_id", "countries", "country_id"),
@@ -790,48 +891,56 @@ def main():
         ("ticket_messages", "fk_ticket_messages_tickets", "ticket_id", "tickets", "ticket_id"),
         ("ticket_messages", "fk_ticket_messages_employees", "user_id", "employees", "employee_id"),
         ("ticket_attachments", "fk_ticket_attachments_tickets", "ticket_id", "tickets", "ticket_id"),
-        ("ticket_attachments", "fk_ticket_attachments_messages", "ticket_message_id", "ticket_messages", "ticket_message_id"),
+        (
+            "ticket_attachments",
+            "fk_ticket_attachments_messages",
+            "ticket_message_id",
+            "ticket_messages",
+            "ticket_message_id",
+        ),
         ("time_off_balances", "fk_time_off_balances_employees", "employee_id", "employees", "employee_id"),
         ("time_off_requests", "fk_time_off_requests_employees", "employee_id", "employees", "employee_id"),
         ("time_off_requests", "fk_time_off_requests_employees_reviewed", "reviewed_by", "employees", "employee_id"),
         ("timesheet_punches", "fk_timesheet_punches_employees", "employee_id", "employees", "employee_id"),
         ("timesheet_punches", "fk_timesheet_punches_customers", "customer_id", "customers", "customer_id"),
         ("timesheet_punches", "fk_timesheet_punches_employees_approved", "approved_by", "employees", "employee_id"),
-        ("timesheet_location_snapshots", "fk_timesheet_location_snapshots_employees", "employee_id", "employees", "employee_id"),
-        ("timesheet_location_snapshots", "fk_timesheet_location_snapshots_customers", "customer_id", "customers", "customer_id"),
+        (
+            "timesheet_location_snapshots",
+            "fk_timesheet_location_snapshots_employees",
+            "employee_id",
+            "employees",
+            "employee_id",
+        ),
+        (
+            "timesheet_location_snapshots",
+            "fk_timesheet_location_snapshots_customers",
+            "customer_id",
+            "customers",
+            "customer_id",
+        ),
     ]
 
     for child_table, fk_name, child_col, parent_table, parent_col in fk_definitions:
         if not table_exists(child_table) or not table_exists(parent_table):
             continue
         if col_exists(child_table, child_col) and col_exists(parent_table, parent_col):
-            success, _ = exec_sql(
+            _success, _ = exec_sql(
                 f"ALTER TABLE dbo.[{child_table}] ADD CONSTRAINT [{fk_name}] FOREIGN KEY ([{child_col}]) REFERENCES dbo.[{parent_table}]([{parent_col}])",
-                f"FK {child_table}.{child_col} -> {parent_table}.{parent_col}"
+                f"FK {child_table}.{child_col} -> {parent_table}.{parent_col}",
             )
-
-    print("\n" + "=" * 60)
-    print("MIGRACION COMPLETADA")
-    print("=" * 60)
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         target = sys.argv[1]
         if target not in DATABASES:
-            print(f"Base de datos '{target}' no encontrada.")
             sys.exit(1)
         databases_to_run = [target]
     else:
         databases_to_run = list(DATABASES.keys())
 
-    print(f"Bases de datos a migrar: {', '.join(databases_to_run)}")
-    print("PRESIONA Enter PARA CONTINUAR o Ctrl+C para cancelar...")
     input()
 
     for db_name in databases_to_run:
         ACTIVE_DB = db_name
-        print(f"\n{'=' * 60}")
-        print(f"MIGRANDO: {db_name}")
-        print(f"{'=' * 60}")
         main()

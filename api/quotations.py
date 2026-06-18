@@ -5,12 +5,12 @@ from sqlmodel import Session, select
 from api.dependencies import require_authentication
 from bd.dependencies import get_db
 from models.quotations import Quotations
+from schemas.pagination import PaginatedResponse
 from schemas.quotations import (
     QuotationCreate,
     QuotationRead,
     QuotationUpdate,
 )
-from schemas.pagination import PaginatedResponse
 
 router = APIRouter(
     prefix="/quotations",
@@ -53,7 +53,9 @@ def get_quotations(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    statement = select(Quotations).order_by(Quotations.created_at.desc(), Quotations.id.desc()).offset(skip).limit(limit)
+    statement = (
+        select(Quotations).order_by(Quotations.created_at.desc(), Quotations.id.desc()).offset(skip).limit(limit)
+    )
     items = db.exec(statement).all()
 
     if not with_meta:

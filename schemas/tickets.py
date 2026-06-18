@@ -30,14 +30,14 @@ class TicketUpdate(SQLModel):
     @classmethod
     @field_validator("sla", mode="before")
     def validate_sla(cls, v):
-        if v == "":
+        if not v:
             return None
         return v
 
     @classmethod
     @field_validator("ticket_type", mode="before")
     def validate_ticket_type(cls, v):
-        if v == "":
+        if not v:
             return None
         return v
 

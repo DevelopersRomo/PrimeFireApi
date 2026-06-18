@@ -31,12 +31,12 @@ def get_driver(requested_driver):
 
 
 def create_engine_from_env(prefix="DB"):
-    '''
-    #for windows 
-    server = os.getenv(f"{prefix}_SERVER", "localhost\\SQLEXPRESS")
-    '''
-     # For Linux/Mac, default to localhost with default port
-    server = os.getenv(f"{prefix}_SERVER", "localhost,1433") 
+    r"""
+    #for windows
+    server = os.getenv(f"{prefix}_SERVER", "localhost\\SQLEXPRESS").
+    """
+    # For Linux/Mac, default to localhost with default port
+    server = os.getenv(f"{prefix}_SERVER", "localhost,1433")
     database = os.getenv(f"{prefix}_DATABASE", "PrimeFireCorp")
     username = os.getenv(f"{prefix}_USERNAME", "sa")
     password = os.getenv(f"{prefix}_PASSWORD", "")
@@ -96,10 +96,7 @@ def create_engine_from_env(prefix="DB"):
     elif username and password:
         # Escape password for ODBC connection string
         # If password contains special chars (semicolons, etc.), wrap in braces
-        if any(c in password for c in ";{}"):
-            escaped_password = "{" + password + "}"
-        else:
-            escaped_password = password
+        escaped_password = "{" + password + "}" if any(c in password for c in ";{}") else password
         odbc_params.extend((f"UID={username}", f"PWD={escaped_password}"))
     else:
         odbc_params.append("Trusted_Connection=yes")

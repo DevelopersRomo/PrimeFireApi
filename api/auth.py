@@ -1,7 +1,7 @@
-import uuid
-import secrets
 import logging
-from datetime import datetime, timedelta
+import secrets
+import uuid
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import bcrypt
@@ -77,7 +77,7 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta if expires_delta else datetime.utcnow() + timedelta(minutes=15)  # noqa: DTZ003
+    expire = datetime.now(UTC) + expires_delta if expires_delta else datetime.now(UTC) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -85,9 +85,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta  # noqa: DTZ003
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)  # noqa: DTZ003
+        expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -121,7 +121,9 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_main_
             )
 
         # Save external user in main DB
-        external_user = TenantEmployees(email=user_data.email, password_hash=hashed_password, tenant_id=tenant.tenant_id)
+        external_user = TenantEmployees(
+            email=user_data.email, password_hash=hashed_password, tenant_id=tenant.tenant_id
+        )
         db.add(external_user)
         db.commit()
         db.refresh(external_user)
@@ -385,7 +387,7 @@ def _generate_secure_token() -> str:
 
 def _normalize_token_for_lookup(raw_token: str | None) -> str:
     """Normalize token values coming from query/body before DB lookup."""
-    candidate = (raw_token or "").strip().strip('"\'<>')
+    candidate = (raw_token or "").strip().strip("\"'<>")
     if not candidate:
         return ""
 
@@ -398,7 +400,7 @@ def _normalize_token_for_lookup(raw_token: str | None) -> str:
         if extracted_values and extracted_values[0]:
             decoded = unquote(extracted_values[0])
 
-    return decoded.strip().strip('"\'<>')
+    return decoded.strip().strip("\"'<>")
 
 
 def _find_user_by_email(db: Session, email: str) -> tuple[Employees | None, TenantEmployees | None]:
@@ -410,13 +412,16 @@ def _find_user_by_email(db: Session, email: str) -> tuple[Employees | None, Tena
     return internal_user, None
 
 
-def _get_tenant_info(db: Session, internal_user: Employees | None, tenant_user: TenantEmployees | None) -> tuple[str, str]:
+def _get_tenant_info(
+    db: Session, internal_user: Employees | None, tenant_user: TenantEmployees | None
+) -> tuple[str, str]:
     """Resolve the correct frontend app URL and title for a user.
 
     Returns (app_url, tenant_title):
     - TenantEmployees → use the tenant's URL and title from TenantLogos.
     - Internal Employees → fall back to global APP_URL and "PrimeFire".
     """
+
     def _force_https(raw_url: str | None) -> str:
         cleaned = (raw_url or "").strip().rstrip("/")
         if not cleaned:
@@ -424,14 +429,12 @@ def _get_tenant_info(db: Session, internal_user: Employees | None, tenant_user: 
         if cleaned.startswith("https://"):
             return cleaned
         if cleaned.startswith("http://"):
-            return f"https://{cleaned[len('http://'):]}"
+            return f"https://{cleaned[len('http://') :]}"
         return f"https://{cleaned}"
 
     if tenant_user and tenant_user.tenant_id:
         logo = db.exec(
-            select(TenantLogos)
-            .where(TenantLogos.tenant_id == tenant_user.tenant_id)
-            .order_by(TenantLogos.logo_id)
+            select(TenantLogos).where(TenantLogos.tenant_id == tenant_user.tenant_id).order_by(TenantLogos.logo_id)
         ).first()
         if logo and logo.url:
             return _force_https(logo.url), logo.title
@@ -462,13 +465,13 @@ async def password_recovery(request: PasswordRecoveryRequest, db: Session = Depe
         )
     ).all()
     for tok in existing:
-        tok.used_at = datetime.utcnow()
+        tok.used_at = datetime.now(UTC)
     db.add_all(existing)
     db.commit()
 
     # Create new token
     token = _generate_secure_token()
-    expires_at = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    expires_at = datetime.now(UTC) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
     auth_token = AuthToken(
         email=target_email,
         token=token,
@@ -487,9 +490,7 @@ async def password_recovery(request: PasswordRecoveryRequest, db: Session = Depe
 
 @router.post("/reset-password")
 async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_main_db)):
-    """
-    Reset password using a valid token.
-    """
+    """Reset password using a valid token."""
     token_value = _normalize_token_for_lookup(request.token)
 
     # Find token
@@ -507,12 +508,14 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
     if auth_token.used_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This token has already been used.")
 
-    if auth_token.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This token has expired. Please request a new one.")
+    if auth_token.expires_at < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="This token has expired. Please request a new one."
+        )
 
     # Find user
     internal_user, tenant_user = _find_user_by_email(db, auth_token.email)
-    user = tenant_user if tenant_user else internal_user
+    user = tenant_user or internal_user
 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
@@ -528,7 +531,7 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
     db.add(user)
 
     # Mark token as used
-    auth_token.used_at = datetime.utcnow()
+    auth_token.used_at = datetime.now(UTC)
     db.add(auth_token)
     db.commit()
 
@@ -562,13 +565,13 @@ async def request_magic_link(request: MagicLinkRequest, db: Session = Depends(ge
         )
     ).all()
     for tok in existing:
-        tok.used_at = datetime.utcnow()
+        tok.used_at = datetime.now(UTC)
     db.add_all(existing)
     db.commit()
 
     # Create new token
     token = _generate_secure_token()
-    expires_at = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    expires_at = datetime.now(UTC) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
     auth_token = AuthToken(
         email=target_email,
         token=token,
@@ -587,9 +590,7 @@ async def request_magic_link(request: MagicLinkRequest, db: Session = Depends(ge
 
 @router.get("/magic-link/verify", response_model=Token)
 async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_main_db)):
-    """
-    Verify a magic link token and return JWT tokens (auto-login).
-    """
+    """Verify a magic link token and return JWT tokens (auto-login)."""
     token_value = _normalize_token_for_lookup(token)
 
     auth_token = db.exec(
@@ -606,18 +607,20 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
     if auth_token.used_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This link has already been used.")
 
-    if auth_token.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This link has expired. Please request a new one.")
+    if auth_token.expires_at < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="This link has expired. Please request a new one."
+        )
 
     # Find user
     internal_user, tenant_user = _find_user_by_email(db, auth_token.email)
-    user = tenant_user if tenant_user else internal_user
+    user = tenant_user or internal_user
 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
     # Mark token as used
-    auth_token.used_at = datetime.utcnow()
+    auth_token.used_at = datetime.now(UTC)
     db.add(auth_token)
     db.commit()
 

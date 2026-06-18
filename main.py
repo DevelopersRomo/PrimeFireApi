@@ -1,3 +1,7 @@
+# Skip DB creation during pytest — conftest manages its own SQLite engine.
+# This guard prevents connection errors when no SQL Server is available.
+import os as _os
+import pathlib
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI, Request
@@ -21,6 +25,7 @@ from api.customers import router as customers_router
 from api.dependencies import require_authentication
 from api.employees import router as employees_router
 from api.hardware_inventory import router as hardware_inventory_router
+from api.inventory import router as inventory_router
 from api.jobs import router as jobs_router
 
 # Routers
@@ -29,8 +34,8 @@ from api.modules import router as modules_router
 from api.notifications import router as notifications_router
 from api.permissions import router as permissions_router
 from api.products import router as products_router
-from api.quotations import router as quotations_router
 from api.quotation_items import router as quotation_items_router
+from api.quotations import router as quotations_router
 from api.roles import router as roles_router
 from api.tenants import router as tenants_router
 from api.ticket_attachments import router as ticket_attachments_router
@@ -38,16 +43,11 @@ from api.ticket_messages import router as ticket_messages_router
 from api.tickets import router as tickets_router
 from api.time_off import router as time_off_router
 from api.timesheet import router as timesheet_router
-from api.inventory import router as inventory_router
 
 # DB
 from bd.connection import create_db_and_tables
 from core.config import AZURE_AUTH_SCHEME, settings
 from models.employees import Employees
-
-# Skip DB creation during pytest — conftest manages its own SQLite engine.
-# This guard prevents connection errors when no SQL Server is available.
-import os as _os
 
 if not _os.environ.get("PYTEST_RUNNING"):
     create_db_and_tables()
@@ -57,20 +57,18 @@ _scheduler_lock_handle = None
 
 
 def _acquire_scheduler_lock() -> bool:
-    """Con varios workers (--workers N) cada proceso ejecuta lifespan.
+    """Acquire the process-wide scheduler lock.
 
-    Los schedulers (sync de empleados, recurrencia de tickets) deben correr en
-    UN solo worker o se duplicarian N veces. Se decide con un file-lock
-    no bloqueante: el primer worker que lo toma es el "scheduler worker".
-    Multiplataforma (fcntl en Linux/Azure, msvcrt en Windows dev).
+    With multiple workers, each process executes lifespan events. Employee sync
+    and ticket recurrence schedulers must run in a single worker to avoid
+    duplicate jobs.
     """
-    global _scheduler_lock_handle
-    import os
+    global _scheduler_lock_handle  # noqa: PLW0603
     import tempfile
 
-    lock_path = os.path.join(tempfile.gettempdir(), "primefire_api_schedulers.lock")
-    try:
-        handle = open(lock_path, "a+")
+    lock_path = pathlib.Path(tempfile.gettempdir()) / "primefire_api_schedulers.lock"
+    try:  # noqa: PLW0717
+        handle = lock_path.open("a+", encoding="utf-8")
         try:
             import fcntl
 
@@ -80,7 +78,7 @@ def _acquire_scheduler_lock() -> bool:
 
             handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        _scheduler_lock_handle = handle  # mantener vivo el lock todo el proceso
+        _scheduler_lock_handle = handle  # Keep the lock alive for the process lifetime.
         return True
     except OSError:
         return False
@@ -98,7 +96,7 @@ async def lifespan(app: FastAPI):
     sync_task = None
 
     if settings.SYNC_EMPLOYEES_PRIMEFIRE and is_scheduler_worker:
-        try:
+        try:  # noqa: PLW0717
             from core.background_tasks import sync_scheduler
 
             async def run_startup_sync() -> None:
@@ -126,29 +124,30 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    yield
-
-    if sync_task and not sync_task.done():
-        sync_task.cancel()
-
     try:
-        from core.background_tasks import sync_scheduler
+        yield
+    finally:
+        if sync_task and not sync_task.done():
+            sync_task.cancel()
 
-        await sync_scheduler.stop_periodic_sync()
-    except Exception:
-        pass
+        try:
+            from core.background_tasks import sync_scheduler
 
-    if recurrence_task and not recurrence_task.done():
-        recurrence_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await recurrence_task
+            await sync_scheduler.stop_periodic_sync()
+        except Exception:
+            pass
 
-    try:
-        from core.ticket_recurrence_scheduler import recurrence_scheduler
+        if recurrence_task and not recurrence_task.done():
+            recurrence_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await recurrence_task
 
-        await recurrence_scheduler.stop()
-    except Exception:
-        pass
+        try:
+            from core.ticket_recurrence_scheduler import recurrence_scheduler
+
+            await recurrence_scheduler.stop()
+        except Exception:
+            pass
 
 
 app = FastAPI(
@@ -278,6 +277,7 @@ class OpenCORSMiddleware(BaseHTTPMiddleware):
             return response
         return await call_next(request)
 
+
 app.add_middleware(OpenCORSMiddleware)
 
 # Routers
@@ -303,7 +303,7 @@ app.include_router(customers_router, prefix="/customers", tags=["customers"])
 app.include_router(customer_notes_router, tags=["customer_notes"])
 app.include_router(customer_contacts_router, tags=["customer_contacts"])
 app.include_router(customer_attachments_router, tags=["customer_attachments"])
-app.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])  
+app.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
 
 # IMPORTANT
 app.include_router(products_router, prefix="/products", tags=["products"])

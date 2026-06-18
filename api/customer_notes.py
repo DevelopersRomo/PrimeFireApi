@@ -1,12 +1,10 @@
-from datetime import UTC, datetime
-from core.datetime_utils import utcnow
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
+from core.datetime_utils import utcnow
 from models.customers import CustomerNotes, Customers
 from models.employees import Employees
 from schemas.customers import CustomerEmployee, CustomerNote, CustomerNoteCreate, CustomerNoteUpdate
@@ -124,7 +122,9 @@ def delete_customer_note(
 ):
     """Delete a customer note."""
     db_note = db.exec(
-        select(CustomerNotes).filter(CustomerNotes.customer_note_id == note_id, CustomerNotes.customer_id == customer_id)
+        select(CustomerNotes).filter(
+            CustomerNotes.customer_note_id == note_id, CustomerNotes.customer_id == customer_id
+        )
     ).first()
 
     if not db_note:

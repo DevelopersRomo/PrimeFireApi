@@ -104,7 +104,7 @@ class CustomerUpdate(SQLModel):
     @classmethod
     @field_validator("market", "dtd_potential", mode="before")
     def validate_enum_empty_string(cls, v):
-        if v == "":
+        if not v:
             return None
         return v
 

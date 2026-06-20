@@ -108,6 +108,13 @@ def _to_local_date(clock_in_at: str, tzinfo: timezone | ZoneInfo) -> date:
     return utc_dt.astimezone(tzinfo).date()
 
 
+def _to_utc_string(dt: datetime, tzinfo: timezone | ZoneInfo) -> str:
+    """Convert an aware or naive datetime to a UTC string for storage."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tzinfo)
+    return dt.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _fetch_ip_geolocation(ip_address: str | None) -> dict | None:
     api_key = settings.IPGEOLOCATION_API_KEY
     if not api_key:
@@ -1079,6 +1086,7 @@ def export_punches_admin(
 def update_punch(
     punch_id: int,
     payload: TimeSheetPunchUpdate,
+    request: Request,
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
@@ -1089,6 +1097,8 @@ def update_punch(
     if not punch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
 
+    tzinfo, _ = _get_request_timezone(request)
+
     if payload.customer_id is not None:
         customer = db.exec(select(Customers).where(Customers.customer_id == payload.customer_id)).first()
         if not customer:
@@ -1096,9 +1106,9 @@ def update_punch(
         punch.customer_id = payload.customer_id
 
     if payload.clock_in_at is not None:
-        punch.clock_in_at = payload.clock_in_at.strftime("%Y-%m-%d %H:%M:%S")
+        punch.clock_in_at = _to_utc_string(payload.clock_in_at, tzinfo)
     if payload.clock_out_at is not None:
-        punch.clock_out_at = payload.clock_out_at.strftime("%Y-%m-%d %H:%M:%S")
+        punch.clock_out_at = _to_utc_string(payload.clock_out_at, tzinfo)
     if payload.note is not None:
         punch.note = payload.note
     if payload.status is not None:

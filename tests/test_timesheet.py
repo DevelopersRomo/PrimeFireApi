@@ -272,6 +272,34 @@ def test_update_punch(client, db_session: Session, test_customer):
     assert response.json()["note"] == "Updated Note"
 
 
+def test_update_punch_converts_timezone_to_utc(client, db_session: Session, test_customer):
+    punch = create_punch(
+        db_session,
+        1,
+        test_customer.customer_id,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2023-01-01 08:00:00",
+        "2023-01-01 16:00:00",
+        480,
+    )
+
+    # Admin in America/Mexico_City (UTC-6) submits local times with offset
+    payload = {
+        "clock_in_at": "2023-01-01T02:00:00-06:00",
+        "clock_out_at": "2023-01-01T10:00:00-06:00",
+    }
+
+    response = client.patch(
+        f"/api/v1/timesheet/{punch.punch_id}",
+        json=payload,
+        headers={"X-Timezone": "America/Mexico_City"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["clock_in_at"] == "2023-01-01 08:00:00"
+    assert data["clock_out_at"] == "2023-01-01 16:00:00"
+
+
 def test_approve_reject_punch(client, db_session: Session, test_customer):
     punch = create_punch(
         db_session,

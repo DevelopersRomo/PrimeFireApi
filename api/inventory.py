@@ -71,6 +71,7 @@ def movement_to_schema(db: Session, movement: InventoryMovements) -> InventoryMo
         product_name=product.name if product else None,
         product_code=getattr(product, "code", None) if product else None,
         warehouse_name=warehouse.name if warehouse else None,
+        min_stock=product.min_stock if product else None,
     )
 
 
@@ -360,7 +361,7 @@ def create_inventory_movement(
                 detail=f"Not enough stock. Available: {current_stock}",
             )
 
-    data = movement.model_dump()
+    data = movement.model_dump(exclude={"min_stock"})
     data["movement_type"] = movement_type
     data["created_by"] = current_employee.display_name
 
@@ -369,6 +370,12 @@ def create_inventory_movement(
     db.add(db_movement)
     db.commit()
     db.refresh(db_movement)
+
+    if movement_type == "IN" and movement.min_stock is not None:
+        product.min_stock = movement.min_stock
+        db.add(product)
+        db.commit()
+        db.refresh(product)
 
     return movement_to_schema(db, db_movement)
 

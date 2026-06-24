@@ -99,9 +99,7 @@ def product_to_read(db: Session, product: Products) -> ProductRead:
         cost=product.cost,
         tax_rate=product.tax_rate,
         unit=product.unit,
-        min_stock=product.min_stock if product.min_stock is not None else Decimal(0),
         needed_quantity=product.needed_quantity,
-        stock_quantity=product.stock_quantity,
         is_active=product.is_active,
         created_at=product.created_at,
     )

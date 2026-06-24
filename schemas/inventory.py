@@ -52,6 +52,7 @@ class InventoryMovementCreate(SQLModel):
     reference_type: str | None = None
     reference_id: int | None = None
     notes: str | None = None
+    min_stock: Decimal | None = None
 
 
 class InventoryMovement(SQLModel):
@@ -72,6 +73,7 @@ class InventoryMovement(SQLModel):
     product_name: str | None = None
     product_code: str | None = None
     warehouse_name: str | None = None
+    min_stock: Decimal | None = None
 
 
 class InventoryStock(SQLModel):

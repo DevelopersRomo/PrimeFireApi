@@ -139,9 +139,7 @@ class ProductCreate(SQLModel):
     cost: float = 0
     tax_rate: float = 0
     unit: str = "pieza"
-    min_stock: Decimal = Decimal(0)
     needed_quantity: Decimal | None = None
-    stock_quantity: int = 0
     is_active: bool = True
 
 
@@ -162,9 +160,7 @@ class ProductUpdate(SQLModel):
     cost: float | None = None
     tax_rate: float | None = None
     unit: str | None = None
-    min_stock: Decimal | None = None
     needed_quantity: Decimal | None = None
-    stock_quantity: int | None = None
     is_active: bool | None = None
 
 
@@ -188,9 +184,7 @@ class ProductRead(SQLModel):
     cost: float
     tax_rate: float
     unit: str
-    min_stock: Decimal
     needed_quantity: Decimal | None = None
-    stock_quantity: int
     is_active: bool
     created_at: datetime
 

@@ -464,7 +464,6 @@ def get_inventory_stock(
                 material_type=getattr(product, "material_type", None),
                 unit=getattr(product, "unit", None),
                 min_stock=min_stock,
-                needed_quantity=getattr(product, "needed_quantity", None),
                 total_in=total_in,
                 total_out=total_out,
                 total_adjustment=total_adjustment,

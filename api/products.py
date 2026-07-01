@@ -99,7 +99,6 @@ def product_to_read(db: Session, product: Products) -> ProductRead:
         cost=product.cost,
         tax_rate=product.tax_rate,
         unit=product.unit,
-        needed_quantity=product.needed_quantity,
         is_active=product.is_active,
         created_at=product.created_at,
     )

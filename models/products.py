@@ -87,7 +87,6 @@ class Products(SQLModel, table=True):
     # pieza, hora, mes, licencia...
     unit: str = "pieza"
     min_stock: Decimal = Field(default=Decimal(0), max_digits=12, decimal_places=2)
-    needed_quantity: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
     stock_quantity: int = 0
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)

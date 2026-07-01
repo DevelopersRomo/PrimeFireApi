@@ -86,7 +86,6 @@ class InventoryStock(SQLModel):
     material_type: str | None = None
     unit: str | None = None
     min_stock: Decimal | None = None
-    needed_quantity: Decimal | None = None
     total_in: Decimal = Decimal(0)
     total_out: Decimal = Decimal(0)
     total_adjustment: Decimal = Decimal(0)

@@ -211,6 +211,15 @@ async def get_current_employee_with_permissions(
 
     # Función auxiliary para obtener permisos usando una sesión específica
     def get_permissions_with_session(session: Session):
+        from models.countries import Countries
+
+        country_name: str | None = None
+        if current_employee.country_id is not None:
+            country_row = session.exec(
+                select(Countries).where(Countries.country_id == current_employee.country_id)
+            ).first()
+            country_name = country_row.name if country_row else None
+
         # Get employee's roles
         employee_roles_query = (
             select(EmployeeRoles, Roles)
@@ -289,6 +298,8 @@ async def get_current_employee_with_permissions(
                 "email": current_employee.email,
                 "department": current_employee.department,
                 "office": current_employee.office,
+                "city": current_employee.city,
+                "country": country_name,
             },
             "roles": roles_list,
             "permissions": permissions_list,

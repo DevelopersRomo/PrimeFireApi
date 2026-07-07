@@ -33,6 +33,7 @@ from api.licenses import router as licenses_router
 from api.modules import router as modules_router
 from api.notifications import router as notifications_router
 from api.permissions import router as permissions_router
+from api.product_attachments import router as product_attachments_router
 from api.products import router as products_router
 from api.quotation_items import router as quotation_items_router
 from api.quotations import router as quotations_router
@@ -307,6 +308,7 @@ app.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
 
 # IMPORTANT
 app.include_router(products_router, prefix="/products", tags=["products"])
+app.include_router(product_attachments_router, tags=["product_attachments"])
 app.include_router(quotations_router)  # prefix already defined in router
 app.include_router(quotation_items_router)
 app.include_router(backups_router, prefix="/backups", tags=["backups"])

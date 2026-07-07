@@ -191,3 +191,21 @@ class ProductRead(SQLModel):
 
 class Product(ProductRead):
     pass
+
+
+class ProductEmployee(SQLModel):
+    employee_id: int
+    display_name: str | None = None
+    email: str | None = None
+    title: str | None = None
+
+
+class ProductAttachment(SQLModel):
+    product_attachment_id: int | None = None
+    product_id: int
+    file_name: str
+    file_type: str | None = None
+    file_path: str | None = None
+    created_at: datetime
+    created_by: int
+    creator: ProductEmployee | None = None

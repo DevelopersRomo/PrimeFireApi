@@ -1,7 +1,13 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
+
+from core.datetime_utils import utcnow
+
+if TYPE_CHECKING:
+    from models.employees import Employees
 
 
 class ProductFamilies(SQLModel, table=True):
@@ -93,3 +99,24 @@ class Products(SQLModel, table=True):
 
     family: ProductFamilies | None = Relationship(back_populates="products")
     category: ProductCategories | None = Relationship(back_populates="products")
+    attachments: list["ProductAttachments"] = Relationship(
+        back_populates="product", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class ProductAttachments(SQLModel, table=True):
+    __tablename__ = "product_attachments"
+    __table_args__ = {"schema": "dbo"}
+
+    product_attachment_id: int | None = Field(default=None, primary_key=True, index=True)
+    product_id: int = Field(foreign_key="dbo.products.id", index=True)
+    file_name: str = Field(max_length=255)
+    file_type: str | None = Field(default=None, max_length=100)
+    file_path: str | None = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: int = Field(foreign_key="dbo.employees.employee_id")
+
+    product: "Products" = Relationship(back_populates="attachments")
+    creator: Optional["Employees"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "ProductAttachments.created_by"}
+    )

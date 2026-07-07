@@ -421,6 +421,7 @@ def create_inventory_adjustment(
 
 @router.get("/stock", response_model=list[InventoryStock])
 def get_inventory_stock(
+    warehouse_id: int | None = None,
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
@@ -429,7 +430,10 @@ def get_inventory_stock(
     result: list[InventoryStock] = []
 
     for product in products:
-        movements = db.exec(select(InventoryMovements).where(InventoryMovements.product_id == product.id)).all()
+        movements_query = select(InventoryMovements).where(InventoryMovements.product_id == product.id)
+        if warehouse_id is not None:
+            movements_query = movements_query.where(InventoryMovements.warehouse_id == warehouse_id)
+        movements = db.exec(movements_query).all()
 
         total_in = Decimal(0)
         total_out = Decimal(0)

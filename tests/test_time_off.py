@@ -656,3 +656,88 @@ def test_overlap_validation_on_edit(
     response = client.patch(f"/api/v1/requests/{time_off_request.request_id}", json=payload)
     assert response.status_code == 400
     assert "overlaps with an existing pending or approved" in response.json()["detail"]
+
+
+def test_owner_can_cancel_own_pending_request(
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    time_off_request: TimeOffRequest,
+):
+    override_deps(emp_user, {})
+
+    response = client.delete(f"/api/v1/requests/{time_off_request.request_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "cancelled"
+
+    # Balance should be reversed
+    balance = db_session.exec(
+        select(TimeOffBalance).where(
+            TimeOffBalance.employee_id == emp_user.employee_id,
+            TimeOffBalance.absence_type == AbsenceTypeEnum.VACATION.value,
+        )
+    ).first()
+    assert balance is not None
+    assert balance.pending_days == "0.00"
+
+
+def test_other_employee_cannot_cancel_someone_elses_request(
+    override_deps,
+    client: TestClient,
+    emp_other: Employees,
+    time_off_request: TimeOffRequest,
+):
+    override_deps(emp_other, {})
+
+    response = client.delete(f"/api/v1/requests/{time_off_request.request_id}")
+    assert response.status_code == 403
+
+
+def test_admin_can_cancel_pending_request(
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_other: Employees,
+    time_off_request: TimeOffRequest,
+):
+    admin_perms = {"permissions": [{"module_key": "timeoff", "permissions": {"admin_actions": True}}]}
+    override_deps(emp_other, admin_perms)
+
+    response = client.delete(f"/api/v1/requests/{time_off_request.request_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+
+
+def test_cannot_cancel_approved_request(
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    time_off_request: TimeOffRequest,
+):
+    # First approve the request
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    time_off_request.status = RequestStatusEnum.APPROVED.value
+    time_off_request.updated_at = now_str
+
+    year = int(time_off_request.start_date[:4])
+    balance = db_session.exec(
+        select(TimeOffBalance).where(
+            TimeOffBalance.employee_id == emp_user.employee_id,
+            TimeOffBalance.absence_type == AbsenceTypeEnum.VACATION.value,
+            TimeOffBalance.year == year,
+        )
+    ).first()
+    balance.pending_days = "0.00"
+    balance.used_days = "2.00"
+    db_session.add(balance)
+    db_session.add(time_off_request)
+    db_session.commit()
+
+    override_deps(emp_user, {})
+
+    response = client.delete(f"/api/v1/requests/{time_off_request.request_id}")
+    assert response.status_code == 400
+    assert "Only pending requests can be cancelled" in response.json()["detail"]

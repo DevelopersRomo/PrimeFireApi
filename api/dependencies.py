@@ -323,3 +323,23 @@ async def get_current_employee_with_permissions(
             return get_permissions_with_session(primefire_db)
     else:
         return get_permissions_with_session(db)
+
+
+def require_module_permission(module_key: str, action: str):
+    """Build a dependency that enforces a specific permission on a module.
+
+    Usage: Depends(require_module_permission("employees", "can_edit"))
+    """
+
+    async def _require(
+        user_permissions: dict = Depends(get_current_employee_with_permissions),
+    ) -> dict:
+        for perm in user_permissions.get("permissions", []):
+            if perm.get("module_key") == module_key and perm.get("permissions", {}).get(action):
+                return user_permissions
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Missing '{action}' permission for module '{module_key}'.",
+        )
+
+    return _require

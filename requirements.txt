@@ -20,7 +20,7 @@ openpyxl
 schedule
 python-dateutil
 Pillow==11.0.0
-pillow-heif==0.19.0
+pillow-heif==0.20.0
 ruff
 codespell
 mypy

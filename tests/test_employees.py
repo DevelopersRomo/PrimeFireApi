@@ -2,7 +2,42 @@
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from main import app
 from models.employees import Employees, Roles
+
+
+def _override_employee_permissions(permissions: dict):
+    from api.dependencies import get_current_employee_with_permissions
+
+    def mock_permissions():
+        return {
+            "employee": {"employee_id": 1, "email": "test@example.com"},
+            "permissions": [{"module_key": "employees", "permissions": permissions}],
+        }
+
+    app.dependency_overrides[get_current_employee_with_permissions] = mock_permissions
+
+
+@pytest.fixture
+def employees_editor_overrides():
+    """Caller with can_edit on the employees module (no admin_actions)."""
+    from api.dependencies import get_current_employee_with_permissions
+
+    _override_employee_permissions({"can_edit": True})
+    yield
+    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
+
+
+@pytest.fixture
+def employees_admin_overrides():
+    """Caller with can_edit + admin_actions on the employees module."""
+    from api.dependencies import get_current_employee_with_permissions
+
+    _override_employee_permissions({"can_edit": True, "admin_actions": True})
+    yield
+    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
 
 
 class TestEmployeesAPI:
@@ -67,7 +102,7 @@ class TestEmployeesAPI:
         assert later_emp.employee_id in fresh_ids
 
     @patch("api.employees.graph_client")
-    def test_update_employee(self, mock_graph, client, auth_headers, db_session) -> None:
+    def test_update_employee(self, mock_graph, client, auth_headers, db_session, employees_editor_overrides) -> None:
         """Test PATCH /employees/{id} updates employee and pushes to Microsoft Graph if azure_oid exists."""
         mock_graph.map_employee_to_graph_user.return_value = {"givenName": "Updated"}
         mock_graph.update_user = AsyncMock()
@@ -86,7 +121,9 @@ class TestEmployeesAPI:
         mock_graph.update_user.assert_called_once()
 
     @patch("api.employees.graph_client")
-    def test_update_employee_fails_when_graph_sync_fails(self, mock_graph, client, auth_headers, db_session) -> None:
+    def test_update_employee_fails_when_graph_sync_fails(
+        self, mock_graph, client, auth_headers, db_session, employees_editor_overrides
+    ) -> None:
         """PATCH must not report success when Microsoft Graph rejects the update."""
         mock_graph.map_employee_to_graph_user.return_value = {"givenName": "Updated"}
         mock_graph.update_user = AsyncMock(side_effect=RuntimeError("Graph rejected update"))
@@ -103,7 +140,9 @@ class TestEmployeesAPI:
         assert emp.first_name == "Old"
 
     @patch("api.employees.graph_client")
-    def test_update_employee_syncs_cleared_graph_fields(self, mock_graph, client, auth_headers, db_session) -> None:
+    def test_update_employee_syncs_cleared_graph_fields(
+        self, mock_graph, client, auth_headers, db_session, employees_editor_overrides
+    ) -> None:
         """PATCH must send explicitly cleared fields to Microsoft Graph, not silently drop them."""
         def map_employee_to_graph_user(data):
             title = data.get("title")
@@ -122,7 +161,7 @@ class TestEmployeesAPI:
         assert response.status_code == 200
         mock_graph.update_user.assert_called_once_with("some-oid-123", {"jobTitle": None})
 
-    def test_assign_and_remove_role(self, client, auth_headers, db_session) -> None:
+    def test_assign_and_remove_role(self, client, auth_headers, db_session, employees_admin_overrides) -> None:
         """Test assigning a role, getting roles, and removing a role."""
         emp = Employees(first_name="Role", last_name="Test")
         role = Roles(role_name="MockRole", description="A mock role")
@@ -159,7 +198,7 @@ class TestEmployeesAPI:
         assert len(res_empty.json()) == 0
 
     @patch("api.employees.graph_client")
-    def test_sync_from_microsoft(self, mock_graph, client, auth_headers, db_session) -> None:
+    def test_sync_from_microsoft(self, mock_graph, client, auth_headers, db_session, employees_admin_overrides) -> None:
         """Test GET /employees/sync/from-microsoft endpoints logic."""
         mock_ms_users = [
             {
@@ -193,7 +232,9 @@ class TestEmployeesAPI:
         assert sync_user["email"] == "testsync@primefire.com"
 
     @patch("api.employees.graph_client")
-    def test_sync_employee_to_microsoft(self, mock_graph, client, auth_headers, db_session) -> None:
+    def test_sync_employee_to_microsoft(
+        self, mock_graph, client, auth_headers, db_session, employees_editor_overrides
+    ) -> None:
         """Test PUT /employees/{id}/sync-to-microsoft."""
         emp = Employees(first_name="Old", last_name="Name", email="update@primefire.com", azure_oid="some-oid-456")
         db_session.add(emp)
@@ -208,7 +249,9 @@ class TestEmployeesAPI:
         mock_graph.update_user.assert_called_once()
 
     @patch("api.employees.graph_client")
-    def test_sync_single_employee_from_microsoft(self, mock_graph, client, auth_headers, db_session) -> None:
+    def test_sync_single_employee_from_microsoft(
+        self, mock_graph, client, auth_headers, db_session, employees_editor_overrides
+    ) -> None:
         """Test GET /employees/{id}/sync-from-microsoft."""
         emp = Employees(first_name="Old", last_name="Name", email="update@primefire.com", azure_oid="some-oid-789")
         db_session.add(emp)
@@ -225,7 +268,7 @@ class TestEmployeesAPI:
         data = response.json()
         assert data["first_name"] == "NewName"
 
-    def test_trigger_sync(self, client, auth_headers) -> None:
+    def test_trigger_sync(self, client, auth_headers, employees_admin_overrides) -> None:
         """Test POST /employees/sync/trigger."""
         response = client.post("/employees/sync/trigger", headers=auth_headers)
         assert response.status_code == 200
@@ -236,3 +279,71 @@ class TestEmployeesAPI:
         response = client.get("/employees/sync/status", headers=auth_headers)
         assert response.status_code == 200
         assert "is_running" in response.json()
+
+
+class TestEmployeesPermissions:
+    """Authenticated callers without employees-module permissions must get 403 on mutations."""
+
+    @pytest.fixture
+    def target_employee(self, db_session):
+        emp = Employees(first_name="Target", last_name="User", email="target@primefire.com")
+        db_session.add(emp)
+        db_session.commit()
+        db_session.refresh(emp)
+        return emp
+
+    def test_patch_requires_can_edit(self, client, auth_headers, target_employee) -> None:
+        response = client.patch(
+            f"/employees/{target_employee.employee_id}", json={"first_name": "Hacked"}, headers=auth_headers
+        )
+        assert response.status_code == 403
+
+    def test_assign_role_requires_admin_actions(self, client, auth_headers, target_employee, db_session) -> None:
+        role = Roles(role_name="Admin", description="Admin role")
+        db_session.add(role)
+        db_session.commit()
+        db_session.refresh(role)
+
+        response = client.post(
+            f"/employees/{target_employee.employee_id}/roles", json={"role_id": role.role_id}, headers=auth_headers
+        )
+        assert response.status_code == 403
+
+    def test_remove_role_requires_admin_actions(self, client, auth_headers, target_employee) -> None:
+        response = client.delete(f"/employees/{target_employee.employee_id}/roles/1", headers=auth_headers)
+        assert response.status_code == 403
+
+    def test_assign_role_rejects_editor_without_admin_actions(
+        self, client, auth_headers, target_employee, db_session, employees_editor_overrides
+    ) -> None:
+        role = Roles(role_name="Admin", description="Admin role")
+        db_session.add(role)
+        db_session.commit()
+        db_session.refresh(role)
+
+        response = client.post(
+            f"/employees/{target_employee.employee_id}/roles", json={"role_id": role.role_id}, headers=auth_headers
+        )
+        assert response.status_code == 403
+
+    def test_bulk_sync_requires_admin_actions(self, client, auth_headers) -> None:
+        response = client.get("/employees/sync/from-microsoft", headers=auth_headers)
+        assert response.status_code == 403
+
+    def test_trigger_sync_requires_admin_actions(self, client, auth_headers) -> None:
+        response = client.post("/employees/sync/trigger", headers=auth_headers)
+        assert response.status_code == 403
+
+    def test_sync_to_microsoft_requires_can_edit(self, client, auth_headers, target_employee) -> None:
+        response = client.put(f"/employees/{target_employee.employee_id}/sync-to-microsoft", headers=auth_headers)
+        assert response.status_code == 403
+
+    def test_sync_single_from_microsoft_requires_can_edit(self, client, auth_headers, target_employee) -> None:
+        response = client.get(
+            f"/employees/{target_employee.employee_id}/sync-from-microsoft", headers=auth_headers
+        )
+        assert response.status_code == 403
+
+    def test_patch_allows_editor(self, client, auth_headers, target_employee, employees_editor_overrides) -> None:
+        response = client.patch(f"/employees/{target_employee.employee_id}", json={}, headers=auth_headers)
+        assert response.status_code == 200

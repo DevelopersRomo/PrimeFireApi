@@ -18,6 +18,7 @@ from core.config import settings
 from models.tenants import TenantLogos, Tenants
 from services.notifications.email_functions import parse_email_list, send_outlook_email
 from services.notifications.schemas import (
+    InventoryMovementNotificationData,
     NotificationField,
     NotificationResponse,
     TicketMessageNotificationData,
@@ -1145,6 +1146,148 @@ async def notify_teams(
         action_url=action_url,
         action_text=action_text,
     )
+
+
+_INVENTORY_MOVEMENT_CONTENT: dict[str, tuple[str, str, str]] = {
+    "IN": (
+        "New Inventory Entry",
+        "A new inventory entry has been registered in your warehouse.",
+        "created",
+    ),
+    "OUT": (
+        "New Inventory Output",
+        "A new inventory output has been registered in your warehouse.",
+        "submitted",
+    ),
+    "ADJUSTMENT": (
+        "New Inventory Adjustment",
+        "A new inventory adjustment has been registered in your warehouse.",
+        "pending",
+    ),
+}
+
+
+def _inventory_movement_fields(notification_data: InventoryMovementNotificationData) -> list[NotificationField]:
+    product_display = notification_data.product_name
+    if notification_data.product_code:
+        product_display = f"{notification_data.product_code} - {notification_data.product_name}"
+
+    fields = [
+        NotificationField(label="Movement ID", value=f"#{notification_data.movement_id}"),
+        NotificationField(label="Product", value=product_display),
+        NotificationField(label="Quantity", value=notification_data.quantity),
+    ]
+
+    if notification_data.warehouse_name:
+        fields.append(NotificationField(label="Warehouse", value=notification_data.warehouse_name))
+    if notification_data.movement_date:
+        fields.append(NotificationField(label="Date", value=notification_data.movement_date))
+    if notification_data.project:
+        fields.append(NotificationField(label="Project", value=notification_data.project))
+    if notification_data.po_number:
+        fields.append(NotificationField(label="PO Number", value=notification_data.po_number))
+    if notification_data.reference_type:
+        fields.append(NotificationField(label="Reference Type", value=notification_data.reference_type))
+    if notification_data.notes:
+        notes_preview = notification_data.notes[:200] + ("..." if len(notification_data.notes) > 200 else "")
+        fields.append(NotificationField(label="Notes", value=notes_preview))
+
+    return fields
+
+
+async def send_inventory_movement_notification(
+    notification_data: InventoryMovementNotificationData,
+    to_email: str,
+) -> NotificationResponse:
+    """Send notification when an inventory movement (entry/output/adjustment) is registered."""
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping inventory movement notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
+    try:
+        title, message_body, action_type = _INVENTORY_MOVEMENT_CONTENT.get(
+            notification_data.movement_type,
+            ("Inventory Movement", "An inventory movement has been registered in your warehouse.", "info"),
+        )
+
+        html_body = generate_notification_html(
+            title=title,
+            sub_title=f"Movement #{notification_data.movement_id}",
+            action_type=action_type,
+            message_body=message_body,
+            performed_by_name=notification_data.created_by_name,
+            fields=_inventory_movement_fields(notification_data),
+            action_url=notification_data.action_url,
+            action_text="View Inventory",
+        )
+
+        sender_email = getattr(settings, "BOT_EMAIL", None)
+        if not sender_email:
+            return NotificationResponse(
+                success=False,
+                error_message="No sender email configured (BOT_EMAIL)",
+            )
+
+        subject = f"{title} - {notification_data.product_name}"
+        success, message_id, error_message = await send_outlook_email(
+            send_as_email=sender_email,
+            to_emails=parse_email_list(to_email),
+            subject=subject,
+            body=html_body,
+        )
+
+        if success:
+            return NotificationResponse(success=True, message_id=message_id)
+        return NotificationResponse(success=False, error_message=error_message)
+
+    except Exception as e:
+        return NotificationResponse(
+            success=False,
+            error_message=f"Error sending inventory movement notification: {e!s}",
+        )
+
+
+async def notify_inventory_movement(
+    movement_id: int,
+    movement_type: str,
+    product_name: str,
+    quantity: str,
+    to_emails: list[str],
+    product_code: str | None = None,
+    warehouse_name: str | None = None,
+    movement_date: str | None = None,
+    project: str | None = None,
+    po_number: str | None = None,
+    reference_type: str | None = None,
+    notes: str | None = None,
+    created_by_name: str | None = None,
+    action_url: str | None = None,
+) -> list[NotificationResponse]:
+    """Helper function to send inventory movement notifications to multiple recipients."""
+    notification_data = InventoryMovementNotificationData(
+        movement_id=movement_id,
+        movement_type=movement_type,
+        product_name=product_name,
+        product_code=product_code,
+        warehouse_name=warehouse_name,
+        quantity=quantity,
+        movement_date=movement_date,
+        project=project,
+        po_number=po_number,
+        reference_type=reference_type,
+        notes=notes,
+        created_by_name=created_by_name,
+        action_url=action_url,
+    )
+
+    responses = []
+    for email in to_emails:
+        response = await send_inventory_movement_notification(
+            notification_data=notification_data,
+            to_email=email,
+        )
+        responses.append(response)
+    return responses
 
 
 async def send_timesheet_notification(

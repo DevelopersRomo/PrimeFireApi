@@ -1,11 +1,13 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_authentication
 from bd.dependencies import get_db
+from models.employees import Employees
 from models.inventory import InventoryMovements, WarehouseLocations, Warehouses
 from models.products import ProductCategories, ProductFamilies, Products
 from schemas.inventory import (
@@ -19,11 +21,70 @@ from schemas.inventory import (
     WarehouseLocationUpdate,
     WarehouseUpdate,
 )
+from services.notifications.notifications import notify_inventory_movement
 
 router = APIRouter()
 
 
 VALID_MOVEMENT_TYPES = {"IN", "OUT", "ADJUSTMENT"}
+
+# Roles that must BOTH be present for an employee to receive inventory movement notifications
+INVENTORY_NOTIFICATION_ROLES = {"project manager", "business proposals"}
+
+# Admins receive inventory movement notifications regardless of warehouse match
+ADMIN_ROLE = "admin"
+
+# ISO 3166-1 alpha-2 codes to full country/territory names (mirrors frontend warehouse-scope.util.ts)
+COUNTRY_CODE_MAP = {
+    "af": "afghanistan", "al": "albania", "dz": "algeria", "ar": "argentina", "au": "australia",
+    "at": "austria", "be": "belgium", "bo": "bolivia", "br": "brazil", "ca": "canada",
+    "cl": "chile", "cn": "china", "co": "colombia", "cr": "costa rica", "cu": "cuba",
+    "do": "dominican republic", "ec": "ecuador", "eg": "egypt", "sv": "el salvador",
+    "fr": "france", "de": "germany", "gt": "guatemala", "hn": "honduras", "in": "india",
+    "ie": "ireland", "il": "israel", "it": "italy", "jm": "jamaica", "jp": "japan",
+    "mx": "mexico", "nl": "netherlands", "nz": "new zealand", "ni": "nicaragua",
+    "ng": "nigeria", "no": "norway", "pa": "panama", "py": "paraguay", "pe": "peru",
+    "ph": "philippines", "pl": "poland", "pt": "portugal", "pr": "puerto rico",
+    "ru": "russia", "es": "spain", "se": "sweden", "ch": "switzerland", "tr": "turkey",
+    "gb": "united kingdom", "us": "united states", "uy": "uruguay", "ve": "venezuela",
+    "vi": "us virgin islands",
+}
+
+
+def normalize_country(value: str | None) -> str:
+    lower = (value or "").strip().lower()
+    return COUNTRY_CODE_MAP.get(lower, lower)
+
+
+def get_movement_notification_emails(db: Session, warehouse: Warehouses) -> list[str]:
+    """Admins always receive; Project Manager + Business Proposals only when city/country match the warehouse."""
+    warehouse_city = (warehouse.name or "").strip().lower()
+    warehouse_country = normalize_country(warehouse.location)
+
+    employees = db.exec(
+        select(Employees).options(selectinload(Employees.roles), selectinload(Employees.country))
+    ).all()
+
+    emails = []
+    for employee in employees:
+        if not employee.email:
+            continue
+        role_names = {(role.role_name or "").strip().lower() for role in employee.roles}
+
+        if ADMIN_ROLE in role_names:
+            emails.append(employee.email)
+            continue
+
+        if not INVENTORY_NOTIFICATION_ROLES.issubset(role_names):
+            continue
+        if not warehouse_city or not warehouse_country:
+            continue
+        employee_city = (employee.city or "").strip().lower()
+        employee_country = normalize_country(employee.country.name if employee.country else None)
+        if employee_city == warehouse_city and employee_country == warehouse_country:
+            emails.append(employee.email)
+
+    return emails
 
 
 def get_current_stock(db: Session, product_id: int, warehouse_id: int | None = None) -> Decimal:
@@ -331,6 +392,7 @@ def get_inventory_movement(
 @router.post("/movements", response_model=InventoryMovement)
 def create_inventory_movement(
     movement: InventoryMovementCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
@@ -347,6 +409,7 @@ def create_inventory_movement(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    warehouse = None
     if movement.warehouse_id:
         warehouse = db.exec(select(Warehouses).where(Warehouses.warehouse_id == movement.warehouse_id)).first()
         if not warehouse:
@@ -377,32 +440,55 @@ def create_inventory_movement(
         db.commit()
         db.refresh(product)
 
+    if warehouse:
+        recipient_emails = get_movement_notification_emails(db, warehouse)
+        if recipient_emails:
+            background_tasks.add_task(
+                notify_inventory_movement,
+                movement_id=db_movement.movement_id,
+                movement_type=movement_type,
+                product_name=product.name,
+                quantity=str(db_movement.quantity),
+                to_emails=recipient_emails,
+                product_code=getattr(product, "code", None),
+                warehouse_name=warehouse.name,
+                movement_date=str(db_movement.movement_date) if db_movement.movement_date else None,
+                project=db_movement.project,
+                po_number=db_movement.po_number,
+                reference_type=db_movement.reference_type,
+                notes=db_movement.notes,
+                created_by_name=current_employee.display_name,
+            )
+
     return movement_to_schema(db, db_movement)
 
 
 @router.post("/entries", response_model=InventoryMovement)
 def create_inventory_entry(
     movement: InventoryMovementCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
     movement.movement_type = "IN"
-    return create_inventory_movement(movement, db, current_employee)
+    return create_inventory_movement(movement, background_tasks, db, current_employee)
 
 
 @router.post("/outputs", response_model=InventoryMovement)
 def create_inventory_output(
     movement: InventoryMovementCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
     movement.movement_type = "OUT"
-    return create_inventory_movement(movement, db, current_employee)
+    return create_inventory_movement(movement, background_tasks, db, current_employee)
 
 
 @router.post("/adjustments", response_model=InventoryMovement)
 def create_inventory_adjustment(
     movement: InventoryMovementCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
 ):
@@ -411,7 +497,7 @@ def create_inventory_adjustment(
     if movement.quantity == 0:
         raise HTTPException(status_code=400, detail="Adjustment quantity cannot be zero")
 
-    return create_inventory_movement(movement, db, current_employee)
+    return create_inventory_movement(movement, background_tasks, db, current_employee)
 
 
 # ----------------------------

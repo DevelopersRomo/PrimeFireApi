@@ -17,6 +17,16 @@ class TimeOffRequestCreate(SQLModel):
     reason: str | None = None
 
 
+class TimeOffRequestUpdate(SQLModel):
+    absence_type: AbsenceTypeEnum | None = None
+    time_unit: TimeUnitEnum | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    reason: str | None = None
+
+
 class TimeOffRequestRead(SQLModel):
     request_id: int
     employee_id: int

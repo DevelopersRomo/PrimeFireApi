@@ -446,3 +446,213 @@ def test_list_departments(override_deps, client: TestClient, db_session: Session
     response = client.get("/api/v1/departments")
     assert response.status_code == 200
     assert len(response.json()) >= 1
+
+
+# =============================================================================
+# PATCH /api/v1/requests/{request_id} — Edit Time Off Request
+# =============================================================================
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_employee_can_edit_own_pending_request(
+    mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    time_off_request: TimeOffRequest,
+):
+    override_deps(emp_user, {})
+
+    new_start = (datetime.now(UTC) + timedelta(days=5)).strftime("%Y-%m-%d")
+    new_end = (datetime.now(UTC) + timedelta(days=6)).strftime("%Y-%m-%d")
+
+    payload = {
+        "start_date": new_start,
+        "end_date": new_end,
+        "reason": "Updated reason",
+    }
+
+    response = client.patch(f"/api/v1/requests/{time_off_request.request_id}", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["start_date"] == new_start
+    assert data["end_date"] == new_end
+    assert data["reason"] == "Updated reason"
+    assert data["total_days"] == "2.00"
+    mock_add_task.assert_called_once()
+
+
+def test_employee_cannot_edit_own_approved_request(
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    time_off_request: TimeOffRequest,
+):
+    # Approve the request first
+    time_off_request.status = RequestStatusEnum.APPROVED.value
+    db_session.add(time_off_request)
+    db_session.commit()
+
+    override_deps(emp_user, {})
+
+    payload = {"reason": "Trying to edit approved request"}
+    response = client.patch(f"/api/v1/requests/{time_off_request.request_id}", json=payload)
+    assert response.status_code == 400
+    assert "Only pending requests can be edited" in response.json()["detail"]
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_manager_can_edit_pending_request_of_direct_report(
+    mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_manager: Employees,
+    time_off_request: TimeOffRequest,
+):
+    override_deps(emp_manager, {})
+
+    new_start = (datetime.now(UTC) + timedelta(days=10)).strftime("%Y-%m-%d")
+    new_end = (datetime.now(UTC) + timedelta(days=11)).strftime("%Y-%m-%d")
+
+    payload = {
+        "start_date": new_start,
+        "end_date": new_end,
+    }
+
+    response = client.patch(f"/api/v1/requests/{time_off_request.request_id}", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["start_date"] == new_start
+    assert data["end_date"] == new_end
+    mock_add_task.assert_called_once()
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_admin_can_edit_approved_request(
+    mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_other: Employees,
+    time_off_request: TimeOffRequest,
+):
+    # Approve the request first
+    time_off_request.status = RequestStatusEnum.APPROVED.value
+    db_session.add(time_off_request)
+    db_session.commit()
+
+    admin_perms = {"permissions": [{"module_key": "timeoff", "permissions": {"admin_actions": True}}]}
+    override_deps(emp_other, admin_perms)
+
+    payload = {"reason": "Admin updated the reason"}
+    response = client.patch(f"/api/v1/requests/{time_off_request.request_id}", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["reason"] == "Admin updated the reason"
+    assert data["status"] == "approved"
+    mock_add_task.assert_called_once()
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_balance_recalculation_when_editing_approved_request(
+    mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    emp_other: Employees,
+):
+    # Create an approved request: 3 full days
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    start = (datetime.now(UTC) + timedelta(days=20)).strftime("%Y-%m-%d")
+    end = (datetime.now(UTC) + timedelta(days=22)).strftime("%Y-%m-%d")
+    current_year = datetime.now(UTC).year
+
+    req = TimeOffRequest(
+        employee_id=emp_user.employee_id,
+        absence_type=AbsenceTypeEnum.VACATION.value,
+        status=RequestStatusEnum.APPROVED.value,
+        time_unit=TimeUnitEnum.FULL_DAY.value,
+        start_date=start,
+        end_date=end,
+        total_days="3.00",
+        reason="Original",
+        created_at=now_str,
+        updated_at=now_str,
+    )
+    db_session.add(req)
+
+    # Balance reflects approved state: 3 days in used_days
+    balance = TimeOffBalance(
+        employee_id=emp_user.employee_id,
+        absence_type=AbsenceTypeEnum.VACATION.value,
+        year=current_year,
+        entitled_days="15.00",
+        used_days="3.00",
+        pending_days="0.00",
+        carryover_days="0.00",
+    )
+    db_session.add(balance)
+    db_session.commit()
+    db_session.refresh(req)
+
+    admin_perms = {"permissions": [{"module_key": "timeoff", "permissions": {"admin_actions": True}}]}
+    override_deps(emp_other, admin_perms)
+
+    # Edit to 2 days instead of 3
+    new_end = (datetime.now(UTC) + timedelta(days=21)).strftime("%Y-%m-%d")
+    payload = {"end_date": new_end}
+
+    response = client.patch(f"/api/v1/requests/{req.request_id}", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_days"] == "2.00"
+
+    # Balance should now have 2.00 used_days (reversed 3, applied 2)
+    db_session.refresh(balance)
+    assert balance.used_days == "2.00"
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_overlap_validation_on_edit(
+    mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    time_off_request: TimeOffRequest,
+):
+    # Create another approved request that will conflict
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    conflict_start = (datetime.now(UTC) + timedelta(days=10)).strftime("%Y-%m-%d")
+    conflict_end = (datetime.now(UTC) + timedelta(days=12)).strftime("%Y-%m-%d")
+
+    conflicting = TimeOffRequest(
+        employee_id=emp_user.employee_id,
+        absence_type=AbsenceTypeEnum.PERSONAL.value,
+        status=RequestStatusEnum.APPROVED.value,
+        time_unit=TimeUnitEnum.FULL_DAY.value,
+        start_date=conflict_start,
+        end_date=conflict_end,
+        total_days="3.00",
+        reason="Conflicting request",
+        created_at=now_str,
+        updated_at=now_str,
+    )
+    db_session.add(conflicting)
+    db_session.commit()
+
+    override_deps(emp_user, {})
+
+    # Try to edit the pending request to overlap with the approved one
+    payload = {
+        "start_date": conflict_start,
+        "end_date": conflict_end,
+    }
+
+    response = client.patch(f"/api/v1/requests/{time_off_request.request_id}", json=payload)
+    assert response.status_code == 400
+    assert "overlaps with an existing pending or approved" in response.json()["detail"]

@@ -709,6 +709,54 @@ def reject_request(
     return request
 
 
+@router.delete("/requests/{request_id}", response_model=TimeOffRequestRead)
+def cancel_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+):
+    request = _get_request_or_404(db, request_id)
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+
+    # Visibility check
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+    _assert_request_visibility(request, visible_employee_ids)
+
+    # Permission: only owner or admin can cancel
+    is_owner = request.employee_id == current_employee.employee_id
+    if not is_admin and not is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the request owner or an admin can cancel this request",
+        )
+
+    # Status constraint: only pending requests can be cancelled
+    if request.status != RequestStatusEnum.PENDING.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only pending requests can be cancelled",
+        )
+
+    # Reverse pending balance
+    year = int(request.start_date[:4])
+    balance = _get_or_create_balance(db, request.employee_id, request.absence_type, year)
+    pending = Decimal(balance.pending_days) - Decimal(request.total_days)
+    balance.pending_days = _quantize(pending if pending > 0 else Decimal(0))
+
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+    request.status = RequestStatusEnum.CANCELLED.value
+    request.updated_at = now_str
+
+    db.add(balance)
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+
+    return request
+
+
 @router.get("/calendar", response_model=list[CalendarEvent])
 def get_calendar(
     db: Session = Depends(get_db),

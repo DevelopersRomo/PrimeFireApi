@@ -8,7 +8,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db, get_tenant_cache_scope
 from core.microsoft_graph import graph_client
 from models.countries import Countries
@@ -470,7 +470,10 @@ async def get_employee(
 # ----------------------------
 @router.patch("/{employee_id}", response_model=Employee)
 async def update_employee(
-    employee_id: int, employee: EmployeeUpdate, db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    employee_id: int,
+    employee: EmployeeUpdate,
+    db: Session = Depends(get_db),
+    _perms: dict = Depends(require_module_permission("employees", "can_edit")),
 ):
     """
     Update employee in local database and sync to Microsoft 365 when Microsoft-owned fields change.
@@ -556,7 +559,7 @@ async def assign_role_to_employee(
     employee_id: int,
     role_assignment: EmployeeRoleAssignment,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("employees", "admin_actions")),
 ):
     """Assign a role to an employee."""
     # Check if employee exists
@@ -586,12 +589,15 @@ async def assign_role_to_employee(
     clear_employees_cache()
 
     # Return updated employee with roles
-    return await get_employee(employee_id, db, _auth)
+    return await get_employee(employee_id, db, None)
 
 
 @router.delete("/{employee_id}/roles/{role_id}", response_model=Employee)
 async def remove_role_from_employee(
-    employee_id: int, role_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    employee_id: int,
+    role_id: int,
+    db: Session = Depends(get_db),
+    _perms: dict = Depends(require_module_permission("employees", "admin_actions")),
 ):
     """Remove a role from an employee."""
     # Check if assignment exists
@@ -608,7 +614,7 @@ async def remove_role_from_employee(
     clear_employees_cache()
 
     # Return updated employee with roles
-    return await get_employee(employee_id, db, _auth)
+    return await get_employee(employee_id, db, None)
 
 
 @router.get("/{employee_id}/roles", response_model=list[EmployeeRole])
@@ -630,7 +636,10 @@ async def get_employee_roles(employee_id: int, db: Session = Depends(get_db), _a
 # 📌 MICROSOFT SYNC - GET ALL FROM MICROSOFT
 # ----------------------------
 @router.get("/sync/from-microsoft", response_model=list[Employee])
-async def sync_from_microsoft(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+async def sync_from_microsoft(
+    db: Session = Depends(get_db),
+    _perms: dict = Depends(require_module_permission("employees", "admin_actions")),
+):
     """
     Sync all users from Microsoft 365 to local database.
     Creates new employees if they don't exist, updates existing ones.
@@ -697,7 +706,9 @@ async def sync_from_microsoft(db: Session = Depends(get_db), _auth=Depends(requi
 # ----------------------------
 @router.put("/{employee_id}/sync-to-microsoft", response_model=Employee)
 async def sync_employee_to_microsoft(
-    employee_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    employee_id: int,
+    db: Session = Depends(get_db),
+    _perms: dict = Depends(require_module_permission("employees", "can_edit")),
 ):
     """
     Sync a specific employee from local database to Microsoft 365.
@@ -738,7 +749,9 @@ async def sync_employee_to_microsoft(
 # ----------------------------
 @router.get("/{employee_id}/sync-from-microsoft", response_model=Employee)
 async def sync_single_employee_from_microsoft(
-    employee_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    employee_id: int,
+    db: Session = Depends(get_db),
+    _perms: dict = Depends(require_module_permission("employees", "can_edit")),
 ):
     """
     Fetch and sync a single employee from Microsoft 365 by their azure_oid.
@@ -782,7 +795,10 @@ async def sync_single_employee_from_microsoft(
 # 📌 TRIGGER MANUAL SYNC (Background)
 # ----------------------------
 @router.post("/sync/trigger")
-async def trigger_background_sync(background_tasks: BackgroundTasks, _auth=Depends(require_authentication)):
+async def trigger_background_sync(
+    background_tasks: BackgroundTasks,
+    _perms: dict = Depends(require_module_permission("employees", "admin_actions")),
+):
     """
     Trigger a manual background sync from Microsoft 365.
     Returns immediately while sync runs in background.

@@ -174,6 +174,24 @@ class UserApprovalNotificationData(BaseModel):
     action_url: str | None = None
 
 
+class InventoryMovementNotificationData(BaseModel):
+    """Inventory movement notification data."""
+
+    movement_id: int
+    movement_type: str  # "IN", "OUT", "ADJUSTMENT"
+    product_name: str
+    product_code: str | None = None
+    warehouse_name: str | None = None
+    quantity: str
+    movement_date: str | None = None
+    project: str | None = None
+    po_number: str | None = None
+    reference_type: str | None = None
+    notes: str | None = None
+    created_by_name: str | None = None
+    action_url: str | None = None
+
+
 class TimeSheetNotificationData(BaseModel):
     """TimeSheet notification data."""
 

@@ -35,6 +35,7 @@ from schemas.time_off import (
     TimeOffBalanceRead,
     TimeOffRequestCreate,
     TimeOffRequestRead,
+    TimeOffRequestUpdate,
 )
 from services.notifications.notifications import (
     notify_time_off_approved,
@@ -137,15 +138,22 @@ def _time_ranges_overlap(start_a: time, end_a: time, start_b: time, end_b: time)
     return start_a < end_b and end_a > start_b
 
 
-def _assert_no_active_overlap(db: Session, employee_id: int, payload: TimeOffRequestCreate) -> None:
-    overlapping = db.exec(
-        select(TimeOffRequest).where(
-            TimeOffRequest.employee_id == employee_id,
-            TimeOffRequest.status.in_([RequestStatusEnum.PENDING.value, RequestStatusEnum.APPROVED.value]),
-            TimeOffRequest.start_date <= payload.end_date.strftime("%Y-%m-%d"),
-            TimeOffRequest.end_date >= payload.start_date.strftime("%Y-%m-%d"),
-        )
-    ).all()
+def _assert_no_active_overlap(
+    db: Session,
+    employee_id: int,
+    payload: TimeOffRequestCreate,
+    exclude_request_id: int | None = None,
+) -> None:
+    query = select(TimeOffRequest).where(
+        TimeOffRequest.employee_id == employee_id,
+        TimeOffRequest.status.in_([RequestStatusEnum.PENDING.value, RequestStatusEnum.APPROVED.value]),
+        TimeOffRequest.start_date <= payload.end_date.strftime("%Y-%m-%d"),
+        TimeOffRequest.end_date >= payload.start_date.strftime("%Y-%m-%d"),
+    )
+    if exclude_request_id is not None:
+        query = query.where(TimeOffRequest.request_id != exclude_request_id)
+
+    overlapping = db.exec(query).all()
 
     for existing in overlapping:
         existing_start = datetime.strptime(existing.start_date, "%Y-%m-%d").date()  # noqa: DTZ007
@@ -404,6 +412,176 @@ def create_request(
     )
 
     return time_off_request
+
+
+@router.patch("/requests/{request_id}", response_model=TimeOffRequestRead)
+def update_request(
+    request_id: int,
+    payload: TimeOffRequestUpdate,
+    http_request: Request,
+    background_tasks: BackgroundTasks,
+    tenant_key: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+):
+    request = _get_request_or_404(db, request_id)
+    is_admin = _has_timeoff_admin_actions(user_permissions)
+
+    # Visibility check
+    visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
+    _assert_request_visibility(request, visible_employee_ids)
+
+    # Permission: only owner, manager, or admin can edit
+    is_owner = request.employee_id == current_employee.employee_id
+    is_manager = False
+    if not is_owner:
+        requester_emp = db.exec(
+            select(Employees).where(Employees.employee_id == request.employee_id)
+        ).first()
+        if requester_emp and requester_emp.manager_employee_id == current_employee.employee_id:
+            is_manager = True
+
+    if not is_admin and not is_owner and not is_manager:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to edit this request",
+        )
+
+    # Status constraint: non-admins can only edit pending
+    if not is_admin and request.status != RequestStatusEnum.PENDING.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only pending requests can be edited",
+        )
+
+    # Build effective values by merging payload with existing request
+    effective_absence_type = payload.absence_type.value if payload.absence_type else request.absence_type
+    effective_time_unit = payload.time_unit if payload.time_unit else TimeUnitEnum(request.time_unit)
+    effective_start_date = payload.start_date or datetime.strptime(request.start_date, "%Y-%m-%d").date()  # noqa: DTZ007
+    effective_end_date = payload.end_date or datetime.strptime(request.end_date, "%Y-%m-%d").date()  # noqa: DTZ007
+
+    # For time fields, use payload if provided, else parse from existing
+    if payload.start_time is not None:
+        effective_start_time = payload.start_time
+    else:
+        effective_start_time = _parse_time_value(request.start_time)
+
+    if payload.end_time is not None:
+        effective_end_time = payload.end_time
+    else:
+        effective_end_time = _parse_time_value(request.end_time)
+
+    effective_reason = payload.reason if payload.reason is not None else request.reason
+
+    # Construct a TimeOffRequestCreate for validation via existing helpers
+    validation_payload = TimeOffRequestCreate(
+        employee_id=request.employee_id,
+        absence_type=AbsenceTypeEnum(effective_absence_type),
+        time_unit=effective_time_unit,
+        start_date=effective_start_date,
+        end_date=effective_end_date,
+        start_time=effective_start_time,
+        end_time=effective_end_time,
+        reason=effective_reason,
+    )
+
+    # Validate and calculate totals
+    new_total_days, new_total_hours = _calculate_totals(validation_payload)
+
+    # Overlap check (exclude current request)
+    _assert_no_active_overlap(db, request.employee_id, validation_payload, exclude_request_id=request_id)
+
+    # Determine time string values for storage
+    new_start_time_str = None
+    new_end_time_str = None
+    if effective_time_unit == TimeUnitEnum.HOURS and effective_start_time and effective_end_time:
+        new_start_time_str = _time_to_utc_str(effective_start_time)
+        new_end_time_str = _time_to_utc_str(effective_end_time)
+
+    # Capture old values for balance recalculation
+    old_total_days = Decimal(request.total_days)
+    old_absence_type = request.absence_type
+    old_year = int(request.start_date[:4])
+    new_year = effective_start_date.year
+
+    # Apply field updates to the request
+    request.absence_type = effective_absence_type
+    request.time_unit = effective_time_unit.value
+    request.start_date = effective_start_date.strftime("%Y-%m-%d")
+    request.end_date = effective_end_date.strftime("%Y-%m-%d")
+    request.start_time = new_start_time_str
+    request.end_time = new_end_time_str
+    request.total_days = _quantize(new_total_days)
+    request.total_hours = _quantize(new_total_hours) if new_total_hours is not None else None
+    request.reason = effective_reason
+    request.updated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Balance recalculation if totals, absence_type, or year changed
+    needs_balance_update = (
+        old_total_days != new_total_days
+        or old_absence_type != effective_absence_type
+        or old_year != new_year
+    )
+
+    if needs_balance_update and request.status in (
+        RequestStatusEnum.PENDING.value,
+        RequestStatusEnum.APPROVED.value,
+    ):
+        # Reverse old balance
+        old_balance = _get_or_create_balance(db, request.employee_id, old_absence_type, old_year)
+        if request.status == RequestStatusEnum.PENDING.value:
+            old_balance.pending_days = _quantize(
+                max(Decimal(0), Decimal(old_balance.pending_days) - old_total_days)
+            )
+        else:
+            old_balance.used_days = _quantize(
+                max(Decimal(0), Decimal(old_balance.used_days) - old_total_days)
+            )
+        db.add(old_balance)
+
+        # Apply new balance
+        if old_absence_type != effective_absence_type or old_year != new_year:
+            new_balance = _get_or_create_balance(db, request.employee_id, effective_absence_type, new_year)
+        else:
+            new_balance = old_balance
+
+        if request.status == RequestStatusEnum.PENDING.value:
+            new_balance.pending_days = _quantize(Decimal(new_balance.pending_days) + new_total_days)
+        else:
+            new_balance.used_days = _quantize(Decimal(new_balance.used_days) + new_total_days)
+        db.add(new_balance)
+
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+
+    # Send notification to manager with updated data
+    employee_record = db.exec(
+        select(Employees).where(Employees.employee_id == request.employee_id)
+    ).first()
+    if employee_record:
+        manager_email = employee_record.manager_email
+        recipient_email = manager_email or "info@primefire.us"
+        support_cc_email = getattr(settings, "SUPPORT_EMAIL", "info@primefire.us")
+
+        background_tasks.add_task(
+            notify_time_off_submitted,
+            request_id=request.request_id,
+            employee_id=employee_record.employee_id,
+            employee_name=employee_record.display_name,
+            employee_email=employee_record.email,
+            absence_type=request.absence_type,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_days=request.total_days,
+            to_email=recipient_email,
+            cc_email=support_cc_email,
+            reason=request.reason,
+            tenant_key=tenant_key,
+        )
+
+    return request
 
 
 @router.patch("/requests/{request_id}/approve", response_model=TimeOffRequestRead)

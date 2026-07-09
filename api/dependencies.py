@@ -1,6 +1,7 @@
 """Dependencies."""
 
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi import Request as FastAPIRequest
@@ -181,6 +182,22 @@ async def get_current_employee(
         )
 
     return employee
+
+
+def get_request_app_url(request: Request) -> str:
+    """Resolve the frontend base URL for email action links.
+
+    Each tenant frontend runs on its own domain (see tenant logos config), so the
+    request Origin/Referer is the tenant-correct base. Falls back to APP_URL.
+    """
+    origin = (request.headers.get("origin") or "").strip().rstrip("/")
+    if not origin:
+        referer = (request.headers.get("referer") or "").strip()
+        if referer:
+            parsed = urlparse(referer)
+            if parsed.scheme and parsed.netloc:
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+    return origin or getattr(settings, "APP_URL", "")
 
 
 async def require_authentication(

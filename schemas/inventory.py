@@ -76,6 +76,42 @@ class InventoryMovement(SQLModel):
     min_stock: Decimal | None = None
 
 
+class InventoryMovementApproval(SQLModel):
+    approval_id: int | None = None
+    product_id: int
+    warehouse_id: int | None = None
+    movement_type: str
+    quantity: Decimal
+    movement_date: date | None = None
+    project: str | None = None
+    po_number: str | None = None
+    reference_type: str | None = None
+    reference_id: int | None = None
+    notes: str | None = None
+    status: str = "PENDING"
+    requested_by: str | None = None
+    requested_by_email: str | None = None
+    review_note: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    movement_id: int | None = None
+    created_at: datetime | None = None
+
+    product_name: str | None = None
+    product_code: str | None = None
+    warehouse_name: str | None = None
+
+
+class InventoryMovementApprovalReview(SQLModel):
+    note: str | None = None
+
+
+class InventoryMovementResult(SQLModel):
+    requires_approval: bool = False
+    movement: InventoryMovement | None = None
+    approval: InventoryMovementApproval | None = None
+
+
 class InventoryStock(SQLModel):
     product_id: int
     code: str | None = None

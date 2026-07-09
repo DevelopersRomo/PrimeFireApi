@@ -11,9 +11,8 @@ from core.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
-from api.dependencies import get_current_employee_with_permissions, require_authentication
+from api.dependencies import get_current_employee_with_permissions, get_request_app_url, require_authentication
 from bd.dependencies import get_db
-from core.config import settings
 from models.employees import Employees
 from models.tickets import (
     TicketPriority,
@@ -458,6 +457,7 @@ def create_ticket(
     background_tasks: BackgroundTasks,
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
+    app_url: str = Depends(get_request_app_url),
 ):
     """Create a new ticket. Creator is automatically set to the authenticated user."""
     current_employee_id = user_permissions["employee"]["employee_id"]
@@ -544,7 +544,7 @@ def create_ticket(
             assigned_to_name=db_ticket.assignee.display_name
             or f"{db_ticket.assignee.first_name} {db_ticket.assignee.last_name}",
             assigned_to_email=db_ticket.assignee.email or "",
-            action_url=f"{settings.APP_URL}/tickets/{db_ticket.ticket_id}",
+            action_url=f"{app_url}/tickets/{db_ticket.ticket_id}",
             notify_assignee=True,
         )
         logger.info(f"[TICKET_NOTIFY] Notification task added to background queue for ticket_id={db_ticket.ticket_id}")
@@ -566,6 +566,7 @@ async def update_ticket(
     background_tasks: BackgroundTasks,
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
+    app_url: str = Depends(get_request_app_url),
 ):
     """Update a ticket. Only creator, assigned employee, or users with AdminActions can update."""
     current_employee_id = user_permissions["employee"]["employee_id"]
@@ -680,7 +681,7 @@ async def update_ticket(
                 assigned_to_name=db_ticket.assignee.display_name
                 or f"{db_ticket.assignee.first_name} {db_ticket.assignee.last_name}",
                 assigned_to_email=db_ticket.assignee.email or "",
-                action_url=f"{settings.APP_URL}/tickets/{db_ticket.ticket_id}",
+                action_url=f"{app_url}/tickets/{db_ticket.ticket_id}",
             )
             background_tasks.add_task(
                 send_ticket_assigned_notification,

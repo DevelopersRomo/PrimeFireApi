@@ -2,9 +2,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee, get_current_employee_with_permissions, require_authentication
+from api.dependencies import (
+    get_current_employee,
+    get_current_employee_with_permissions,
+    get_request_app_url,
+    require_authentication,
+)
 from bd.dependencies import get_db
-from core.config import settings
 from core.datetime_utils import utcnow
 from models.employees import Employees
 from models.ticket_messages import TicketMessages
@@ -66,6 +70,7 @@ def create_message(
     background_tasks: BackgroundTasks,
     current_employee: Employees = Depends(get_current_employee),
     db: Session = Depends(get_db),
+    app_url: str = Depends(get_request_app_url),
 ):
     # Get ticket with relationships
     ticket = db.exec(
@@ -103,7 +108,7 @@ def create_message(
             ticket_creator_email=ticket.creator.email,
             ticket_assigned_to_id=ticket.assigned_to,
             ticket_assigned_to_email=ticket.assignee.email if ticket.assignee else None,
-            action_url=f"{settings.APP_URL}/tickets/{ticket.ticket_id}",
+            action_url=f"{app_url}/tickets/{ticket.ticket_id}",
         )
 
     return message_to_schema(db_msg, db)

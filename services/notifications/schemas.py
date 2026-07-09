@@ -192,6 +192,25 @@ class InventoryMovementNotificationData(BaseModel):
     action_url: str | None = None
 
 
+class InventoryApprovalNotificationData(BaseModel):
+    """Inventory movement approval notification data."""
+
+    approval_id: int
+    movement_type: str  # "OUT", "ADJUSTMENT"
+    product_name: str
+    product_code: str | None = None
+    warehouse_name: str | None = None
+    quantity: str
+    movement_date: str | None = None
+    project: str | None = None
+    po_number: str | None = None
+    notes: str | None = None
+    requested_by_name: str | None = None
+    reviewed_by_name: str | None = None
+    review_note: str | None = None
+    action_url: str | None = None
+
+
 class TimeSheetNotificationData(BaseModel):
     """TimeSheet notification data."""
 

@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -5,14 +6,17 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee, require_authentication
+from api.dependencies import get_current_employee, get_request_app_url, require_authentication
 from bd.dependencies import get_db
 from models.employees import Employees
-from models.inventory import InventoryMovements, WarehouseLocations, Warehouses
+from models.inventory import InventoryMovementApprovals, InventoryMovements, WarehouseLocations, Warehouses
 from models.products import ProductCategories, ProductFamilies, Products
 from schemas.inventory import (
     InventoryMovement,
+    InventoryMovementApproval,
+    InventoryMovementApprovalReview,
     InventoryMovementCreate,
+    InventoryMovementResult,
     InventoryStock,
     Warehouse,
     WarehouseCreate,
@@ -21,7 +25,12 @@ from schemas.inventory import (
     WarehouseLocationUpdate,
     WarehouseUpdate,
 )
-from services.notifications.notifications import notify_inventory_movement
+from services.notifications.notifications import (
+    notify_inventory_movement,
+    notify_movement_approval_requested,
+    notify_movement_approval_reviewed,
+)
+from services.notifications.schemas import InventoryApprovalNotificationData
 
 router = APIRouter()
 
@@ -85,6 +94,76 @@ def get_movement_notification_emails(db: Session, warehouse: Warehouses) -> list
             emails.append(employee.email)
 
     return emails
+
+
+def employee_is_movement_approver(db: Session, employee: Employees) -> bool:
+    """Admin, or an employee holding BOTH Project Manager and Business Proposals roles, can approve movements."""
+    db_employee = db.exec(
+        select(Employees)
+        .options(selectinload(Employees.roles))
+        .where(Employees.employee_id == employee.employee_id)
+    ).first()
+    if not db_employee:
+        return False
+    role_names = {(role.role_name or "").strip().lower() for role in db_employee.roles}
+    return ADMIN_ROLE in role_names or INVENTORY_NOTIFICATION_ROLES.issubset(role_names)
+
+
+def approval_to_schema(db: Session, approval: InventoryMovementApprovals) -> InventoryMovementApproval:
+    product = db.exec(select(Products).where(Products.id == approval.product_id)).first()
+
+    warehouse = None
+    if approval.warehouse_id:
+        warehouse = db.exec(select(Warehouses).where(Warehouses.warehouse_id == approval.warehouse_id)).first()
+
+    return InventoryMovementApproval(
+        approval_id=approval.approval_id,
+        product_id=approval.product_id,
+        warehouse_id=approval.warehouse_id,
+        movement_type=approval.movement_type,
+        quantity=approval.quantity,
+        movement_date=approval.movement_date,
+        project=approval.project,
+        po_number=approval.po_number,
+        reference_type=approval.reference_type,
+        reference_id=approval.reference_id,
+        notes=approval.notes,
+        status=approval.status,
+        requested_by=approval.requested_by,
+        requested_by_email=approval.requested_by_email,
+        review_note=approval.review_note,
+        reviewed_by=approval.reviewed_by,
+        reviewed_at=approval.reviewed_at,
+        movement_id=approval.movement_id,
+        created_at=approval.created_at,
+        product_name=product.name if product else None,
+        product_code=getattr(product, "code", None) if product else None,
+        warehouse_name=warehouse.name if warehouse else None,
+    )
+
+
+def approval_notification_data(
+    approval: InventoryMovementApprovals,
+    product: Products,
+    warehouse: Warehouses | None,
+    app_url: str | None = None,
+) -> InventoryApprovalNotificationData:
+    return InventoryApprovalNotificationData(
+        action_url=f"{app_url}/inventory/approvals" if app_url else None,
+        approval_id=approval.approval_id,
+        movement_type=approval.movement_type,
+        product_name=product.name,
+        product_code=getattr(product, "code", None),
+        warehouse_name=warehouse.name if warehouse else None,
+        quantity=str(approval.quantity),
+        movement_date=str(approval.movement_date) if approval.movement_date else None,
+        project=approval.project,
+        po_number=approval.po_number,
+        notes=approval.notes,
+        requested_by_name=approval.requested_by,
+        reviewed_by_name=approval.reviewed_by,
+        review_note=approval.review_note,
+    )
 
 
 def get_current_stock(db: Session, product_id: int, warehouse_id: int | None = None) -> Decimal:
@@ -389,20 +468,17 @@ def get_inventory_movement(
     return movement_to_schema(db, movement)
 
 
-@router.post("/movements", response_model=InventoryMovement)
-def create_inventory_movement(
-    movement: InventoryMovementCreate,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_employee=Depends(get_current_employee),
-):
-    movement_type = movement.movement_type.upper().strip()
-
+def validate_movement_and_load(
+    db: Session, movement: InventoryMovementCreate, movement_type: str
+) -> tuple[Products, Warehouses | None]:
     if movement_type not in VALID_MOVEMENT_TYPES:
         raise HTTPException(status_code=400, detail="movement_type must be IN, OUT, or ADJUSTMENT")
 
     if movement.quantity <= 0 and movement_type in {"IN", "OUT"}:
         raise HTTPException(status_code=400, detail="quantity must be greater than zero")
+
+    if movement_type == "ADJUSTMENT" and movement.quantity == 0:
+        raise HTTPException(status_code=400, detail="Adjustment quantity cannot be zero")
 
     product = db.exec(select(Products).where(Products.id == movement.product_id)).first()
 
@@ -424,9 +500,22 @@ def create_inventory_movement(
                 detail=f"Not enough stock. Available: {current_stock}",
             )
 
+    return product, warehouse
+
+
+def execute_inventory_movement(
+    movement: InventoryMovementCreate,
+    movement_type: str,
+    created_by: str | None,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    product: Products,
+    warehouse: Warehouses | None,
+    app_url: str | None = None,
+) -> InventoryMovements:
     data = movement.model_dump(exclude={"min_stock"})
     data["movement_type"] = movement_type
-    data["created_by"] = current_employee.display_name
+    data["created_by"] = created_by
 
     db_movement = InventoryMovements(**data)
 
@@ -457,10 +546,89 @@ def create_inventory_movement(
                 po_number=db_movement.po_number,
                 reference_type=db_movement.reference_type,
                 notes=db_movement.notes,
-                created_by_name=current_employee.display_name,
+                created_by_name=created_by,
+                action_url=f"{app_url}/inventory/movements" if app_url else None,
             )
 
-    return movement_to_schema(db, db_movement)
+    return db_movement
+
+
+def create_movement_approval_request(
+    movement: InventoryMovementCreate,
+    movement_type: str,
+    current_employee: Employees,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    product: Products,
+    warehouse: Warehouses | None,
+    app_url: str | None = None,
+) -> InventoryMovementApprovals:
+    data = movement.model_dump(exclude={"min_stock"})
+    data["movement_type"] = movement_type
+    if data.get("movement_date") is None:
+        data.pop("movement_date")
+
+    db_approval = InventoryMovementApprovals(**data)
+    db_approval.requested_by = current_employee.display_name
+    db_approval.requested_by_email = current_employee.email
+
+    db.add(db_approval)
+    db.commit()
+    db.refresh(db_approval)
+
+    if warehouse:
+        recipient_emails = get_movement_notification_emails(db, warehouse)
+        if recipient_emails:
+            background_tasks.add_task(
+                notify_movement_approval_requested,
+                notification_data=approval_notification_data(db_approval, product, warehouse, app_url),
+                to_emails=recipient_emails,
+            )
+
+    return db_approval
+
+
+def create_movement_or_approval(
+    movement: InventoryMovementCreate,
+    movement_type: str,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    current_employee: Employees,
+    app_url: str | None = None,
+) -> InventoryMovementResult:
+    product, warehouse = validate_movement_and_load(db, movement, movement_type)
+
+    # OUT and ADJUSTMENT always require approval, regardless of the requester's roles
+    requires_approval = movement_type in {"OUT", "ADJUSTMENT"}
+
+    if requires_approval:
+        db_approval = create_movement_approval_request(
+            movement, movement_type, current_employee, background_tasks, db, product, warehouse, app_url
+        )
+        return InventoryMovementResult(
+            requires_approval=True,
+            approval=approval_to_schema(db, db_approval),
+        )
+
+    db_movement = execute_inventory_movement(
+        movement, movement_type, current_employee.display_name, background_tasks, db, product, warehouse, app_url
+    )
+    return InventoryMovementResult(
+        requires_approval=False,
+        movement=movement_to_schema(db, db_movement),
+    )
+
+
+@router.post("/movements", response_model=InventoryMovementResult)
+def create_inventory_movement(
+    movement: InventoryMovementCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    app_url: str = Depends(get_request_app_url),
+):
+    movement_type = movement.movement_type.upper().strip()
+    return create_movement_or_approval(movement, movement_type, background_tasks, db, current_employee, app_url)
 
 
 @router.post("/entries", response_model=InventoryMovement)
@@ -469,35 +637,162 @@ def create_inventory_entry(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    app_url: str = Depends(get_request_app_url),
 ):
-    movement.movement_type = "IN"
-    return create_inventory_movement(movement, background_tasks, db, current_employee)
+    product, warehouse = validate_movement_and_load(db, movement, "IN")
+    db_movement = execute_inventory_movement(
+        movement, "IN", current_employee.display_name, background_tasks, db, product, warehouse, app_url
+    )
+    return movement_to_schema(db, db_movement)
 
 
-@router.post("/outputs", response_model=InventoryMovement)
+@router.post("/outputs", response_model=InventoryMovementResult)
 def create_inventory_output(
     movement: InventoryMovementCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    app_url: str = Depends(get_request_app_url),
 ):
-    movement.movement_type = "OUT"
-    return create_inventory_movement(movement, background_tasks, db, current_employee)
+    return create_movement_or_approval(movement, "OUT", background_tasks, db, current_employee, app_url)
 
 
-@router.post("/adjustments", response_model=InventoryMovement)
+@router.post("/adjustments", response_model=InventoryMovementResult)
 def create_inventory_adjustment(
     movement: InventoryMovementCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    app_url: str = Depends(get_request_app_url),
 ):
-    movement.movement_type = "ADJUSTMENT"
+    return create_movement_or_approval(movement, "ADJUSTMENT", background_tasks, db, current_employee, app_url)
 
-    if movement.quantity == 0:
-        raise HTTPException(status_code=400, detail="Adjustment quantity cannot be zero")
 
-    return create_inventory_movement(movement, background_tasks, db, current_employee)
+# ----------------------------
+# MOVEMENT APPROVALS
+# ----------------------------
+
+
+@router.get("/movement-approvals", response_model=list[InventoryMovementApproval])
+def get_movement_approvals(
+    status: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    query = select(InventoryMovementApprovals)
+
+    if status:
+        query = query.where(InventoryMovementApprovals.status == status.upper().strip())
+
+    approvals = db.exec(query.order_by(InventoryMovementApprovals.created_at.desc())).all()
+
+    return [approval_to_schema(db, approval) for approval in approvals]
+
+
+def get_pending_approval_for_review(
+    db: Session, approval_id: int, current_employee: Employees
+) -> InventoryMovementApprovals:
+    if not employee_is_movement_approver(db, current_employee):
+        raise HTTPException(status_code=403, detail="You are not allowed to review movement approvals")
+
+    approval = db.exec(
+        select(InventoryMovementApprovals).where(InventoryMovementApprovals.approval_id == approval_id)
+    ).first()
+
+    if not approval:
+        raise HTTPException(status_code=404, detail="Movement approval not found")
+
+    if approval.status != "PENDING":
+        raise HTTPException(status_code=400, detail=f"Movement approval is already {approval.status.lower()}")
+
+    return approval
+
+
+@router.post("/movement-approvals/{approval_id}/approve", response_model=InventoryMovementApproval)
+def approve_movement_approval(
+    approval_id: int,
+    review: InventoryMovementApprovalReview,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    app_url: str = Depends(get_request_app_url),
+):
+    approval = get_pending_approval_for_review(db, approval_id, current_employee)
+
+    movement = InventoryMovementCreate(
+        product_id=approval.product_id,
+        warehouse_id=approval.warehouse_id,
+        movement_type=approval.movement_type,
+        quantity=approval.quantity,
+        movement_date=approval.movement_date,
+        project=approval.project,
+        po_number=approval.po_number,
+        reference_type=approval.reference_type,
+        reference_id=approval.reference_id,
+        notes=approval.notes,
+    )
+
+    product, warehouse = validate_movement_and_load(db, movement, approval.movement_type)
+
+    db_movement = execute_inventory_movement(
+        movement, approval.movement_type, approval.requested_by, background_tasks, db, product, warehouse, app_url
+    )
+
+    approval.status = "APPROVED"
+    approval.review_note = (review.note or "").strip() or None
+    approval.reviewed_by = current_employee.display_name
+    approval.reviewed_at = datetime.now()
+    approval.movement_id = db_movement.movement_id
+
+    db.add(approval)
+    db.commit()
+    db.refresh(approval)
+
+    if approval.requested_by_email:
+        background_tasks.add_task(
+            notify_movement_approval_reviewed,
+            notification_data=approval_notification_data(approval, product, warehouse, app_url),
+            approved=True,
+            to_email=approval.requested_by_email,
+        )
+
+    return approval_to_schema(db, approval)
+
+
+@router.post("/movement-approvals/{approval_id}/reject", response_model=InventoryMovementApproval)
+def reject_movement_approval(
+    approval_id: int,
+    review: InventoryMovementApprovalReview,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+    app_url: str = Depends(get_request_app_url),
+):
+    approval = get_pending_approval_for_review(db, approval_id, current_employee)
+
+    approval.status = "REJECTED"
+    approval.review_note = (review.note or "").strip() or None
+    approval.reviewed_by = current_employee.display_name
+    approval.reviewed_at = datetime.now()
+
+    db.add(approval)
+    db.commit()
+    db.refresh(approval)
+
+    product = db.exec(select(Products).where(Products.id == approval.product_id)).first()
+    warehouse = None
+    if approval.warehouse_id:
+        warehouse = db.exec(select(Warehouses).where(Warehouses.warehouse_id == approval.warehouse_id)).first()
+
+    if approval.requested_by_email and product:
+        background_tasks.add_task(
+            notify_movement_approval_reviewed,
+            notification_data=approval_notification_data(approval, product, warehouse, app_url),
+            approved=False,
+            to_email=approval.requested_by_email,
+        )
+
+    return approval_to_schema(db, approval)
 
 
 # ----------------------------

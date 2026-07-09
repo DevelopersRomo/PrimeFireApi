@@ -18,6 +18,7 @@ from core.config import settings
 from models.tenants import TenantLogos, Tenants
 from services.notifications.email_functions import parse_email_list, send_outlook_email
 from services.notifications.schemas import (
+    InventoryApprovalNotificationData,
     InventoryMovementNotificationData,
     NotificationField,
     NotificationResponse,
@@ -1288,6 +1289,145 @@ async def notify_inventory_movement(
         )
         responses.append(response)
     return responses
+
+
+_MOVEMENT_TYPE_LABELS: dict[str, str] = {
+    "OUT": "Output",
+    "ADJUSTMENT": "Adjustment",
+}
+
+
+def _inventory_approval_fields(notification_data: InventoryApprovalNotificationData) -> list[NotificationField]:
+    product_display = notification_data.product_name
+    if notification_data.product_code:
+        product_display = f"{notification_data.product_code} - {notification_data.product_name}"
+
+    fields = [
+        NotificationField(label="Request ID", value=f"#{notification_data.approval_id}"),
+        NotificationField(label="Product", value=product_display),
+        NotificationField(label="Quantity", value=notification_data.quantity),
+    ]
+
+    if notification_data.warehouse_name:
+        fields.append(NotificationField(label="Warehouse", value=notification_data.warehouse_name))
+    if notification_data.movement_date:
+        fields.append(NotificationField(label="Date", value=notification_data.movement_date))
+    if notification_data.project:
+        fields.append(NotificationField(label="Project", value=notification_data.project))
+    if notification_data.po_number:
+        fields.append(NotificationField(label="PO Number", value=notification_data.po_number))
+    if notification_data.notes:
+        notes_preview = notification_data.notes[:200] + ("..." if len(notification_data.notes) > 200 else "")
+        fields.append(NotificationField(label="Notes", value=notes_preview))
+    if notification_data.review_note:
+        fields.append(NotificationField(label="Review Note", value=notification_data.review_note))
+
+    return fields
+
+
+async def _send_inventory_approval_notification(
+    notification_data: InventoryApprovalNotificationData,
+    title: str,
+    message_body: str,
+    action_type: str,
+    performed_by_name: str | None,
+    to_email: str,
+) -> NotificationResponse:
+    if not _should_send_notification():
+        logger.info("Notifications disabled - skipping inventory approval notification")
+        return NotificationResponse(success=True, message_id="notifications_disabled")
+
+    try:
+        html_body = generate_notification_html(
+            title=title,
+            sub_title=f"Request #{notification_data.approval_id}",
+            action_type=action_type,
+            message_body=message_body,
+            performed_by_name=performed_by_name,
+            fields=_inventory_approval_fields(notification_data),
+            action_url=notification_data.action_url,
+            action_text="View Approvals",
+        )
+
+        sender_email = getattr(settings, "BOT_EMAIL", None)
+        if not sender_email:
+            return NotificationResponse(
+                success=False,
+                error_message="No sender email configured (BOT_EMAIL)",
+            )
+
+        subject = f"{title} - {notification_data.product_name}"
+        success, message_id, error_message = await send_outlook_email(
+            send_as_email=sender_email,
+            to_emails=parse_email_list(to_email),
+            subject=subject,
+            body=html_body,
+        )
+
+        if success:
+            return NotificationResponse(success=True, message_id=message_id)
+        return NotificationResponse(success=False, error_message=error_message)
+
+    except Exception as e:
+        return NotificationResponse(
+            success=False,
+            error_message=f"Error sending inventory approval notification: {e!s}",
+        )
+
+
+async def notify_movement_approval_requested(
+    notification_data: InventoryApprovalNotificationData,
+    to_emails: list[str],
+) -> list[NotificationResponse]:
+    """Notify approvers that an inventory movement approval was requested."""
+    type_label = _MOVEMENT_TYPE_LABELS.get(notification_data.movement_type, "Movement")
+    title = f"Inventory {type_label} Approval Requested"
+    requester = notification_data.requested_by_name or "An employee"
+    message_body = (
+        f"{requester} has requested an inventory {type_label.lower()} that requires your approval. "
+        "The movement will not be executed until it is approved."
+    )
+
+    responses = []
+    for email in to_emails:
+        response = await _send_inventory_approval_notification(
+            notification_data=notification_data,
+            title=title,
+            message_body=message_body,
+            action_type="pending",
+            performed_by_name=notification_data.requested_by_name,
+            to_email=email,
+        )
+        responses.append(response)
+    return responses
+
+
+async def notify_movement_approval_reviewed(
+    notification_data: InventoryApprovalNotificationData,
+    approved: bool,
+    to_email: str,
+) -> NotificationResponse:
+    """Notify the requester that their inventory movement request was approved or rejected."""
+    type_label = _MOVEMENT_TYPE_LABELS.get(notification_data.movement_type, "Movement")
+    if approved:
+        title = f"Inventory {type_label} Request Approved"
+        message_body = (
+            f"Your inventory {type_label.lower()} request has been approved and the movement has been registered."
+        )
+        action_type = "approved"
+    else:
+        title = f"Inventory {type_label} Request Rejected"
+        message_body = f"Your inventory {type_label.lower()} request has been rejected. No movement was registered."
+        action_type = "rejected"
+
+    return await _send_inventory_approval_notification(
+        notification_data=notification_data,
+        title=title,
+        message_body=message_body,
+        action_type=action_type,
+        performed_by_name=notification_data.reviewed_by_name,
+        to_email=to_email,
+    )
 
 
 async def send_timesheet_notification(

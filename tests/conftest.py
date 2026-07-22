@@ -55,9 +55,13 @@ def setup_and_cleanup():
         echo=False,
     )
 
-    # Remove schema from all models for SQLite compatibility
+    # Remove schema from all models for SQLite compatibility.
+    # Tables in the "it" schema get an it_ prefix so they don't collide with
+    # same-named dbo tables (e.g. it.quotations vs dbo.quotations).
     if "sqlite" in TEST_DATABASE_URL:
         for table in SQLModel.metadata.tables.values():
+            if table.schema == "it" and not table.name.startswith("it_"):
+                table.name = f"it_{table.name}"
             table.schema = None
             if hasattr(table, "_schema"):
                 table._schema = None  # noqa: SLF001

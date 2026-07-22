@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ quotation.quotation_number }}</title>
+  <link rel="stylesheet" href="quotation_standard.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      {% if logo_src %}
+        <img src="{{ logo_src }}" alt="Logo" class="logo" />
+      {% endif %}
+      <div class="company-name">{{ config.company_name if config else 'IT Solutions' }}</div>
+      {% if config and config.address_text %}<div class="muted">{{ config.address_text }}</div>{% endif %}
+      {% if config and config.phone %}<div class="muted">{{ config.phone }}</div>{% endif %}
+      {% if config and config.email %}<div class="muted">{{ config.email }}</div>{% endif %}
+    </div>
+    <div class="quote-meta">
+      <h1>IT Solutions Quotation</h1>
+      <div class="quote-number">{{ quotation.quotation_number }}</div>
+      <table class="meta-table">
+        <tr><td>Quote Date:</td><td>{{ quotation.quote_date.strftime('%b %d, %Y') }}</td></tr>
+        <tr><td>Valid Until:</td><td>{{ quotation.expiration_date.strftime('%b %d, %Y') }}</td></tr>
+        <tr><td>Currency:</td><td>{{ quotation.currency }}</td></tr>
+      </table>
+    </div>
+  </header>
+
+  <section class="customer">
+    <div class="label">Attn.</div>
+    {% if quotation.contact_name_snapshot %}<div>{{ quotation.contact_name_snapshot }}</div>{% endif %}
+    <div class="strong">{{ quotation.customer_name_snapshot }}</div>
+    {% if quotation.customer_address_snapshot %}<div class="muted">{{ quotation.customer_address_snapshot }}</div>{% endif %}
+    {% if quotation.customer_email_snapshot %}<div class="muted">{{ quotation.customer_email_snapshot }}</div>{% endif %}
+  </section>
+
+  <section class="items">
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th class="left">Description</th>
+          <th>Type</th>
+          <th>Billing</th>
+          <th>Qty</th>
+          <th class="right">Unit Price</th>
+          <th class="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="left">
+            <div class="strong">{{ item.name_snapshot }}</div>
+            {% if item.description_snapshot %}<div class="muted small">{{ item.description_snapshot }}</div>{% endif %}
+          </td>
+          <td>{{ item.item_type.replace('_', ' ').title() }}</td>
+          <td>{{ 'One-time' if item.billing_cycle == 'ONE_TIME' else item.billing_cycle.title() }}</td>
+          <td>{{ item.quantity | int if item.quantity == item.quantity | int else item.quantity }}</td>
+          <td class="right">${{ '%.2f' | format(item.unit_price) }}</td>
+          <td class="right">${{ '%.2f' | format(item.line_total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="totals">
+    <table class="totals-table">
+      <tr><td>One-time Costs</td><td class="right">${{ '%.2f' | format(quotation.one_time_subtotal) }}</td></tr>
+      {% if quotation.monthly_recurring_subtotal > 0 %}
+      <tr><td>Monthly Recurring</td><td class="right">${{ '%.2f' | format(quotation.monthly_recurring_subtotal) }} / month</td></tr>
+      {% endif %}
+      {% if quotation.annual_recurring_subtotal > 0 %}
+      <tr><td>Annual Recurring</td><td class="right">${{ '%.2f' | format(quotation.annual_recurring_subtotal) }} / year</td></tr>
+      {% endif %}
+      {% if quotation.discount_total > 0 %}
+      <tr><td>Discounts</td><td class="right">-${{ '%.2f' | format(quotation.discount_total) }}</td></tr>
+      {% endif %}
+      <tr><td>Tax</td><td class="right">${{ '%.2f' | format(quotation.tax_total) }}</td></tr>
+      <tr class="grand"><td>Initial Amount</td><td class="right">{{ quotation.currency }} ${{ '%.2f' | format(quotation.initial_total) }}</td></tr>
+    </table>
+  </section>
+
+  {% if payment_schedule %}
+  <section class="section">
+    <h2>Payment Schedule</h2>
+    <table class="schedule-table">
+      {% for entry in payment_schedule %}
+      <tr>
+        <td class="seq">{{ entry.sequence_number }}</td>
+        <td>{{ entry.description }}</td>
+        <td class="right">
+          {% if entry.percentage is not none %}{{ '%.0f' | format(entry.percentage) }}%{% endif %}
+          {% if entry.amount is not none %} — ${{ '%.2f' | format(entry.amount) }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+  {% endif %}
+
+  {% if terms %}
+  <section class="section">
+    <h2>Terms &amp; Conditions</h2>
+    {% if terms.delivery_time_text %}<p><span class="strong">Delivery Time:</span> {{ terms.delivery_time_text }}</p>{% endif %}
+    {% if terms.validity_days %}<p><span class="strong">Quotation Validity:</span> {{ terms.validity_days }} days</p>{% endif %}
+    {% if terms.payment_terms_text %}<p><span class="strong">Payment Terms:</span> {{ terms.payment_terms_text }}</p>{% endif %}
+    {% if terms.tax_note %}<p><span class="strong">Tax Notes:</span> {{ terms.tax_note }}</p>{% endif %}
+    {% if terms.recurring_note %}<p><span class="strong">Recurrence:</span> {{ terms.recurring_note }}</p>{% endif %}
+    {% if terms.exclusions_text %}<p><span class="strong">Exclusions:</span> {{ terms.exclusions_text }}</p>{% endif %}
+    {% if terms.warranty_text %}<p><span class="strong">Warranty:</span> {{ terms.warranty_text }}</p>{% endif %}
+    {% if terms.acceptance_text %}<p><span class="strong">Acceptance:</span> {{ terms.acceptance_text }}</p>{% endif %}
+  </section>
+  {% endif %}
+
+  {% if quotation.visible_notes %}
+  <section class="section">
+    <h2>Notes</h2>
+    <p>{{ quotation.visible_notes }}</p>
+  </section>
+  {% endif %}
+
+  <footer class="footer">
+    {% if config and config.signature_name %}
+      <div class="signature">
+        <div class="strong">{{ config.signature_name }}</div>
+        {% if config.signature_title %}<div class="muted">{{ config.signature_title }}</div>{% endif %}
+      </div>
+    {% endif %}
+    <div class="muted small">
+      {{ config.default_footer if config and config.default_footer else 'Thank you for your business.' }}
+    </div>
+  </footer>
+</body>
+</html>

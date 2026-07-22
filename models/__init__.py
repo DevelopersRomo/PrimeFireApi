@@ -1,3 +1,4 @@
+import models.it as it  # noqa: F401  (registers IT schema tables in SQLModel metadata)
 from models.auth_tokens import AuthToken as AuthToken
 from models.tickets import (
     TicketRecurrenceConfig as TicketRecurrenceConfig,

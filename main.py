@@ -29,6 +29,7 @@ from api.inventory import router as inventory_router
 from api.jobs import router as jobs_router
 
 # Routers
+from api.it.router import router as it_router
 from api.licenses import router as licenses_router
 from api.modules import router as modules_router
 from api.notifications import router as notifications_router
@@ -311,6 +312,7 @@ app.include_router(products_router, prefix="/products", tags=["products"])
 app.include_router(product_attachments_router, tags=["product_attachments"])
 app.include_router(quotations_router)  # prefix already defined in router
 app.include_router(quotation_items_router)
+app.include_router(it_router)  # /it prefix defined in router
 app.include_router(backups_router, prefix="/backups", tags=["backups"])
 
 

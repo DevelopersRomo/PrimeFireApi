@@ -17,7 +17,7 @@
       {% if config and config.email %}<div class="muted">{{ config.email }}</div>{% endif %}
     </div>
     <div class="quote-meta">
-      <h1>IT Solutions Quotation</h1>
+      <h1>{{ config.document_title if config and config.document_title else 'IT Solutions Quotation' }}</h1>
       <div class="quote-number">{{ quotation.quotation_number }}</div>
       <table class="meta-table">
         <tr><td>Quote Date:</td><td>{{ quotation.quote_date.strftime('%b %d, %Y') }}</td></tr>
@@ -86,16 +86,36 @@
   <section class="section">
     <h2>Payment Schedule</h2>
     <table class="schedule-table">
-      {% for entry in payment_schedule %}
-      <tr>
-        <td class="seq">{{ entry.sequence_number }}</td>
-        <td>{{ entry.description }}</td>
-        <td class="right">
-          {% if entry.percentage is not none %}{{ '%.0f' | format(entry.percentage) }}%{% endif %}
-          {% if entry.amount is not none %} — ${{ '%.2f' | format(entry.amount) }}{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
+      <thead>
+        <tr>
+          <th class="seq">#</th>
+          <th class="left">Description</th>
+          <th class="right">Percentage</th>
+          <th class="right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in payment_schedule %}
+        <tr>
+          <td class="seq">{{ entry.sequence_number }}</td>
+          <td class="left">{{ entry.description }}</td>
+          <td class="right">
+            {% if entry.percentage is not none %}{{ '%.0f' | format(entry.percentage) }}%{% else %}—{% endif %}
+          </td>
+          <td class="right">
+            {% if entry.amount is not none %}${{ '%.2f' | format(entry.amount) }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="grand">
+          <td></td>
+          <td class="left">Total</td>
+          <td class="right"></td>
+          <td class="right">{{ quotation.currency }} ${{ '%.2f' | format(payment_schedule_total) }}</td>
+        </tr>
+      </tfoot>
     </table>
   </section>
   {% endif %}

@@ -9,6 +9,8 @@ class EmailAttachment(BaseModel):
     name: str
     content_type: str
     content_bytes: str
+    content_id: str | None = None
+    is_inline: bool = False
 
 
 class TeamsMention(BaseModel):

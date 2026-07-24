@@ -6,6 +6,7 @@ import pytest
 from sqlmodel import select
 
 from models.it.quotations import ITQuotations
+from models.it.templates import ITPdfTemplates
 from services.it.pdf_service import render_quotation_html
 
 WEASYPRINT_AVAILABLE = importlib.util.find_spec("weasyprint") is not None
@@ -45,6 +46,25 @@ class TestRenderHtml:
         html = render_quotation_html(db_session, quotation)
         assert "$600.00" in html  # initial: 450 one-time + 150 annual first year
         assert "$150.00" in html
+
+    def test_render_uses_tenant_default_template_logo(self, db_session, quotation, tmp_path) -> None:
+        logo_path = tmp_path / "logo.png"
+        logo_path.write_bytes(b"png")
+        template = ITPdfTemplates(
+            tenant_id=quotation.tenant_id,
+            name="Default",
+            template_key="quotation_standard",
+            company_name="PrimeFire",
+            logo_url=str(logo_path),
+            is_default=True,
+            is_active=True,
+        )
+        db_session.add(template)
+        db_session.commit()
+
+        html = render_quotation_html(db_session, quotation)
+
+        assert logo_path.resolve().as_uri() in html
 
 
 @pytest.mark.skipif(not WEASYPRINT_AVAILABLE, reason="WeasyPrint not installed")

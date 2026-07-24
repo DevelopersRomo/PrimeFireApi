@@ -1,6 +1,14 @@
 from fastapi import APIRouter
 
-from api.it import catalog, categories, documents, licenses, quotations, templates
+from api.it import (
+    catalog,
+    categories,
+    documents,
+    email_templates,
+    licenses,
+    quotations,
+    templates,
+)
 
 router = APIRouter(prefix="/it")
 
@@ -33,4 +41,9 @@ router.include_router(
     templates.router,
     prefix="/templates",
     tags=["IT PDF Templates"],
+)
+router.include_router(
+    email_templates.router,
+    prefix="/email-templates",
+    tags=["IT Email Templates"],
 )

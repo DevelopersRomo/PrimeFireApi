@@ -13,13 +13,19 @@ from core.config import settings
 from models.it.templates import ITPdfTemplates
 from schemas.it.templates import ItPdfTemplateCreate, ItPdfTemplateRead, ItPdfTemplateUpdate
 
-# Upload directory per environment (same convention as curriculums)
+# Upload directory per environment. Mirrors customer_attachments /
+# product_attachments so behaviour is consistent across modules.
 ENV = os.getenv("ENVIRONMENT", "local").lower()
-if ENV == "prod":
+IS_PRODUCTION = ENV == "prod"
+
+if IS_PRODUCTION:
+    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home/uploads
     uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
     LOGO_UPLOAD_DIR = Path(uploads_base) / "it" / "templates"
 else:
-    LOGO_UPLOAD_DIR = Path(settings.UPLOAD_DIR) / "it" / "templates"
+    # Local: anchor to API root so files land in PrimeFireApi/uploads/it/templates
+    BASE_DIR = Path(__file__).resolve().parents[2]
+    LOGO_UPLOAD_DIR = BASE_DIR / settings.UPLOAD_DIR / "it" / "templates"
 
 LOGO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 

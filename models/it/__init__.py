@@ -30,3 +30,12 @@ from models.it.quotations import (
     ITQuotationTerms as ITQuotationTerms,
 )
 from models.it.templates import ITPdfTemplates as ITPdfTemplates
+from models.it.quotation_sequences import (
+    ITCustomerQuotationSequence as ITCustomerQuotationSequence,
+)
+from models.it.email_templates import (
+    ITEmailCustomerTemplate as ITEmailCustomerTemplate,
+)
+from models.it.email_templates import (
+    ITEmailDefault as ITEmailDefault,
+)

@@ -124,6 +124,11 @@ async def send_outlook_email(
                 "name": att.name,
                 "contentType": att.content_type,
                 "contentBytes": att.content_bytes,
+                **(
+                    {"contentId": att.content_id, "isInline": True}
+                    if att.is_inline and att.content_id
+                    else {}
+                ),
             }
             for att in attachments
         ]

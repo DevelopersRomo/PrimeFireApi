@@ -1,6 +1,7 @@
 """PDF generation for IT quotations using Jinja2 + WeasyPrint."""
 
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -40,9 +41,38 @@ def render_quotation_html(db: Session, quotation: ITQuotations) -> str:
         .order_by(ITPaymentSchedule.sequence_number)
     ).all()
 
+    # Resolve amounts from percentages when only percentage is stored, and
+    # compute a total so the template can render a footer row.
+    initial_total = Decimal(str(quotation.initial_total or 0))
+    schedule_rows = []
+    schedule_total = Decimal("0")
+    for entry in schedule:
+        resolved_amount = entry.amount
+        if resolved_amount is None and entry.percentage is not None:
+            resolved_amount = (initial_total * Decimal(str(entry.percentage))) / Decimal("100")
+        if resolved_amount is not None:
+            schedule_total += Decimal(str(resolved_amount))
+        schedule_rows.append(
+            {
+                "sequence_number": entry.sequence_number,
+                "description": entry.description,
+                "percentage": entry.percentage,
+                "amount": resolved_amount,
+                "due_rule": entry.due_rule,
+            }
+        )
+
     template_config: ITPdfTemplates | None = None
     if quotation.template_id:
         template_config = db.get(ITPdfTemplates, quotation.template_id)
+    else:
+        template_config = db.exec(
+            select(ITPdfTemplates).where(
+                ITPdfTemplates.tenant_id == quotation.tenant_id,
+                ITPdfTemplates.is_default == True,  # noqa: E712
+                ITPdfTemplates.is_active == True,  # noqa: E712
+            )
+        ).first()
 
     template_key = template_config.template_key if template_config else DEFAULT_TEMPLATE_KEY
     template_file = f"{template_key}.html"
@@ -60,7 +90,8 @@ def render_quotation_html(db: Session, quotation: ITQuotations) -> str:
         quotation=quotation,
         items=items,
         terms=terms,
-        payment_schedule=schedule,
+        payment_schedule=schedule_rows,
+        payment_schedule_total=schedule_total,
         config=template_config,
         logo_src=logo_src,
         generated_at=datetime.utcnow(),

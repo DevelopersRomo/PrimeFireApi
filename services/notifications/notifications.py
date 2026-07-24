@@ -135,9 +135,11 @@ def generate_notification_html(
     app_url: str | None = None,
     app_name: str | None = None,
     include_support_section: bool = True,
+    color_override: str | None = None,
+    header_image_cid: str | None = None,
 ) -> str:
     """Generate unified HTML email template for notifications."""
-    color = get_action_color(action_type)
+    color = (color_override or "").strip() or get_action_color(action_type)
     icon = get_action_icon(action_type)
 
     if support_email is None:
@@ -232,9 +234,11 @@ def generate_notification_html(
                     <!-- Header with colored banner -->
                     <tr>
                         <td style="background-color: {color}; padding: 20px; text-align: center;">
-                            <div style="font-size: 48px; color: #ffffff; margin-bottom: 10px;">
-                                {icon}
-                            </div>
+                            {
+        f'<img src="cid:{header_image_cid}" alt="" style="display: block; max-width: 240px; max-height: 80px; margin: 0 auto;">'
+        if header_image_cid
+        else f'<div style="font-size: 48px; color: #ffffff; margin-bottom: 10px;">{icon}</div>'
+    }
                         </td>
                     </tr>
 

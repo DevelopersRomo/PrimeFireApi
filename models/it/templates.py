@@ -12,6 +12,7 @@ class ITPdfTemplates(SQLModel, table=True):
     name: str = Field(max_length=150)
     template_key: str = Field(max_length=100)
     company_name: str = Field(max_length=200)
+    document_title: str | None = Field(default=None, max_length=200)
     logo_url: str | None = Field(default=None, max_length=500)
     primary_color: str | None = Field(default=None, max_length=20)
     secondary_color: str | None = Field(default=None, max_length=20)

@@ -34,7 +34,7 @@ class ModuleUpdate(BaseModel):
 
 class Module(ModuleBase):
     module_id: int
-    created_at: datetime
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True

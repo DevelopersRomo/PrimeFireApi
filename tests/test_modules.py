@@ -107,6 +107,36 @@ class TestModules:
         data = response.json()
         assert isinstance(data, list)
 
+    @pytest.mark.parametrize(
+        ("endpoint", "is_active"),
+        [("/modules", True), ("/modules?include_inactive=true", False)],
+    )
+    def test_get_modules_serializes_null_created_at(
+        self,
+        client: TestClient,
+        auth_headers: dict,
+        db_session: Session,
+        endpoint: str,
+        is_active: bool,
+    ) -> None:
+        """Serialize legacy modules that do not have a creation timestamp."""
+        module_key = f"null_created_at_{is_active}"
+        db_session.add(
+            Modules(
+                module_name="Legacy Module",
+                module_key=module_key,
+                is_active=is_active,
+                created_at=None,
+            )
+        )
+        db_session.commit()
+
+        response = client.get(endpoint, headers=auth_headers)
+
+        assert response.status_code == 200
+        serialized_module = next(module for module in response.json() if module["module_key"] == module_key)
+        assert serialized_module["created_at"] is None
+
     def test_get_module_by_id(self, client: TestClient, auth_headers: dict, sample_module_data: dict) -> None:
         """Test getting a specific module by ID."""
         # Create module

@@ -8,12 +8,10 @@ from pathlib import Path
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from bd.connection import SessionLocal
 from core.config import settings
 from models.it.documents import ITQuotationDocuments
 from models.it.email_templates import ITEmailCustomerTemplate, ITEmailDefault
 from models.it.quotations import ITQuotations
-from models.tenants import TenantLogos
 from services.it.pdf_service import generate_quotation_pdf
 from services.it.quote_number_service import next_customer_quotation_number
 from services.it.quote_service import change_status
@@ -115,34 +113,6 @@ def _plain_to_html(text: str) -> str:
     return htmllib.escape(text or "").replace("\n", "<br>")
 
 
-def _normalize_url(value: str | None) -> str | None:
-    """Prepend https:// if the value has no scheme."""
-    cleaned = (value or "").strip().rstrip("/")
-    if not cleaned:
-        return None
-    if cleaned.startswith(("http://", "https://")):
-        return cleaned
-    return f"https://{cleaned}"
-
-
-def _resolve_tenant_app_url(tenant_id: int) -> str | None:
-    """Return the tenant's public app URL from TenantLogos, falling back to APP_URL."""
-    main_db = SessionLocal()
-    try:
-        logo = main_db.exec(
-            select(TenantLogos)
-            .where(TenantLogos.tenant_id == tenant_id)
-            .order_by(TenantLogos.logo_id.desc())
-        ).first()
-        tenant_url = _normalize_url(logo.url) if logo else None
-    finally:
-        main_db.close()
-
-    if tenant_url:
-        return tenant_url
-    return _normalize_url(getattr(settings, "APP_URL", None))
-
-
 def _build_email_body(
     title: str,
     message_body: str,
@@ -179,18 +149,11 @@ def _build_email_body(
             )
         )
 
-    app_url = _resolve_tenant_app_url(quotation.tenant_id)
-    action_url = (
-        f"{app_url}/it/quotations/{quotation.quotation_id}" if app_url else None
-    )
-
     return generate_notification_html(
         title=resolved_title,
         action_type="info",
         message_body=combined_body_html,
         fields=fields,
-        action_url=action_url,
-        action_text="View Quotation",
         color_override=header_color,
         header_image_cid=header_image_cid,
     )

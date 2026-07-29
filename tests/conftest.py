@@ -109,6 +109,7 @@ def mock_upload_dirs(monkeypatch):
     """
     from pathlib import Path
 
+    import api.agreements
     import api.curriculums
     import api.customer_attachments
     import api.ticket_attachments
@@ -116,11 +117,13 @@ def mock_upload_dirs(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         monkeypatch.setattr(api.customer_attachments, "UPLOAD_DIR", tmp_path / "customers")
+        monkeypatch.setattr(api.agreements, "UPLOAD_DIR", tmp_path / "agreements")
         monkeypatch.setattr(api.ticket_attachments, "UPLOAD_DIR", tmp_path / "tickets")
         monkeypatch.setattr(api.curriculums, "UPLOAD_DIR", tmp_path / "curriculums")
 
         # Also ensure the mocked dirs exist
         (tmp_path / "customers").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "agreements").mkdir(parents=True, exist_ok=True)
         (tmp_path / "tickets").mkdir(parents=True, exist_ok=True)
         (tmp_path / "curriculums").mkdir(parents=True, exist_ok=True)
 

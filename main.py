@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from api.agreements import router as agreements_router
 from api.auth import router as auth_router
 from api.backups import router as backups_router
 from api.catalogs import router as catalogs_router
@@ -301,6 +302,7 @@ app.include_router(catalogs_router, tags=["catalogs"])
 app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 app.include_router(tenants_router, prefix="/tenants", tags=["tenants"])
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
+app.include_router(agreements_router, prefix="/agreements", tags=["agreements"])
 app.include_router(customers_router, prefix="/customers", tags=["customers"])
 app.include_router(customer_notes_router, tags=["customer_notes"])
 app.include_router(customer_contacts_router, tags=["customer_contacts"])

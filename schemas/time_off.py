@@ -69,6 +69,11 @@ class TimeOffRequestRead(SQLModel):
         from_attributes = True
 
 
+class TimeOffRequestListRead(TimeOffRequestRead):
+    employee_name: str
+    department: str | None = None
+
+
 class RequestReview(SQLModel):
     review_notes: str | None = None
 

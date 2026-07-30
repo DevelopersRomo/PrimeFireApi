@@ -1,12 +1,14 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from models.modules import Modules
-from schemas.modules import Module, ModuleCreate, ModuleUpdate
+from schemas.modules import Module, ModuleCreate, ModuleListRead, ModuleUpdate
+from schemas.pagination import PaginatedResponse
 
 router = APIRouter()
 
@@ -16,7 +18,9 @@ router = APIRouter()
 # ----------------------------
 @router.post("", response_model=Module)
 async def create_module(
-    module: ModuleCreate, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
+    module: ModuleCreate,
+    db: Session = Depends(get_db),
+    _permissions: dict = Depends(require_module_permission("modules", "can_create")),
 ):
     """Create a new module."""
     # Check if module_key already exists
@@ -41,16 +45,48 @@ async def create_module(
 # ----------------------------
 # 📌 READ ALL MODULES
 # ----------------------------
-@router.get("", response_model=list[Module])
+@router.get("", response_model=list[Module] | PaginatedResponse[ModuleListRead])
 async def get_modules(
-    include_inactive: bool = False, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
+    include_inactive: bool = False,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(require_authentication),
 ):
     """Get all modules. By default, only active modules are returned."""
     query = select(Modules)
     if not include_inactive:
         query = query.where(Modules.is_active)
-    query = query.order_by(Modules.display_order, Modules.module_name)
-    return db.exec(query).all()
+    query = query.order_by(Modules.display_order, Modules.module_name, Modules.module_id).offset(skip).limit(limit)
+    modules = list(db.exec(query).all())
+    if not with_meta:
+        return modules
+
+    parent_ids = {module.parent_module_id for module in modules if module.parent_module_id is not None}
+    parent_names = {}
+    if parent_ids:
+        parent_names = dict(
+            db.exec(select(Modules.module_id, Modules.module_name).where(Modules.module_id.in_(parent_ids))).all()
+        )
+    items = [
+        ModuleListRead(
+            **Module.model_validate(module).model_dump(),
+            parent_module_name=parent_names.get(module.parent_module_id),
+        )
+        for module in modules
+    ]
+    count_query = select(func.count()).select_from(Modules)
+    if not include_inactive:
+        count_query = count_query.where(Modules.is_active)
+    total = db.exec(count_query).one()
+    return PaginatedResponse[ModuleListRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 # ----------------------------
@@ -119,7 +155,7 @@ async def update_module(
     module_id: int,
     module: ModuleUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("modules", "can_edit")),
 ):
     """Update a module."""
     db_module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()
@@ -153,7 +189,9 @@ async def update_module(
 # ----------------------------
 @router.delete("/{module_id}")
 async def delete_module(
-    module_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
+    module_id: int,
+    db: Session = Depends(get_db),
+    _permissions: dict = Depends(require_module_permission("modules", "can_delete")),
 ):
     """Delete a module. This will also delete all associated permissions."""
     db_module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()
@@ -177,7 +215,9 @@ async def delete_module(
 # ----------------------------
 @router.patch("/{module_id}/toggle-active", response_model=Module)
 async def toggle_module_active(
-    module_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
+    module_id: int,
+    db: Session = Depends(get_db),
+    _permissions: dict = Depends(require_module_permission("modules", "can_edit")),
 ):
     """Toggle the active status of a module."""
     db_module = db.exec(select(Modules).where(Modules.module_id == module_id)).first()

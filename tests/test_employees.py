@@ -56,6 +56,17 @@ class TestEmployeesAPI:
         data = response.json()
         assert isinstance(data, list)
 
+    def test_search_metadata_uses_filtered_total(self, client, auth_headers, db_session) -> None:
+        db_session.add(Employees(first_name="Needle", last_name="Employee", email="needle@example.com"))
+        db_session.add(Employees(first_name="Other", last_name="Employee", email="other@example.com"))
+        db_session.commit()
+
+        response = client.get("/employees?with_meta=true&search=Needle", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert response.json()["items"][0]["first_name"] == "Needle"
+
     def test_create_and_get_employee(self, client, auth_headers, db_session) -> None:
         """Test GET /employees/{id} successfully returns an employee."""
         emp = Employees(first_name="Test", last_name="User", email="test@primefire.com")
@@ -74,10 +85,8 @@ class TestEmployeesAPI:
         response = client.get("/employees/999999", headers=auth_headers)
         assert response.status_code == 404
 
-    def test_get_employees_uses_cache_until_invalidated(self, client, auth_headers, db_session) -> None:
-        """GET /employees should reuse cached list responses until cache invalidation."""
-        from api.employees import clear_employees_cache
-
+    def test_get_employees_invalidates_cache_when_db_marker_changes(self, client, auth_headers, db_session) -> None:
+        """GET /employees should detect inserts without explicit cache invalidation."""
         cached_emp = Employees(first_name="Cached", last_name="User", email="cached@primefire.com")
         db_session.add(cached_emp)
         db_session.commit()
@@ -91,14 +100,9 @@ class TestEmployeesAPI:
         db_session.commit()
         db_session.refresh(later_emp)
 
-        cached_response = client.get("/employees", headers=auth_headers)
-        cached_ids = {item["employee_id"] for item in cached_response.json()}
-        assert cached_emp.employee_id in cached_ids
-        assert later_emp.employee_id not in cached_ids
-
-        clear_employees_cache()
         fresh_response = client.get("/employees", headers=auth_headers)
         fresh_ids = {item["employee_id"] for item in fresh_response.json()}
+        assert cached_emp.employee_id in fresh_ids
         assert later_emp.employee_id in fresh_ids
 
     @patch("api.employees.graph_client")
@@ -144,6 +148,7 @@ class TestEmployeesAPI:
         self, mock_graph, client, auth_headers, db_session, employees_editor_overrides
     ) -> None:
         """PATCH must send explicitly cleared fields to Microsoft Graph, not silently drop them."""
+
         def map_employee_to_graph_user(data):
             title = data.get("title")
             return {"jobTitle": None if isinstance(title, str) and title == "" else title}
@@ -339,9 +344,7 @@ class TestEmployeesPermissions:
         assert response.status_code == 403
 
     def test_sync_single_from_microsoft_requires_can_edit(self, client, auth_headers, target_employee) -> None:
-        response = client.get(
-            f"/employees/{target_employee.employee_id}/sync-from-microsoft", headers=auth_headers
-        )
+        response = client.get(f"/employees/{target_employee.employee_id}/sync-from-microsoft", headers=auth_headers)
         assert response.status_code == 403
 
     def test_patch_allows_editor(self, client, auth_headers, target_employee, employees_editor_overrides) -> None:

@@ -2,8 +2,10 @@ import csv
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from io import StringIO
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import (
@@ -23,6 +25,7 @@ from models.time_off import (
     TimeOffRequest,
     TimeUnitEnum,
 )
+from schemas.pagination import PaginatedResponse
 from schemas.time_off import (
     AbsenceTotals,
     BalanceTotals,
@@ -34,6 +37,7 @@ from schemas.time_off import (
     StatusSummary,
     TimeOffBalanceRead,
     TimeOffRequestCreate,
+    TimeOffRequestListRead,
     TimeOffRequestRead,
     TimeOffRequestUpdate,
 )
@@ -285,11 +289,18 @@ def _assert_can_review_request(
         )
 
 
-@router.get("/requests", response_model=list[TimeOffRequestRead])
+@router.get(
+    "/requests",
+    response_model=list[TimeOffRequestRead] | PaginatedResponse[TimeOffRequestListRead],
+)
 def list_requests(
     request_status: str | None = Query(default=None, alias="status"),
     employee_id: int | None = None,
     team_only: bool = False,
+    status_scope: Literal["pending", "history"] | None = Query(default=None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
@@ -302,7 +313,11 @@ def list_requests(
         if team_only:
             scoped_ids.discard(current_employee.employee_id)
         if not scoped_ids:
-            return []
+            if not with_meta:
+                return []
+            return PaginatedResponse[TimeOffRequestListRead](
+                items=[], total=0, skip=skip, limit=limit, has_more=False
+            )
     else:
         scoped_ids = None
 
@@ -312,18 +327,62 @@ def list_requests(
             detail="You are not allowed to query this employee",
         )
 
-    query = select(TimeOffRequest)
+    filters = []
 
     if scoped_ids is not None:
-        query = query.where(TimeOffRequest.employee_id.in_(scoped_ids))
+        filters.append(TimeOffRequest.employee_id.in_(scoped_ids))
 
     if employee_id is not None:
-        query = query.where(TimeOffRequest.employee_id == employee_id)
+        filters.append(TimeOffRequest.employee_id == employee_id)
 
     if request_status is not None:
-        query = query.where(TimeOffRequest.status == request_status)
+        filters.append(TimeOffRequest.status == request_status)
+    elif status_scope == "pending":
+        filters.append(TimeOffRequest.status == RequestStatusEnum.PENDING.value)
+    elif status_scope == "history":
+        filters.append(TimeOffRequest.status != RequestStatusEnum.PENDING.value)
 
-    return db.exec(query.order_by(TimeOffRequest.created_at.desc())).all()
+    if not with_meta:
+        query = select(TimeOffRequest)
+        if filters:
+            query = query.where(*filters)
+        return db.exec(query.order_by(TimeOffRequest.created_at.desc(), TimeOffRequest.request_id.desc())).all()
+
+    query = select(TimeOffRequest, Employees).join(Employees, Employees.employee_id == TimeOffRequest.employee_id)
+    if filters:
+        query = query.where(*filters)
+    if status_scope == "history":
+        query = query.order_by(TimeOffRequest.start_date.desc(), TimeOffRequest.request_id.desc())
+    else:
+        query = query.order_by(TimeOffRequest.created_at.desc(), TimeOffRequest.request_id.desc())
+    rows = db.exec(query.offset(skip).limit(limit)).all()
+    items = [
+        TimeOffRequestListRead.model_validate(
+            request,
+            update={
+                "employee_name": employee.display_name or employee.email or "Unknown",
+                "department": employee.department,
+            },
+        )
+        for request, employee in rows
+    ]
+
+    count_query = (
+        select(func.count())
+        .select_from(TimeOffRequest)
+        .join(Employees, Employees.employee_id == TimeOffRequest.employee_id)
+    )
+    if filters:
+        count_query = count_query.where(*filters)
+    total = db.exec(count_query).one()
+
+    return PaginatedResponse[TimeOffRequestListRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 @router.get("/requests/{request_id}", response_model=TimeOffRequestRead)
@@ -457,7 +516,7 @@ def update_request(
 
     # Build effective values by merging payload with existing request
     effective_absence_type = payload.absence_type.value if payload.absence_type else request.absence_type
-    effective_time_unit = payload.time_unit if payload.time_unit else TimeUnitEnum(request.time_unit)
+    effective_time_unit = payload.time_unit or TimeUnitEnum(request.time_unit)
     effective_start_date = payload.start_date or datetime.strptime(request.start_date, "%Y-%m-%d").date()  # noqa: DTZ007
     effective_end_date = payload.end_date or datetime.strptime(request.end_date, "%Y-%m-%d").date()  # noqa: DTZ007
 
@@ -467,10 +526,7 @@ def update_request(
     else:
         effective_start_time = _parse_time_value(request.start_time)
 
-    if payload.end_time is not None:
-        effective_end_time = payload.end_time
-    else:
-        effective_end_time = _parse_time_value(request.end_time)
+    effective_end_time = payload.end_time if payload.end_time is not None else _parse_time_value(request.end_time)
 
     effective_reason = payload.reason if payload.reason is not None else request.reason
 
@@ -524,10 +580,10 @@ def update_request(
         or old_year != new_year
     )
 
-    if needs_balance_update and request.status in (
+    if needs_balance_update and request.status in {
         RequestStatusEnum.PENDING.value,
         RequestStatusEnum.APPROVED.value,
-    ):
+    }:
         # Reverse old balance
         old_balance = _get_or_create_balance(db, request.employee_id, old_absence_type, old_year)
         if request.status == RequestStatusEnum.PENDING.value:

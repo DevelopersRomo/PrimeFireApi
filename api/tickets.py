@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -343,6 +343,11 @@ def get_tickets(
     assigned_to: int | None = Query(None, description="Filter by assigned employee ID"),
     created_by: int | None = Query(None, description="Filter by creator employee ID"),
     search: str | None = Query(None, description="Search in title and description"),
+    status_scope: str | None = Query(None, pattern="^(active|inactive|open)$"),
+    dashboard_status_scope: str | None = Query(None, pattern="^open$"),
+    involves_employee_id: int | None = Query(None),
+    created_from: date | None = Query(None),
+    created_to: date | None = Query(None),
     # Pagination
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(1000, ge=1, le=1000, description="Maximum number of records to return"),
@@ -384,6 +389,11 @@ def get_tickets(
                 status_code=403,
                 detail=f"You do not have permission to view tickets created by employee {created_by}",
             )
+        if involves_employee_id is not None and involves_employee_id not in allowed_ids:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You do not have permission to view tickets involving employee {involves_employee_id}",
+            )
 
     # Apply user-provided filters
     if status:
@@ -399,12 +409,30 @@ def get_tickets(
     if search:
         search_filter = f"%{search}%"
         filters.append(or_(Tickets.title.ilike(search_filter), Tickets.description.ilike(search_filter)))
+    if involves_employee_id is not None:
+        filters.append(or_(Tickets.created_by == involves_employee_id, Tickets.assigned_to == involves_employee_id))
+    if status_scope == "active":
+        filters.append(Tickets.status.notin_([TicketStatus.CLOSED, TicketStatus.INACTIVE]))
+    elif status_scope == "inactive":
+        filters.append(Tickets.status.in_([TicketStatus.CLOSED, TicketStatus.INACTIVE]))
+    elif status_scope == "open":
+        filters.append(
+            Tickets.status.in_([TicketStatus.TODO, TicketStatus.ACTIVE, TicketStatus.IN_PROGRESS, TicketStatus.ON_HOLD])
+        )
+    if dashboard_status_scope == "open":
+        filters.append(
+            Tickets.status.in_([TicketStatus.TODO, TicketStatus.ACTIVE, TicketStatus.IN_PROGRESS, TicketStatus.ON_HOLD])
+        )
+    if created_from:
+        filters.append(Tickets.created_at >= datetime.combine(created_from, datetime.min.time()))
+    if created_to:
+        filters.append(Tickets.created_at <= datetime.combine(created_to, datetime.max.time()))
 
     if filters:
         query = query.where(and_(*filters))
 
     # Apply ordering (newest first) and pagination
-    query = query.order_by(Tickets.created_at.desc()).offset(skip).limit(limit)
+    query = query.order_by(Tickets.created_at.desc(), Tickets.ticket_id.desc()).offset(skip).limit(limit)
 
     tickets = db.exec(query).all()
     items = [ticket_to_schema(ticket) for ticket in tickets]

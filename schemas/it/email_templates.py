@@ -40,3 +40,10 @@ class EmailCustomerTemplateRead(EmailTemplateBase):
     created_at: datetime
     updated_at: datetime
     logo_path: str | None = None
+
+
+class EmailTemplateRowRead(BaseModel):
+    kind: str
+    customer_id: int | None = None
+    configured: bool
+    template: EmailDefaultRead | EmailCustomerTemplateRead | None = None

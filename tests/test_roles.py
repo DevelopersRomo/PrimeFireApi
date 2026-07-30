@@ -1,9 +1,15 @@
 """Tests for Roles API endpoints."""
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from models.employees import Roles
+
+
+@pytest.fixture(autouse=True)
+def _grant_role_mutations(permission_override) -> None:
+    permission_override("roles", {"can_create", "can_edit", "can_delete"})
 
 
 class TestRolesAPI:
@@ -48,6 +54,37 @@ class TestRolesAPI:
         role_names = [r["role_name"] for r in data]
         assert "Role 1" in role_names
         assert "Role 2" in role_names
+
+    def test_get_roles_metadata_is_ordered_and_truthful(
+        self, client: TestClient, db_session: Session, auth_headers: dict
+    ) -> None:
+        db_session.add_all([Roles(role_name="Zulu"), Roles(role_name="Alpha")])
+        db_session.commit()
+
+        response = client.get("/roles?with_meta=true&skip=0&limit=1", headers=auth_headers)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] == 2
+        assert payload["has_more"] is True
+        assert payload["items"][0]["role_name"] == "Alpha"
+
+    @pytest.mark.parametrize(
+        ("method", "path", "payload"),
+        [
+            ("post", "/roles", {"role_name": "Denied"}),
+            ("put", "/roles/999", {"role_name": "Denied"}),
+            ("delete", "/roles/999", None),
+        ],
+    )
+    def test_role_mutations_require_matching_permission(
+        self, client: TestClient, auth_headers: dict, permission_override, method, path, payload
+    ) -> None:
+        permission_override("roles", set())
+
+        response = client.request(method, path, json=payload, headers=auth_headers)
+
+        assert response.status_code == 403
 
     def test_get_role(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
         """Test GET /roles/{role_id}."""

@@ -127,3 +127,8 @@ class InventoryStock(SQLModel):
     total_adjustment: Decimal = Decimal(0)
     stock_on_hand: Decimal = Decimal(0)
     status: str | None = None
+
+
+class InventoryStockMetrics(SQLModel):
+    total_on_hand: Decimal = Decimal(0)
+    low_stock_count: int = 0

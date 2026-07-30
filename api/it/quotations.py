@@ -1,19 +1,23 @@
-from datetime import date, datetime
+from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import case, func
+from sqlalchemy import select as sa_select
 from sqlmodel import Session, or_, select
 
 from api.dependencies import require_module_permission
 from api.it.dependencies import get_current_employee_id, get_tenant_id
 from bd.dependencies import get_db
+from core.datetime_utils import utcnow
 from models.it.documents import ITQuotationDocuments
 from models.it.quotations import (
     ITPaymentSchedule,
     ITQuotationItems,
     ITQuotationNotes,
-    ITQuotations,
     ITQuotationStatusHistory,
     ITQuotationTerms,
+    ITQuotations,
 )
 from schemas.it.documents import ItQuotationDocumentRead
 from schemas.it.quotations import (
@@ -23,22 +27,27 @@ from schemas.it.quotations import (
     ItQuotationDetail,
     ItQuotationItemCreate,
     ItQuotationItemRead,
-    ItQuotationItemsReorder,
     ItQuotationItemUpdate,
+    ItQuotationItemsReorder,
     ItQuotationNoteCreate,
     ItQuotationNoteRead,
     ItQuotationRead,
+    ItQuotationReportMetrics,
+    ItQuotationReportResponse,
     ItQuotationStatusChange,
     ItQuotationTermsPayload,
     ItQuotationUpdate,
     ItStatusHistoryRead,
 )
+from schemas.pagination import PaginatedResponse
 from services.it import quote_service
 from services.it.email_service import send_quotation_email
 from services.it.pdf_service import generate_quotation_pdf
 from services.it.quote_calculator import calculate_line
 
 router = APIRouter()
+
+SENT_REPORT_STATUSES = ("SENT", "VIEWED", "ACCEPTED", "REJECTED")
 
 
 def _get_quotation(db: Session, tenant_id: int, quotation_id: int) -> ITQuotations:
@@ -71,7 +80,38 @@ def _to_detail(db: Session, quotation: ITQuotations) -> ItQuotationDetail:
 # ----------------------------
 # Quotation CRUD
 # ----------------------------
-@router.get("/", response_model=list[ItQuotationRead])
+def _quotation_filters(
+    tenant_id: int,
+    status_filter: str | None = None,
+    customer_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    search: str | None = None,
+    statuses: tuple[str, ...] | None = None,
+) -> list:
+    filters = [ITQuotations.tenant_id == tenant_id]
+    if status_filter:
+        filters.append(ITQuotations.status == status_filter)
+    if statuses:
+        filters.append(ITQuotations.status.in_(statuses))  # type: ignore[attr-defined]
+    if customer_id is not None:
+        filters.append(ITQuotations.customer_id == customer_id)
+    if date_from:
+        filters.append(ITQuotations.quote_date >= date_from)
+    if date_to:
+        filters.append(ITQuotations.quote_date <= date_to)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                ITQuotations.quotation_number.ilike(pattern),  # type: ignore[attr-defined]
+                ITQuotations.customer_name_snapshot.ilike(pattern),  # type: ignore[attr-defined]
+            )
+        )
+    return filters
+
+
+@router.get("/", response_model=list[ItQuotationRead] | PaginatedResponse[ItQuotationRead])
 def list_quotations(
     status_filter: str | None = Query(default=None, alias="status"),
     customer_id: int | None = Query(default=None),
@@ -80,29 +120,100 @@ def list_quotations(
     search: str | None = Query(default=None),
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
+    with_meta: bool = Query(False),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id),
     _perm=Depends(require_module_permission("it_quotations", "can_view")),
 ):
-    statement = select(ITQuotations).where(ITQuotations.tenant_id == tenant_id)
-    if status_filter:
-        statement = statement.where(ITQuotations.status == status_filter)
-    if customer_id:
-        statement = statement.where(ITQuotations.customer_id == customer_id)
-    if date_from:
-        statement = statement.where(ITQuotations.quote_date >= date_from)
-    if date_to:
-        statement = statement.where(ITQuotations.quote_date <= date_to)
-    if search:
-        pattern = f"%{search}%"
-        statement = statement.where(
-            or_(
-                ITQuotations.quotation_number.ilike(pattern),  # type: ignore[attr-defined]
-                ITQuotations.customer_name_snapshot.ilike(pattern),  # type: ignore[attr-defined]
-            )
+    filters = _quotation_filters(
+        tenant_id,
+        status_filter,
+        customer_id,
+        date_from,
+        date_to,
+        search,
+    )
+    statement = (
+        select(ITQuotations)
+        .where(*filters)
+        .order_by(ITQuotations.created_at.desc(), ITQuotations.quotation_id.desc())  # type: ignore[attr-defined]
+        .offset(skip)
+        .limit(limit)
+    )
+    quotation_rows = db.exec(statement).all()
+    if not with_meta:
+        return quotation_rows
+
+    items = [ItQuotationRead.model_validate(row, from_attributes=True) for row in quotation_rows]
+    total = db.exec(select(func.count()).select_from(ITQuotations).where(*filters)).one()
+    return PaginatedResponse[ItQuotationRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
+
+
+@router.get("/report", response_model=ItQuotationReportResponse)
+def get_sent_quotation_report(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+    _perm=Depends(require_module_permission("it_dashboard", "can_view")),
+):
+    filters = _quotation_filters(
+        tenant_id,
+        date_from=date_from,
+        date_to=date_to,
+        statuses=SENT_REPORT_STATUSES,
+    )
+    quotation_rows = db.exec(
+        select(ITQuotations)
+        .where(*filters)
+        .order_by(ITQuotations.quote_date.desc(), ITQuotations.quotation_id.desc())  # type: ignore[attr-defined]
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    items = [ItQuotationRead.model_validate(row, from_attributes=True) for row in quotation_rows]
+    aggregate = db.execute(
+        sa_select(
+            func.count(),
+            func.coalesce(func.sum(ITQuotations.initial_total), 0),
+            func.coalesce(func.sum(ITQuotations.monthly_recurring_subtotal), 0),
+            func.coalesce(func.sum(ITQuotations.annual_recurring_subtotal), 0),
+            func.sum(case((ITQuotations.status == "SENT", 1), else_=0)),
+            func.sum(case((ITQuotations.status == "VIEWED", 1), else_=0)),
+            func.sum(case((ITQuotations.status == "ACCEPTED", 1), else_=0)),
+            func.sum(case((ITQuotations.status == "REJECTED", 1), else_=0)),
         )
-    statement = statement.order_by(ITQuotations.created_at.desc()).offset(skip).limit(limit)  # type: ignore[attr-defined]
-    return db.exec(statement).all()
+        .select_from(ITQuotations)
+        .where(*filters)
+    ).one()
+    total = aggregate[0]
+    accepted = aggregate[6] or 0
+    metrics = ItQuotationReportMetrics(
+        sent_count=total,
+        total_amount=aggregate[1] or Decimal(0),
+        monthly_recurring=aggregate[2] or Decimal(0),
+        annual_recurring=aggregate[3] or Decimal(0),
+        conversion_rate=Decimal(accepted * 100) / Decimal(total) if total else Decimal(0),
+        sent_status_count=aggregate[4] or 0,
+        viewed_status_count=aggregate[5] or 0,
+        accepted_status_count=accepted,
+        rejected_status_count=aggregate[7] or 0,
+    )
+    return ItQuotationReportResponse(
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+        metrics=metrics,
+    )
 
 
 @router.get("/{quotation_id}", response_model=ItQuotationDetail)
@@ -150,9 +261,11 @@ def update_quotation(
             setattr(quotation, key, value)
 
     if changes:
-        quotation.updated_at = datetime.utcnow()
+        quotation.updated_at = utcnow()
         if "contact_id" in data:
-            quote_service._snapshot_customer(db, quotation, quotation.customer_id, quotation.contact_id)
+            quote_service._snapshot_customer(  # noqa: SLF001
+                db, quotation, quotation.customer_id, quotation.contact_id
+            )
         db.add(quotation)
         quote_service.log_event(db, quotation, f"Updated {', '.join(changes)}"[:500], employee_id)
         db.commit()
@@ -435,7 +548,7 @@ async def send_quotation(
     _perm=Depends(require_module_permission("it_quotations", "can_edit")),
 ):
     quotation = _get_quotation(db, tenant_id, quotation_id)
-    if quotation.status not in ("DRAFT",):
+    if quotation.status != "DRAFT":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Quotation in status {quotation.status} cannot be sent",

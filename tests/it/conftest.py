@@ -12,6 +12,7 @@ IT_MODULE_KEYS = (
     "it_licenses",
     "it_quotations",
     "it_templates",
+    "it_email_templates",
     "it_documents",
 )
 

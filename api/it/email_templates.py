@@ -1,24 +1,26 @@
 import os
 import uuid
-from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import require_module_permission
 from api.it.dependencies import get_tenant_id
 from bd.dependencies import get_db
 from core.config import settings
+from core.datetime_utils import utcnow
+from models.customers import Customers
 from models.it.email_templates import ITEmailCustomerTemplate, ITEmailDefault
 from schemas.it.email_templates import (
-    EmailCustomerTemplateCreate,
     EmailCustomerTemplateRead,
     EmailDefaultRead,
     EmailTemplateBase,
-    EmailTemplateUpdate,
+    EmailTemplateRowRead,
 )
+from schemas.pagination import PaginatedResponse
 
 ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
@@ -92,7 +94,7 @@ def upsert_default_template(
     else:
         for key, value in payload.model_dump().items():
             setattr(template, key, value)
-        template.updated_at = datetime.utcnow()
+        template.updated_at = utcnow()
 
     db.add(template)
     db.commit()
@@ -114,7 +116,7 @@ def upload_default_logo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
 
     template.logo_path = _save_logo(logo_file, template.logo_path)
-    template.updated_at = datetime.utcnow()
+    template.updated_at = utcnow()
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -139,6 +141,86 @@ def get_default_logo(
 # ---------------------------------------------------------------------------
 # Per-customer overrides
 # ---------------------------------------------------------------------------
+
+
+@router.get("/rows", response_model=PaginatedResponse[EmailTemplateRowRead])
+def list_template_rows(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+    _perm=Depends(require_module_permission("it_email_templates", "can_view")),
+):
+    customer_total = db.exec(
+        select(func.count())
+        .select_from(ITEmailCustomerTemplate)
+        .where(ITEmailCustomerTemplate.tenant_id == tenant_id)
+    ).one()
+    total = customer_total + 1
+    rows: list[EmailTemplateRowRead] = []
+
+    customer_skip = max(skip - 1, 0)
+    customer_limit = limit
+    if skip == 0:
+        default_template = db.exec(
+            select(ITEmailDefault).where(ITEmailDefault.tenant_id == tenant_id)
+        ).first()
+        rows.append(
+            EmailTemplateRowRead(
+                kind="default",
+                configured=default_template is not None,
+                template=(
+                    EmailDefaultRead.model_validate(default_template, from_attributes=True)
+                    if default_template
+                    else None
+                ),
+            )
+        )
+        customer_limit -= 1
+
+    if customer_limit > 0:
+        customer_templates = db.exec(
+            select(ITEmailCustomerTemplate)
+            .where(ITEmailCustomerTemplate.tenant_id == tenant_id)
+            .order_by(
+                ITEmailCustomerTemplate.customer_id,
+                ITEmailCustomerTemplate.template_id,
+            )
+            .offset(customer_skip)
+            .limit(customer_limit)
+        ).all()
+        rows.extend(
+            EmailTemplateRowRead(
+                kind="customer",
+                customer_id=template.customer_id,
+                configured=True,
+                template=EmailCustomerTemplateRead.model_validate(template, from_attributes=True),
+            )
+            for template in customer_templates
+        )
+
+    return PaginatedResponse[EmailTemplateRowRead](
+        items=rows,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(rows) < total,
+    )
+
+
+@router.get("/customer-ids", response_model=list[int])
+def list_configured_customer_ids(
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+    _perm=Depends(require_module_permission("it_email_templates", "can_view")),
+):
+    return list(
+        db.exec(
+            select(ITEmailCustomerTemplate.customer_id)
+            .where(ITEmailCustomerTemplate.tenant_id == tenant_id)
+            .order_by(ITEmailCustomerTemplate.customer_id)
+        ).all()
+    )
 
 
 @router.get("/customer", response_model=list[EmailCustomerTemplateRead])
@@ -177,6 +259,8 @@ def upsert_customer_template(
     tenant_id: int = Depends(get_tenant_id),
     _perm=Depends(require_module_permission("it_email_templates", "can_edit")),
 ):
+    if db.get(Customers, customer_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     template = db.exec(
         select(ITEmailCustomerTemplate).where(
             ITEmailCustomerTemplate.tenant_id == tenant_id,
@@ -193,7 +277,7 @@ def upsert_customer_template(
     else:
         for key, value in payload.model_dump().items():
             setattr(template, key, value)
-        template.updated_at = datetime.utcnow()
+        template.updated_at = utcnow()
 
     db.add(template)
     db.commit()
@@ -219,7 +303,7 @@ def upload_customer_logo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
 
     template.logo_path = _save_logo(logo_file, template.logo_path)
-    template.updated_at = datetime.utcnow()
+    template.updated_at = utcnow()
     db.add(template)
     db.commit()
     db.refresh(template)

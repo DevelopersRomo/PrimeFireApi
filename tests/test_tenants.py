@@ -1,7 +1,13 @@
+import pytest
 from fastapi import status
 
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
+
+
+@pytest.fixture(autouse=True)
+def _grant_tenant_mutations(permission_override) -> None:
+    permission_override("tenants", {"can_create", "can_edit", "can_delete"})
 
 
 def test_list_all_tenants(client, db_session, auth_headers):
@@ -21,6 +27,75 @@ def test_list_all_tenants(client, db_session, auth_headers):
     names = [t["name"] for t in data]
     assert "Tenant 1" in names
     assert "Tenant 2" in names
+
+
+def test_tenant_lists_metadata_are_truthful_and_stably_ordered(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            Tenants(name="Zulu Tenant", db_connection_key="z"),
+            Tenants(name="Alpha Tenant", db_connection_key="a"),
+            TenantEmployees(email="later@example.com", tenant_id=None),
+            TenantEmployees(email="earlier@example.com", tenant_id=None),
+        ]
+    )
+    db_session.commit()
+
+    tenants = client.get("/tenants/list-all?with_meta=true&skip=0&limit=1", headers=auth_headers)
+    pending = client.get("/tenants/pending-users?with_meta=true&skip=0&limit=1", headers=auth_headers)
+
+    assert tenants.status_code == 200
+    assert tenants.json()["total"] == 2
+    assert tenants.json()["items"][0]["name"] == "Alpha Tenant"
+    assert pending.status_code == 200
+    assert pending.json()["total"] == 2
+    assert pending.json()["has_more"] is True
+    assert pending.json()["items"][0]["email"] == "earlier@example.com"
+
+
+def test_logos_metadata_filters_tenant_and_preserves_public_read(client, db_session):
+    first = Tenants(name="First", db_connection_key="first")
+    second = Tenants(name="Second", db_connection_key="second")
+    db_session.add_all([first, second])
+    db_session.commit()
+    db_session.add_all(
+        [
+            TenantLogos(tenant_id=first.tenant_id, title="Zulu", path="/z", url="z.example"),
+            TenantLogos(tenant_id=first.tenant_id, title="Alpha", path="/a", url="a.example"),
+            TenantLogos(tenant_id=second.tenant_id, title="Other", path="/o", url="o.example"),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/tenants/logos?tenant_id={first.tenant_id}&with_meta=true&limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["items"][0]["title"] == "Alpha"
+    assert payload["has_more"] is True
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("post", "/tenants/", {"name": "Denied", "db_connection_key": "denied"}),
+        ("post", "/tenants/approve-user", {"tenant_employee_id": 1, "tenant_id": 1}),
+        ("post", "/tenants/approve", {"tenant_id": 1}),
+        ("post", "/tenants/logos", {"tenant_id": 1, "title": "Denied", "path": "/d", "url": "d"}),
+        ("put", "/tenants/1", {"name": "Denied"}),
+        ("put", "/tenants/logos/1", {"title": "Denied"}),
+        ("delete", "/tenants/1", None),
+        ("delete", "/tenants/logos/1", None),
+    ],
+)
+def test_tenant_mutations_require_matching_permission(
+    client, auth_headers, permission_override, method, path, payload
+):
+    permission_override("tenants", set())
+
+    response = client.request(method, path, headers=auth_headers, json=payload)
+
+    assert response.status_code == 403
 
 
 def test_create_tenant(client, db_session, auth_headers):

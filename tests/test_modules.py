@@ -6,6 +6,11 @@ from models.employees import Roles
 from models.modules import Modules
 
 
+@pytest.fixture(autouse=True)
+def _grant_module_mutations(permission_override) -> None:
+    permission_override("modules", {"can_create", "can_edit", "can_delete"})
+
+
 @pytest.fixture
 def sample_module_data():
     """Sample module data for testing."""
@@ -106,6 +111,59 @@ class TestModules:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
+
+    def test_get_modules_metadata_filters_inactive_and_includes_parent_name(
+        self, client: TestClient, auth_headers: dict, db_session: Session
+    ) -> None:
+        parent = Modules(module_name="Parent", module_key="parent", display_order=1, is_active=True)
+        db_session.add(parent)
+        db_session.commit()
+        db_session.refresh(parent)
+        db_session.add_all(
+            [
+                Modules(
+                    module_name="Child",
+                    module_key="child",
+                    display_order=2,
+                    is_active=True,
+                    parent_module_id=parent.module_id,
+                ),
+                Modules(module_name="Inactive", module_key="inactive", display_order=3, is_active=False),
+            ]
+        )
+        db_session.commit()
+
+        response = client.get("/modules?with_meta=true&skip=1&limit=1", headers=auth_headers)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] == 2
+        assert payload["items"][0]["module_name"] == "Child"
+        assert payload["items"][0]["parent_module_name"] == "Parent"
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("post", "/modules/"),
+            ("put", "/modules/999"),
+            ("delete", "/modules/999"),
+            ("patch", "/modules/999/toggle-active"),
+        ],
+    )
+    def test_module_mutations_require_matching_permission(
+        self,
+        client: TestClient,
+        auth_headers: dict,
+        sample_module_data: dict,
+        permission_override,
+        method: str,
+        path: str,
+    ) -> None:
+        permission_override("modules", set())
+
+        response = client.request(method, path, json=sample_module_data, headers=auth_headers)
+
+        assert response.status_code == 403
 
     @pytest.mark.parametrize(
         ("endpoint", "is_active"),

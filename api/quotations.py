@@ -1,8 +1,10 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, or_
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from models.quotations import Quotations
 from schemas.pagination import PaginatedResponse
@@ -30,7 +32,7 @@ router = APIRouter(
 def create_quotation(
     quotation: QuotationCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_create")),
 ):
     db_quotation = Quotations(**quotation.model_dump(by_alias=False))
 
@@ -50,18 +52,71 @@ def get_quotations(
     skip: int = Query(0, ge=0),
     limit: int = Query(1000, ge=1, le=1000),
     with_meta: bool = Query(False),
+    search: str | None = Query(None),
+    quote_from: date | None = Query(None),
+    quote_to: date | None = Query(None),
+    created_from: date | None = Query(None),
+    created_to: date | None = Query(None),
+    sort_field: str = Query(
+        "created_at",
+        pattern="^(id|customer_id|quote_date|expiration_date|subtotal|tax|discount|total|status|created_at)$",
+    ),
+    sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    statement = (
-        select(Quotations).order_by(Quotations.created_at.desc(), Quotations.id.desc()).offset(skip).limit(limit)
-    )
+    filters = []
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        searchable_columns = [
+            Quotations.id,
+            Quotations.customer_id,
+            Quotations.quote_date,
+            Quotations.expiration_date,
+            Quotations.subtotal,
+            Quotations.tax,
+            Quotations.discount,
+            Quotations.total,
+            Quotations.status,
+            Quotations.notes,
+            Quotations.created_at,
+        ]
+        filters.append(or_(*[func.lower(cast(column, String)).like(term) for column in searchable_columns]))
+    if quote_from:
+        filters.append(Quotations.quote_date >= quote_from)
+    if quote_to:
+        filters.append(Quotations.quote_date < quote_to + timedelta(days=1))
+    if created_from:
+        filters.append(Quotations.created_at >= created_from)
+    if created_to:
+        filters.append(Quotations.created_at < created_to + timedelta(days=1))
+
+    sort_columns = {
+        "id": Quotations.id,
+        "customer_id": Quotations.customer_id,
+        "quote_date": Quotations.quote_date,
+        "expiration_date": Quotations.expiration_date,
+        "subtotal": Quotations.subtotal,
+        "tax": Quotations.tax,
+        "discount": Quotations.discount,
+        "total": Quotations.total,
+        "status": Quotations.status,
+        "created_at": Quotations.created_at,
+    }
+    sort_column = sort_columns[sort_field]
+    order = sort_column.asc() if sort_direction == "asc" else sort_column.desc()
+    tie_breaker = Quotations.id.asc() if sort_direction == "asc" else Quotations.id.desc()
+
+    statement = select(Quotations).where(*filters).order_by(order)
+    if sort_field != "id":
+        statement = statement.order_by(tie_breaker)
+    statement = statement.offset(skip).limit(limit)
     items = db.exec(statement).all()
 
     if not with_meta:
         return items
 
-    total = db.exec(select(func.count()).select_from(Quotations)).one()
+    total = db.exec(select(func.count()).select_from(Quotations).where(*filters)).one()
     return PaginatedResponse[QuotationRead](
         items=items,
         total=total,
@@ -101,7 +156,7 @@ def update_quotation(
     quotation_id: int,
     quotation: QuotationCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_edit")),
 ):
     db_quotation = db.get(Quotations, quotation_id)
 
@@ -132,7 +187,7 @@ def patch_quotation(
     quotation_id: int,
     quotation: QuotationUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_edit")),
 ):
     db_quotation = db.get(Quotations, quotation_id)
 
@@ -162,7 +217,7 @@ def patch_quotation(
 def delete_quotation(
     quotation_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_delete")),
 ):
     quotation = db.get(Quotations, quotation_id)
 

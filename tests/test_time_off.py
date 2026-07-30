@@ -43,6 +43,7 @@ def emp_user(db_session: Session, emp_manager: Employees):
     emp = Employees(
         email="user@example.com",
         display_name="Standard User",
+        department="Engineering",
         manager_employee_id=emp_manager.employee_id,
     )
     db_session.add(emp)
@@ -134,6 +135,82 @@ def test_list_requests_manager(
     data = response.json()
     assert len(data) >= 1
     assert any(r["request_id"] == time_off_request.request_id for r in data)
+
+
+def test_list_team_requests_metadata_has_display_data_and_truthful_scope(
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_manager: Employees,
+    emp_user: Employees,
+    emp_other: Employees,
+    time_off_request: TimeOffRequest,
+):
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    db_session.add(
+        TimeOffRequest(
+            employee_id=emp_other.employee_id,
+            absence_type=AbsenceTypeEnum.SICK.value,
+            status=RequestStatusEnum.PENDING.value,
+            time_unit=TimeUnitEnum.FULL_DAY.value,
+            start_date="2026-08-01",
+            end_date="2026-08-01",
+            total_days="1.00",
+            created_at=now_str,
+            updated_at=now_str,
+        )
+    )
+    db_session.commit()
+    override_deps(emp_manager, {})
+
+    response = client.get(
+        "/api/v1/requests?team_only=true&status_scope=pending&with_meta=true&skip=0&limit=1"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["has_more"] is False
+    assert payload["items"][0]["request_id"] == time_off_request.request_id
+    assert payload["items"][0]["employee_name"] == "Standard User"
+    assert payload["items"][0]["department"] == "Engineering"
+
+
+def test_list_team_history_metadata_excludes_pending_and_orders_stably(
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_manager: Employees,
+    emp_user: Employees,
+):
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    for request_status in [RequestStatusEnum.APPROVED.value, RequestStatusEnum.REJECTED.value]:
+        db_session.add(
+            TimeOffRequest(
+                employee_id=emp_user.employee_id,
+                absence_type=AbsenceTypeEnum.VACATION.value,
+                status=request_status,
+                time_unit=TimeUnitEnum.FULL_DAY.value,
+                start_date="2026-09-01",
+                end_date="2026-09-01",
+                total_days="1.00",
+                created_at=now_str,
+                updated_at=now_str,
+            )
+        )
+    db_session.commit()
+    override_deps(emp_manager, {})
+
+    response = client.get(
+        "/api/v1/requests?team_only=true&status_scope=history&with_meta=true&skip=0&limit=10"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    ids = [item["request_id"] for item in payload["items"]]
+    assert ids == sorted(ids, reverse=True)
+    assert all(item["status"] != "pending" for item in payload["items"])
 
 
 def test_list_requests_user(override_deps, client: TestClient, emp_user: Employees, time_off_request: TimeOffRequest):

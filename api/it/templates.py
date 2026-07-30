@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import require_module_permission
@@ -12,6 +13,7 @@ from bd.dependencies import get_db
 from core.config import settings
 from models.it.templates import ITPdfTemplates
 from schemas.it.templates import ItPdfTemplateCreate, ItPdfTemplateRead, ItPdfTemplateUpdate
+from schemas.pagination import PaginatedResponse
 
 # Upload directory per environment. Mirrors customer_attachments /
 # product_attachments so behaviour is consistent across modules.
@@ -46,17 +48,38 @@ def _clear_default(db: Session, tenant_id: int) -> None:
         db.add(template)
 
 
-@router.get("/", response_model=list[ItPdfTemplateRead])
+@router.get("/", response_model=list[ItPdfTemplateRead] | PaginatedResponse[ItPdfTemplateRead])
 def list_templates(
     include_inactive: bool = Query(default=False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(24, ge=1, le=1000),
+    with_meta: bool = Query(False),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id),
     _perm=Depends(require_module_permission("it_templates", "can_view")),
 ):
-    statement = select(ITPdfTemplates).where(ITPdfTemplates.tenant_id == tenant_id)
+    filters = [ITPdfTemplates.tenant_id == tenant_id]
     if not include_inactive:
-        statement = statement.where(ITPdfTemplates.is_active == True)  # noqa: E712
-    return db.exec(statement.order_by(ITPdfTemplates.name)).all()
+        filters.append(ITPdfTemplates.is_active == True)  # noqa: E712
+    statement = select(ITPdfTemplates).where(*filters).order_by(
+        ITPdfTemplates.name,
+        ITPdfTemplates.template_id,
+    )
+    if with_meta:
+        statement = statement.offset(skip).limit(limit)
+    template_rows = db.exec(statement).all()
+    if not with_meta:
+        return template_rows
+
+    items = [ItPdfTemplateRead.model_validate(row, from_attributes=True) for row in template_rows]
+    total = db.exec(select(func.count()).select_from(ITPdfTemplates).where(*filters)).one()
+    return PaginatedResponse[ItPdfTemplateRead](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 @router.get("/{template_id}", response_model=ItPdfTemplateRead)

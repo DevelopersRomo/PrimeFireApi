@@ -2,8 +2,8 @@ import pytest
 from sqlmodel import select
 
 from models.employees import EmployeeRoles, Employees, Roles
-from models.products import Products
 from models.inventory import Warehouses
+from models.products import Products
 from tests.conftest import create_test_record
 
 
@@ -14,9 +14,20 @@ def disable_notifications(monkeypatch):
     monkeypatch.setattr(settings, "SEND_NOTIFICATIONS", False, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def inventory_permissions(permission_override):
+    permission_override("inventory", {"can_create"})
+
+
 @pytest.fixture
 def product(db_session):
-    return create_test_record(db_session, Products, name="Test Product", code="TP-001")
+    return create_test_record(
+        db_session,
+        Products,
+        name="Test Product",
+        code="TP-001",
+        type="Product",
+    )
 
 
 @pytest.fixture
@@ -61,9 +72,7 @@ def request_output(client, auth_headers, product, warehouse, quantity=4):
     )
 
 
-def test_output_without_approver_roles_creates_pending_request(
-    client, auth_headers, db_session, product, warehouse
-):
+def test_output_without_approver_roles_creates_pending_request(client, auth_headers, db_session, product, warehouse):
     seed_stock(client, auth_headers, product, warehouse)
 
     response = request_output(client, auth_headers, product, warehouse)

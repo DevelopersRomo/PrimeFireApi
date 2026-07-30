@@ -859,7 +859,7 @@ def list_punches_admin(
     query = select(TimeSheetPunch)
     if filters:
         query = query.where(and_(*filters))
-    query = query.order_by(TimeSheetPunch.clock_in_at.desc()).offset(skip).limit(limit)
+    query = query.order_by(TimeSheetPunch.clock_in_at.desc(), TimeSheetPunch.punch_id.desc()).offset(skip).limit(limit)
     punches = db.exec(query).all()
 
     # Fetch employee and customer names

@@ -139,6 +139,26 @@ def create_punch(
     return punch
 
 
+def test_admin_pagination_uses_stable_punch_id_tiebreaker(
+    client, auth_headers, db_session: Session, test_customer: Customers
+):
+    clock_in = "2026-01-01 12:00:00"
+    first = create_punch(db_session, 1, test_customer.customer_id, "closed", clock_in=clock_in)
+    second = create_punch(db_session, 1, test_customer.customer_id, "closed", clock_in=clock_in)
+
+    first_page = client.get("/api/v1/timesheet/admin?with_meta=true&limit=1", headers=auth_headers)
+    second_page = client.get("/api/v1/timesheet/admin?with_meta=true&limit=1&skip=1", headers=auth_headers)
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    first_id = first.punch_id
+    second_id = second.punch_id
+    assert first_id is not None
+    assert second_id is not None
+    assert first_page.json()["items"][0]["punch_id"] == max(first_id, second_id)
+    assert second_page.json()["items"][0]["punch_id"] == min(first_id, second_id)
+
+
 # --- Tests ---
 
 
@@ -198,7 +218,61 @@ def test_list_timesheet(client, db_session: Session, test_customer, base_setting
     data = response.json()
     assert "items" in data
     assert "totals" in data
-    assert data["totals"]["total_hours"] == 8.0
+    assert data["totals"]["total_hours"] == pytest.approx(8.0)
+
+
+def test_list_timesheet_paginates_periods_with_global_totals_and_customer_filter(
+    client, db_session: Session, test_customer, base_settings
+):
+    other_customer = Customers(
+        company_name="Other Customer",
+        customer_type=CustomerTypeEnum.COMMERCIAL,
+        created_by=1,
+    )
+    db_session.add(other_customer)
+    db_session.commit()
+    db_session.refresh(other_customer)
+    create_punch(
+        db_session,
+        1,
+        test_customer.customer_id,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2026-07-01 08:00:00",
+        "2026-07-01 16:00:00",
+        480,
+    )
+    create_punch(
+        db_session,
+        1,
+        other_customer.customer_id,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2026-07-02 08:00:00",
+        "2026-07-02 12:00:00",
+        240,
+    )
+    params = {
+        "view": "day",
+        "start_date": "2026-07-01",
+        "end_date": "2026-07-03",
+        "customer_id": test_customer.customer_id,
+        "limit": 2,
+    }
+
+    first_page = client.get("/api/v1/timesheet", params=params)
+    second_page = client.get("/api/v1/timesheet", params={**params, "skip": 2})
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_page.json()["total"] == 3
+    assert second_page.json()["total"] == 3
+    assert [item["period_start"] for item in first_page.json()["items"]] == [
+        "2026-07-01",
+        "2026-07-02",
+    ]
+    assert [item["period_start"] for item in second_page.json()["items"]] == ["2026-07-03"]
+    assert first_page.json()["totals"]["total_hours"] == pytest.approx(8.0)
+    assert second_page.json()["totals"]["total_hours"] == pytest.approx(8.0)
+    assert first_page.json()["items"][1]["total_hours"] == pytest.approx(0.0)
 
 
 def test_get_open_punch(client, db_session: Session, test_customer):

@@ -40,6 +40,10 @@ class Module(ModuleBase):
         from_attributes = True
 
 
+class ModuleListRead(Module):
+    parent_module_name: str | None = None
+
+
 # ----------------------------
 # 📌 PERMISSION SCHEMAS (RoleModules)
 # ----------------------------

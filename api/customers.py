@@ -113,7 +113,7 @@ def get_customers(
     if filters:
         query = query.where(and_(*filters))
 
-    query = query.order_by(Customers.created_at.desc()).offset(skip).limit(limit)
+    query = query.order_by(Customers.created_at.desc(), Customers.customer_id.desc()).offset(skip).limit(limit)
 
     customers = db.exec(query).all()
     items = [customer_to_schema(customer) for customer in customers]

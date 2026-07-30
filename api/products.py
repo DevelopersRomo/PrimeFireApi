@@ -1,11 +1,9 @@
-from decimal import Decimal
-
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from models.products import ProductCatalog, ProductCategories, ProductFamilies, ProductSpecifications, Products
 from schemas.pagination import PaginatedResponse
@@ -194,7 +192,7 @@ def get_product_families(
 def create_product_family(
     family: ProductFamilyCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_create")),
 ):
     if get_family_by_name(db, family.name):
         raise HTTPException(status_code=409, detail="Product family already exists")
@@ -215,7 +213,7 @@ def update_product_family(
     family_id: int,
     family: ProductFamilyUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_edit")),
 ):
     db_family = get_family_or_404(db, family_id)
     update_data = family.model_dump(exclude_unset=True)
@@ -238,7 +236,7 @@ def update_product_family(
 def delete_product_family(
     family_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_delete")),
 ):
     db_family = get_family_or_404(db, family_id)
     has_products = db.exec(select(Products).where(Products.family_id == family_id)).first()
@@ -272,7 +270,7 @@ def get_product_categories(
 def create_product_category(
     category: ProductCategoryCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_create")),
 ):
     get_family_or_404(db, category.family_id)
     if get_category_by_family_and_name(db, category.family_id, category.name):
@@ -294,7 +292,7 @@ def update_product_category(
     category_id: int,
     category: ProductCategoryUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_edit")),
 ):
     db_category = get_category_or_404(db, category_id)
     update_data = category.model_dump(exclude_unset=True)
@@ -320,7 +318,7 @@ def update_product_category(
 def delete_product_category(
     category_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_delete")),
 ):
     db_category = get_category_or_404(db, category_id)
     has_products = db.exec(select(Products).where(Products.category_id == category_id)).first()
@@ -345,7 +343,7 @@ def get_product_catalog(
 def create_product_catalog_item(
     product: ProductCatalogCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_create")),
 ):
     validate_product_catalog_refs(db, product.family_id, product.category_id)
     data = product.model_dump(exclude={"specification"})
@@ -368,7 +366,7 @@ def update_product_catalog_item(
     product_id: int,
     product: ProductCatalogUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_edit")),
 ):
     db_product = db.get(ProductCatalog, product_id)
     if not db_product:
@@ -399,7 +397,7 @@ def update_product_catalog_item(
 def delete_product_catalog_item(
     product_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_delete")),
 ):
     db_product = db.get(ProductCatalog, product_id)
     if not db_product:
@@ -476,7 +474,7 @@ def get_product_specification_options(
 def create_product_specification(
     specification: ProductSpecificationCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_create")),
 ):
     if specification.product_id is not None and not db.get(ProductCatalog, specification.product_id):
         raise HTTPException(status_code=404, detail="Product catalog item not found")
@@ -493,7 +491,7 @@ def update_product_specification(
     specification_id: int,
     specification: ProductSpecificationUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_edit")),
 ):
     db_specification = db.get(ProductSpecifications, specification_id)
     if not db_specification:
@@ -516,7 +514,7 @@ def update_product_specification(
 def delete_product_specification(
     specification_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_delete")),
 ):
     db_specification = db.get(ProductSpecifications, specification_id)
     if not db_specification:
@@ -534,7 +532,7 @@ def delete_product_specification(
 def create_product(
     product: ProductCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_create")),
 ):
     validate_product_catalog_refs(db, product.family_id, product.category_id)
     db_product = Products(**product.model_dump())
@@ -553,17 +551,66 @@ def get_products(
     skip: int = Query(0, ge=0),
     limit: int = Query(1000, ge=1, le=1000),
     with_meta: bool = Query(False),
+    search: str | None = Query(None),
+    family_id: int | None = Query(None),
+    category_id: int | None = Query(None),
+    type: str | None = Query(None),
+    is_active: bool | None = Query(None),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    statement = select(Products).order_by(Products.created_at.desc(), Products.id.desc()).offset(skip).limit(limit)
+    filters = []
+    if family_id is not None:
+        filters.append(Products.family_id == family_id)
+    if category_id is not None:
+        filters.append(Products.category_id == category_id)
+    if type and type.strip():
+        filters.append(Products.type == type.strip())
+    if is_active is not None:
+        filters.append(Products.is_active == is_active)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                Products.name.ilike(term),
+                Products.description.ilike(term),
+                Products.type.ilike(term),
+                Products.sku.ilike(term),
+                Products.code.ilike(term),
+                Products.size.ilike(term),
+                Products.material_type.ilike(term),
+                Products.specification.ilike(term),
+                Products.manufacturer.ilike(term),
+                Products.model.ilike(term),
+                Products.unit.ilike(term),
+                ProductFamilies.name.ilike(term),
+                ProductCategories.name.ilike(term),
+            )
+        )
+
+    statement = (
+        select(Products)
+        .join(ProductFamilies, Products.family_id == ProductFamilies.id, isouter=True)
+        .join(ProductCategories, Products.category_id == ProductCategories.id, isouter=True)
+    )
+    if filters:
+        statement = statement.where(*filters)
+    statement = statement.order_by(Products.created_at.desc(), Products.id.desc()).offset(skip).limit(limit)
     items = db.exec(statement).all()
     read_items = [product_to_read(db, item) for item in items]
 
     if not with_meta:
         return read_items
 
-    total = db.exec(select(func.count()).select_from(Products)).one()
+    count_query = (
+        select(func.count())
+        .select_from(Products)
+        .join(ProductFamilies, Products.family_id == ProductFamilies.id, isouter=True)
+        .join(ProductCategories, Products.category_id == ProductCategories.id, isouter=True)
+    )
+    if filters:
+        count_query = count_query.where(*filters)
+    total = db.exec(count_query).one()
     return PaginatedResponse[ProductRead](
         items=read_items,
         total=total,
@@ -598,7 +645,7 @@ def update_product(
     product_id: int,
     product: ProductCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_edit")),
 ):
     db_product = db.get(Products, product_id)
 
@@ -624,7 +671,7 @@ def patch_product(
     product_id: int,
     product: ProductUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_edit")),
 ):
     db_product = db.get(Products, product_id)
 
@@ -652,7 +699,7 @@ def patch_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("products", "can_delete")),
 ):
     product = db.get(Products, product_id)
 

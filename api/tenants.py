@@ -1,13 +1,15 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee
+from api.dependencies import get_current_employee, require_module_permission
 from bd.dependencies import get_main_db
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
+from schemas.pagination import PaginatedResponse
 from schemas.tenants import (
     ApprovalRequest,
     TenantApprovalRequest,
@@ -26,11 +28,27 @@ router = APIRouter()
 # ----------------------------
 # 📌 DEBUG: LIST ALL TENANTS
 # ----------------------------
-@router.get("/list-all", response_model=list[TenantRead])
-async def list_all_tenants(db: Session = Depends(get_main_db)):
+@router.get("/list-all", response_model=list[TenantRead] | PaginatedResponse[TenantRead])
+async def list_all_tenants(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_main_db),
+):
     """List all tenants from MAIN database (for debugging/admin)."""
-    tenants = db.exec(select(Tenants)).all()
-    return list(tenants) if tenants else []
+    tenants = list(
+        db.exec(select(Tenants).order_by(Tenants.name, Tenants.tenant_id).offset(skip).limit(limit)).all()
+    )
+    if not with_meta:
+        return tenants
+    total = db.exec(select(func.count()).select_from(Tenants)).one()
+    return PaginatedResponse[TenantRead](
+        items=tenants,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(tenants) < total,
+    )
 
 
 # ----------------------------
@@ -39,8 +57,8 @@ async def list_all_tenants(db: Session = Depends(get_main_db)):
 @router.post("/", response_model=TenantRead, status_code=status.HTTP_201_CREATED)
 async def create_tenant(
     tenant_data: TenantCreate,
-    current_user: Employees = Depends(get_current_employee),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_create")),
 ):
     """Create a new tenant."""
     tenant = Tenants(**tenant_data.model_dump())
@@ -64,11 +82,26 @@ async def get_my_tenants(current_user: Employees = Depends(get_current_employee)
 # ----------------------------
 # 📌 ADMIN: LIST PENDING USERS
 # ----------------------------
-@router.get("/pending-users", response_model=list[TenantEmployeePendingRead])
-async def list_pending_users(db: Session = Depends(get_main_db)):
+@router.get(
+    "/pending-users",
+    response_model=list[TenantEmployeePendingRead] | PaginatedResponse[TenantEmployeePendingRead],
+)
+async def list_pending_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_main_db),
+):
     """List all external users pending tenant assignment (Admin only)."""
     # Users pending assignment (TenantId is NULL)
-    external_users = db.exec(select(TenantEmployees).where(TenantEmployees.tenant_id is None)).all()
+    filters = [TenantEmployees.tenant_id.is_(None)]
+    external_users = db.exec(
+        select(TenantEmployees)
+        .where(*filters)
+        .order_by(TenantEmployees.created_at.desc(), TenantEmployees.id.desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
 
     result = []
     for ext_user in external_users:
@@ -82,7 +115,16 @@ async def list_pending_users(db: Session = Depends(get_main_db)):
                 created_at=ext_user.created_at,
             )
         )
-    return result
+    if not with_meta:
+        return result
+    total = db.exec(select(func.count()).select_from(TenantEmployees).where(*filters)).one()
+    return PaginatedResponse[TenantEmployeePendingRead](
+        items=result,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(result) < total,
+    )
 
 
 # ----------------------------
@@ -91,8 +133,8 @@ async def list_pending_users(db: Session = Depends(get_main_db)):
 @router.post("/approve-user", response_model=dict)
 async def approve_external_user(
     request: ApprovalRequest,
-    current_user: Employees = Depends(get_current_employee),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
 ):
     """
     (Admin Only) Approve external user and assign tenant.
@@ -155,8 +197,8 @@ async def approve_external_user(
 @router.post("/approve", response_model=TenantRead)
 async def approve_tenant_request(
     request: TenantApprovalRequest,
-    current_user: Employees = Depends(get_current_employee),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
 ):
     """(Admin Only) Approve a tenant request and assign connection key."""
     tenant = db.get(Tenants, request.tenant_id)
@@ -176,8 +218,8 @@ async def approve_tenant_request(
 @router.post("/logos", response_model=TenantLogoRead, status_code=status.HTTP_201_CREATED)
 async def create_tenant_logo(
     logo_data: TenantLogoCreate,
-    current_user: Employees = Depends(get_current_employee),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_create")),
 ):
     """Create a new logo for a tenant."""
     # Verify tenant exists
@@ -192,15 +234,38 @@ async def create_tenant_logo(
     return logo
 
 
-@router.get("/logos", response_model=list[TenantLogoRead])
-async def list_tenant_logos(tenant_id: int | None = None, db: Session = Depends(get_main_db)):
+@router.get("/logos", response_model=list[TenantLogoRead] | PaginatedResponse[TenantLogoRead])
+async def list_tenant_logos(
+    tenant_id: int | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_main_db),
+):
     """List all logos, optionally filtered by tenant_id."""
-    query = select(TenantLogos)
+    filters = []
     if tenant_id:
-        query = query.where(TenantLogos.tenant_id == tenant_id)
+        filters.append(TenantLogos.tenant_id == tenant_id)
 
-    logos = db.exec(query).all()
-    return list(logos) if logos else []
+    query = select(TenantLogos)
+    if filters:
+        query = query.where(*filters)
+    logos = list(
+        db.exec(query.order_by(TenantLogos.title, TenantLogos.logo_id).offset(skip).limit(limit)).all()
+    )
+    if not with_meta:
+        return logos
+    count_query = select(func.count()).select_from(TenantLogos)
+    if filters:
+        count_query = count_query.where(*filters)
+    total = db.exec(count_query).one()
+    return PaginatedResponse[TenantLogoRead](
+        items=logos,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(logos) < total,
+    )
 
 
 @router.get("/logos/{logo_id}", response_model=TenantLogoRead)
@@ -229,8 +294,8 @@ async def get_tenant_logo_by_url(url: str, db: Session = Depends(get_main_db)):
 async def update_tenant_logo(
     logo_id: int,
     logo_data: TenantLogoUpdate,
-    current_user: Employees = Depends(get_current_employee),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
 ):
     """Update a tenant logo."""
     logo = db.get(TenantLogos, logo_id)
@@ -250,7 +315,9 @@ async def update_tenant_logo(
 
 @router.delete("/logos/{logo_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_tenant_logo(
-    logo_id: int, current_user: Employees = Depends(get_current_employee), db: Session = Depends(get_main_db)
+    logo_id: int,
+    db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_delete")),
 ) -> None:
     """Delete a tenant logo."""
     logo = db.get(TenantLogos, logo_id)
@@ -282,8 +349,8 @@ async def get_tenant(
 async def update_tenant(
     tenant_id: int,
     tenant_data: TenantUpdate,
-    current_user: Employees = Depends(get_current_employee),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
 ):
     """Update an existing tenant."""
     tenant = db.get(Tenants, tenant_id)
@@ -305,7 +372,9 @@ async def update_tenant(
 # ----------------------------
 @router.delete("/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_tenant_request(
-    tenant_id: int, current_user: Employees = Depends(get_current_employee), db: Session = Depends(get_main_db)
+    tenant_id: int,
+    db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_delete")),
 ) -> None:
     """Delete a tenant request. Only allowed if the tenant is in 'PENDING' state."""
     tenant = db.get(Tenants, tenant_id)

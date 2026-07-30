@@ -382,6 +382,7 @@ async def get_employees(
     with_meta: bool = Query(False),
     include_license_status: bool = Query(False),
     license_filter: str = Query("all", pattern="^(all|with_license|without_license|with_active_license)$"),
+    search: str | None = Query(None),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
     tenant_scope: str = Depends(get_tenant_cache_scope),
@@ -423,18 +424,46 @@ async def get_employees(
 
         set_cached_employee_items(cache_key, db_marker, items)
 
-    total = len(items)
-    items = items[skip : skip + limit]
+    filtered_items = items
+    if search and search.strip():
+        term = search.strip().casefold()
+        filtered_items = [
+            item
+            for item in items
+            if term
+            in " ".join(
+                filter(
+                    None,
+                    [
+                        item.display_name,
+                        item.first_name,
+                        item.last_name,
+                        item.title,
+                        item.department,
+                        item.office,
+                        item.email,
+                        item.phone,
+                        item.mobile_phone,
+                        item.anydesk,
+                        item.manager,
+                        item.manager_email,
+                    ],
+                )
+            ).casefold()
+        ]
+
+    total = len(filtered_items)
+    page_items = filtered_items[skip : skip + limit]
 
     if not with_meta:
-        return items
+        return page_items
 
     return PaginatedResponse[Employee](
-        items=items,
+        items=page_items,
         total=total,
         skip=skip,
         limit=limit,
-        has_more=skip + len(items) < total,
+        has_more=skip + len(page_items) < total,
     )
 
 

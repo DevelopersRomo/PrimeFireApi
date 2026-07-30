@@ -75,6 +75,37 @@ def test_get_tickets(
     assert all(t["status"] == "done" for t in data)
 
 
+def test_ticket_scopes_and_search_use_filtered_total(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    create_test_record(
+        db_session,
+        Tickets,
+        title="Needle open",
+        status=TicketStatus.TODO,
+        priority=TicketPriority.LOW,
+        created_by=current_employee.employee_id,
+    )
+    create_test_record(
+        db_session,
+        Tickets,
+        title="Needle closed",
+        status=TicketStatus.CLOSED,
+        priority=TicketPriority.LOW,
+        created_by=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/tickets?with_meta=true&search=Needle&status_scope=active&involves_employee_id={current_employee.employee_id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["title"] == "Needle open"
+
+
 def test_get_ticket(
     client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
 ):
@@ -870,23 +901,35 @@ def test_ticket_stats_users_admin_sees_all(
 def test_get_assignable_employee_ids_admin(db_session: Session):
     """Admin sees ALL employees in the database."""
     emp1 = create_test_record(
-        db_session, Employees, email="assign_admin@example.com",
-        first_name="Admin", last_name="User", display_name="Admin User",
+        db_session,
+        Employees,
+        email="assign_admin@example.com",
+        first_name="Admin",
+        last_name="User",
+        display_name="Admin User",
     )
     emp2 = create_test_record(
-        db_session, Employees, email="assign_it@example.com",
-        first_name="IT", last_name="User", display_name="IT User", department="IT",
+        db_session,
+        Employees,
+        email="assign_it@example.com",
+        first_name="IT",
+        last_name="User",
+        display_name="IT User",
+        department="IT",
     )
     emp3 = create_test_record(
-        db_session, Employees, email="assign_sales@example.com",
-        first_name="Sales", last_name="User", display_name="Sales User", department="Sales",
+        db_session,
+        Employees,
+        email="assign_sales@example.com",
+        first_name="Sales",
+        last_name="User",
+        display_name="Sales User",
+        department="Sales",
     )
     db_session.commit()
 
     # Count all employees in DB (includes fixture-created employees)
-    all_employee_ids = {
-        row for row in db_session.exec(select(Employees.employee_id)).all()
-    }
+    all_employee_ids = {row for row in db_session.exec(select(Employees.employee_id)).all()}
 
     user_permissions = {
         "employee": {"employee_id": emp1.employee_id, "email": emp1.email},
@@ -903,23 +946,39 @@ def test_get_assignable_employee_ids_admin(db_session: Session):
 def test_get_assignable_employee_ids_manager(db_session: Session):
     """Manager sees self + all subordinates."""
     manager = create_test_record(
-        db_session, Employees, email="assign_mgr@example.com",
-        first_name="Mgr", last_name="User", display_name="Mgr User",
+        db_session,
+        Employees,
+        email="assign_mgr@example.com",
+        first_name="Mgr",
+        last_name="User",
+        display_name="Mgr User",
     )
     sub1 = create_test_record(
-        db_session, Employees, email="assign_sub1@example.com",
-        first_name="Sub1", last_name="User", display_name="Sub1 User",
+        db_session,
+        Employees,
+        email="assign_sub1@example.com",
+        first_name="Sub1",
+        last_name="User",
+        display_name="Sub1 User",
         manager_employee_id=manager.employee_id,
     )
     sub2 = create_test_record(
-        db_session, Employees, email="assign_sub2@example.com",
-        first_name="Sub2", last_name="User", display_name="Sub2 User",
+        db_session,
+        Employees,
+        email="assign_sub2@example.com",
+        first_name="Sub2",
+        last_name="User",
+        display_name="Sub2 User",
         manager_employee_id=manager.employee_id,
     )
     # Create an employee NOT in the hierarchy
     create_test_record(
-        db_session, Employees, email="assign_outsider@example.com",
-        first_name="Outsider", last_name="User", display_name="Outsider User",
+        db_session,
+        Employees,
+        email="assign_outsider@example.com",
+        first_name="Outsider",
+        last_name="User",
+        display_name="Outsider User",
     )
     db_session.commit()
 
@@ -934,20 +993,40 @@ def test_get_assignable_employee_ids_manager(db_session: Session):
 def test_get_assignable_employee_ids_user_it_only(db_session: Session):
     """Regular user (no admin, no subordinates) sees IT department only."""
     user = create_test_record(
-        db_session, Employees, email="assign_user@example.com",
-        first_name="User", last_name="Test", display_name="User Test", department="Support",
+        db_session,
+        Employees,
+        email="assign_user@example.com",
+        first_name="User",
+        last_name="Test",
+        display_name="User Test",
+        department="Support",
     )
     it_emp1 = create_test_record(
-        db_session, Employees, email="assign_it1@example.com",
-        first_name="IT1", last_name="User", display_name="IT1 User", department="IT",
+        db_session,
+        Employees,
+        email="assign_it1@example.com",
+        first_name="IT1",
+        last_name="User",
+        display_name="IT1 User",
+        department="IT",
     )
     it_emp2 = create_test_record(
-        db_session, Employees, email="assign_it2@example.com",
-        first_name="IT2", last_name="User", display_name="IT2 User", department="IT",
+        db_session,
+        Employees,
+        email="assign_it2@example.com",
+        first_name="IT2",
+        last_name="User",
+        display_name="IT2 User",
+        department="IT",
     )
     create_test_record(
-        db_session, Employees, email="assign_sales2@example.com",
-        first_name="Sales", last_name="Person", display_name="Sales Person", department="Sales",
+        db_session,
+        Employees,
+        email="assign_sales2@example.com",
+        first_name="Sales",
+        last_name="Person",
+        display_name="Sales Person",
+        department="Sales",
     )
     db_session.commit()
 
@@ -962,12 +1041,20 @@ def test_get_assignable_employee_ids_user_it_only(db_session: Session):
 def test_get_assignable_employee_ids_admin_wins_over_manager(db_session: Session):
     """Admin tier wins even when employee also has subordinates."""
     admin_mgr = create_test_record(
-        db_session, Employees, email="assign_admin_mgr@example.com",
-        first_name="AdminMgr", last_name="User", display_name="AdminMgr User",
+        db_session,
+        Employees,
+        email="assign_admin_mgr@example.com",
+        first_name="AdminMgr",
+        last_name="User",
+        display_name="AdminMgr User",
     )
     create_test_record(
-        db_session, Employees, email="assign_leaf@example.com",
-        first_name="Leaf", last_name="User", display_name="Leaf User",
+        db_session,
+        Employees,
+        email="assign_leaf@example.com",
+        first_name="Leaf",
+        last_name="User",
+        display_name="Leaf User",
         manager_employee_id=admin_mgr.employee_id,
     )
     db_session.commit()
@@ -984,8 +1071,13 @@ def test_get_assignable_employee_ids_admin_wins_over_manager(db_session: Session
 def test_get_assignable_employee_ids_user_empty_it(db_session: Session):
     """Regular user when no IT employees exist — returns empty set."""
     user = create_test_record(
-        db_session, Employees, email="assign_user2@example.com",
-        first_name="User2", last_name="Test", display_name="User2 Test", department="Support",
+        db_session,
+        Employees,
+        email="assign_user2@example.com",
+        first_name="User2",
+        last_name="Test",
+        display_name="User2 Test",
+        department="Support",
     )
     db_session.commit()
 
@@ -1187,8 +1279,11 @@ def test_update_ticket_403_out_of_scope_assignee(
 ):
     """Regular user updating ticket with out-of-scope assignee gets 403."""
     ticket = create_test_record(
-        db_session, Tickets, title="Update 403 Test",
-        status=TicketStatus.TODO, created_by=current_employee.employee_id,
+        db_session,
+        Tickets,
+        title="Update 403 Test",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
     )
     db_session.commit()
 
@@ -1209,8 +1304,11 @@ def test_update_ticket_200_unchanged_assignee(
 ):
     """Update with assigned_to unchanged (no assigned_to in payload) succeeds."""
     ticket = create_test_record(
-        db_session, Tickets, title="No Assignee Change",
-        status=TicketStatus.TODO, created_by=current_employee.employee_id,
+        db_session,
+        Tickets,
+        title="No Assignee Change",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
     )
     db_session.commit()
 
@@ -1230,8 +1328,11 @@ def test_update_ticket_admin_can_change_assignee(
 ):
     """Admin updating ticket assigned_to to any employee succeeds."""
     ticket = create_test_record(
-        db_session, Tickets, title="Admin Update Test",
-        status=TicketStatus.TODO, created_by=current_employee.employee_id,
+        db_session,
+        Tickets,
+        title="Admin Update Test",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
     )
     db_session.commit()
 

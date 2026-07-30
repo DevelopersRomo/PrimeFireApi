@@ -217,6 +217,26 @@ def auth_headers(db_session: Session) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.fixture
+def permission_override():
+    """Set exact module permissions for an API test."""
+    from api.dependencies import get_current_employee_with_permissions
+
+    def set_permissions(module_key: str, actions: set[str]) -> None:
+        app.dependency_overrides[get_current_employee_with_permissions] = lambda: {
+            "employee": {"employee_id": 1, "email": "test@example.com"},
+            "permissions": [
+                {
+                    "module_key": module_key,
+                    "permissions": dict.fromkeys(actions, True),
+                }
+            ],
+        }
+
+    yield set_permissions
+    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_env() -> None:
     """

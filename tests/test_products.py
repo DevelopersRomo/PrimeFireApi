@@ -1,7 +1,13 @@
+import pytest
 from sqlmodel import Session, select
 
 from api.products import product_to_read
 from models.products import ProductCatalog, ProductCategories, ProductFamilies, ProductSpecifications, Products
+
+
+@pytest.fixture(autouse=True)
+def _grant_product_mutations(permission_override) -> None:
+    permission_override("products", {"can_create", "can_edit", "can_delete"})
 
 
 def test_create_product(client, auth_headers, db_session: Session):
@@ -26,6 +32,78 @@ def test_create_product(client, auth_headers, db_session: Session):
     assert data["name"] == "Test Product"
     assert data["type"] == "Product"
     assert data["sku"] == "TEST-001"
+
+
+def test_product_search_metadata_uses_matching_predicates(client, auth_headers, db_session: Session):
+    db_session.add(Products(name="Needle Product", type="Product", sku="NEEDLE"))
+    db_session.add(Products(name="Other Product", type="Product", sku="OTHER"))
+    db_session.commit()
+
+    response = client.get("/products?with_meta=true&search=Needle", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["name"] == "Needle Product"
+
+
+def test_product_filters_by_family_and_category(client, auth_headers, db_session: Session):
+    family = ProductFamilies(name="Detection")
+    other_family = ProductFamilies(name="Suppression")
+    db_session.add(family)
+    db_session.add(other_family)
+    db_session.commit()
+
+    category = ProductCategories(family_id=family.id, name="Smoke")
+    other_category = ProductCategories(family_id=family.id, name="Heat")
+    db_session.add(category)
+    db_session.add(other_category)
+    db_session.commit()
+
+    db_session.add(Products(name="Smoke Detector", type="Product", family_id=family.id, category_id=category.id))
+    db_session.add(Products(name="Heat Detector", type="Product", family_id=family.id, category_id=other_category.id))
+    db_session.add(Products(name="Sprinkler", type="Product", family_id=other_family.id))
+    db_session.commit()
+
+    by_family = client.get(f"/products?family_id={family.id}", headers=auth_headers)
+    assert by_family.status_code == 200
+    assert {item["name"] for item in by_family.json()} == {"Smoke Detector", "Heat Detector"}
+
+    by_category = client.get(f"/products?category_id={category.id}", headers=auth_headers)
+    assert by_category.status_code == 200
+    assert [item["name"] for item in by_category.json()] == ["Smoke Detector"]
+
+
+def test_product_filters_by_type_and_status(client, auth_headers, db_session: Session):
+    db_session.add(Products(name="Active Product", type="Product", is_active=True))
+    db_session.add(Products(name="Inactive Product", type="Product", is_active=False))
+    db_session.add(Products(name="Active Service", type="Service", is_active=True))
+    db_session.commit()
+
+    by_type = client.get("/products?type=Service", headers=auth_headers)
+    assert by_type.status_code == 200
+    assert [item["name"] for item in by_type.json()] == ["Active Service"]
+
+    inactive = client.get("/products?is_active=false", headers=auth_headers)
+    assert inactive.status_code == 200
+    assert [item["name"] for item in inactive.json()] == ["Inactive Product"]
+
+    active_products = client.get("/products?type=Product&is_active=true", headers=auth_headers)
+    assert active_products.status_code == 200
+    assert [item["name"] for item in active_products.json()] == ["Active Product"]
+
+
+def test_product_filter_metadata_total_respects_filters(client, auth_headers, db_session: Session):
+    db_session.add(Products(name="Kept Service", type="Service", is_active=True))
+    db_session.add(Products(name="Dropped Product", type="Product", is_active=True))
+    db_session.commit()
+
+    response = client.get("/products?with_meta=true&type=Service", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["has_more"] is False
+    assert [item["name"] for item in body["items"]] == ["Kept Service"]
 
 
 def test_product_catalog_dynamic_selects_and_create(client, auth_headers, db_session: Session):
@@ -299,7 +377,7 @@ def test_list_products(client, auth_headers, db_session: Session):
     assert len(data) >= 1
 
 
-def test_product_to_read_defaults_null_min_stock(db_session: Session):
+def test_product_read_does_not_expose_inventory_min_stock(db_session: Session):
     product = Products(
         name="Legacy Product",
         description="Legacy product with null min stock",
@@ -312,7 +390,7 @@ def test_product_to_read_defaults_null_min_stock(db_session: Session):
 
     data = product_to_read(db_session, product)
 
-    assert data.min_stock == 0
+    assert "min_stock" not in data.model_dump()
 
 
 def test_get_product_by_id(client, auth_headers, db_session: Session):

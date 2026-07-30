@@ -11,10 +11,10 @@ class ItQuotationItemCreate(BaseModel):
     name: str | None = Field(default=None, max_length=200)
     description: str | None = None
     scope: str | None = None
-    quantity: Decimal = Decimal("1")
+    quantity: Decimal = Decimal(1)
     unit: str | None = None
     unit_price: Decimal | None = None
-    discount_percent: Decimal = Decimal("0")
+    discount_percent: Decimal = Decimal(0)
     tax_rate: Decimal | None = None
     term_months: int | None = None
     sort_order: int = 0
@@ -138,6 +138,27 @@ class ItQuotationRead(BaseModel):
     sent_at: datetime | None = None
     accepted_at: datetime | None = None
     rejected_at: datetime | None = None
+
+
+class ItQuotationReportMetrics(BaseModel):
+    sent_count: int
+    total_amount: Decimal
+    monthly_recurring: Decimal
+    annual_recurring: Decimal
+    conversion_rate: Decimal
+    sent_status_count: int
+    viewed_status_count: int
+    accepted_status_count: int
+    rejected_status_count: int
+
+
+class ItQuotationReportResponse(BaseModel):
+    items: list[ItQuotationRead]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool
+    metrics: ItQuotationReportMetrics
 
 
 class ItQuotationDetail(ItQuotationRead):

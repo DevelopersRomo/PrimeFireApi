@@ -5,6 +5,13 @@ Note: These tests use automatic rollback - all database changes are
 automatically reverted after each test.
 """
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _grant_license_mutations(permission_override) -> None:
+    permission_override("licenses", {"can_create", "can_edit", "can_delete"})
+
 
 class TestLicensesAPI:
     """Test cases for Licenses API endpoints."""
@@ -16,6 +23,32 @@ class TestLicensesAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) == 0
+
+    def test_search_and_expiry_filters_use_filtered_total(self, client, auth_headers) -> None:
+        for software, expiry in [("Needle Suite", "2027-01-15"), ("Other Suite", "2028-01-15")]:
+            response = client.post(
+                "/licenses/",
+                headers=auth_headers,
+                json={
+                    "software": software,
+                    "version": "1.0",
+                    "expiry_date": expiry,
+                    "key": "KEY",
+                    "account": "account@example.com",
+                    "password": "secret",
+                    "employee_id": 1,
+                },
+            )
+            assert response.status_code == 200
+
+        response = client.get(
+            "/licenses/?with_meta=true&search=Needle&expiry_to=2027-12-31",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert response.json()["items"][0]["software"] == "Needle Suite"
 
     def test_create_license(self, client, auth_headers) -> None:
         """Test POST /licenses/ creates a new license."""

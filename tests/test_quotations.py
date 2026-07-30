@@ -24,7 +24,7 @@ def test_customer_for_quotation(db_session: Session) -> Customers:
     return customer
 
 
-def test_create_quotation(client, auth_headers, db_session: Session, test_customer_for_quotation):
+def test_create_quotation(client, auth_headers, db_session: Session, test_customer_for_quotation, permission_override):
     """Test creating a new quotation."""
     payload = {
         "customer_id": test_customer_for_quotation.customer_id,
@@ -38,13 +38,14 @@ def test_create_quotation(client, auth_headers, db_session: Session, test_custom
         "notes": "Test quotation",
     }
 
+    permission_override("quotations", {"can_create"})
     response = client.post("/quotations/", json=payload, headers=auth_headers)
     assert response.status_code in {200, 201}
 
     data = response.json()
     assert data["customer_id"] == test_customer_for_quotation.customer_id
-    assert float(data["subtotal"]) == 100.00
-    assert float(data["total"]) == 105.00
+    assert float(data["subtotal"]) == pytest.approx(100.00)
+    assert float(data["total"]) == pytest.approx(105.00)
     assert data["status"] == "pending"
 
 
@@ -70,6 +71,80 @@ def test_list_quotations(client, auth_headers, db_session: Session, test_custome
     assert len(data) >= 1
 
 
+def test_list_quotations_filters_count_and_stable_order(
+    client, auth_headers, db_session: Session, test_customer_for_quotation
+):
+    shared_created_at = datetime(2026, 7, 15, 12, tzinfo=UTC)
+    quotations = [
+        Quotations(
+            customer_id=test_customer_for_quotation.customer_id,
+            quote_date=datetime(2026, 7, 10, 15, tzinfo=UTC),
+            expiration_date=datetime(2026, 8, 10, 15, tzinfo=UTC),
+            subtotal=Decimal("100.00"),
+            tax=Decimal("10.00"),
+            discount=Decimal("0.00"),
+            total=Decimal("110.00"),
+            status="Draft",
+            notes="Server predicate alpha",
+            created_at=shared_created_at,
+        ),
+        Quotations(
+            customer_id=test_customer_for_quotation.customer_id,
+            quote_date=datetime(2026, 7, 10, 18, tzinfo=UTC),
+            expiration_date=datetime(2026, 8, 11, 18, tzinfo=UTC),
+            subtotal=Decimal("200.00"),
+            tax=Decimal("20.00"),
+            discount=Decimal("5.00"),
+            total=Decimal("215.00"),
+            status="Draft",
+            notes="Server predicate beta",
+            created_at=shared_created_at,
+        ),
+        Quotations(
+            customer_id=test_customer_for_quotation.customer_id,
+            quote_date=datetime(2026, 7, 11, 9, tzinfo=UTC),
+            subtotal=Decimal("300.00"),
+            tax=Decimal("30.00"),
+            discount=Decimal("0.00"),
+            total=Decimal("330.00"),
+            status="Approved",
+            notes="Different record",
+            created_at=datetime(2026, 7, 16, 12, tzinfo=UTC),
+        ),
+    ]
+    db_session.add_all(quotations)
+    db_session.commit()
+    for quotation in quotations:
+        db_session.refresh(quotation)
+
+    params = {
+        "with_meta": "true",
+        "search": "server predicate",
+        "quote_from": "2026-07-10",
+        "quote_to": "2026-07-10",
+        "created_from": "2026-07-15",
+        "created_to": "2026-07-15",
+        "sort_field": "created_at",
+        "sort_direction": "desc",
+        "limit": 1,
+    }
+    first_page = client.get("/quotations/", params=params, headers=auth_headers)
+    second_page = client.get("/quotations/", params={**params, "skip": 1}, headers=auth_headers)
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_page.json()["total"] == 2
+    assert second_page.json()["total"] == 2
+    assert first_page.json()["has_more"] is True
+    assert second_page.json()["has_more"] is False
+    first_id = quotations[0].id
+    second_id = quotations[1].id
+    assert first_id is not None
+    assert second_id is not None
+    assert first_page.json()["items"][0]["id"] == max(first_id, second_id)
+    assert second_page.json()["items"][0]["id"] == min(first_id, second_id)
+
+
 def test_get_quotation_by_id(client, auth_headers, db_session: Session, test_customer_for_quotation):
     """Test getting a specific quotation by ID."""
     # Create a quotation first
@@ -93,7 +168,7 @@ def test_get_quotation_by_id(client, auth_headers, db_session: Session, test_cus
     assert data["status"] == "approved"
 
 
-def test_update_quotation(client, auth_headers, db_session: Session, test_customer_for_quotation):
+def test_update_quotation(client, auth_headers, db_session: Session, test_customer_for_quotation, permission_override):
     """Test updating a quotation."""
     # Create a quotation first
     quotation = Quotations(
@@ -114,6 +189,7 @@ def test_update_quotation(client, auth_headers, db_session: Session, test_custom
         "notes": "Updated notes",
     }
 
+    permission_override("quotations", {"can_edit"})
     response = client.patch(f"/quotations/{quotation.id}", json=payload, headers=auth_headers)
     assert response.status_code == 200
 
@@ -122,7 +198,7 @@ def test_update_quotation(client, auth_headers, db_session: Session, test_custom
     assert data["notes"] == "Updated notes"
 
 
-def test_delete_quotation(client, auth_headers, db_session: Session, test_customer_for_quotation):
+def test_delete_quotation(client, auth_headers, db_session: Session, test_customer_for_quotation, permission_override):
     """Test deleting a quotation."""
     # Create a quotation first
     quotation = Quotations(
@@ -138,6 +214,7 @@ def test_delete_quotation(client, auth_headers, db_session: Session, test_custom
     db_session.refresh(quotation)
     quotation_id = quotation.id
 
+    permission_override("quotations", {"can_delete"})
     response = client.delete(f"/quotations/{quotation_id}", headers=auth_headers)
     assert response.status_code == 200
 

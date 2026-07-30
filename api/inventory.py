@@ -1,12 +1,17 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee, get_request_app_url, require_authentication
+from api.dependencies import (
+    get_current_employee,
+    get_request_app_url,
+    require_authentication,
+    require_module_permission,
+)
 from bd.dependencies import get_db
 from models.employees import Employees
 from models.inventory import InventoryMovementApprovals, InventoryMovements, WarehouseLocations, Warehouses
@@ -18,6 +23,7 @@ from schemas.inventory import (
     InventoryMovementCreate,
     InventoryMovementResult,
     InventoryStock,
+    InventoryStockMetrics,
     Warehouse,
     WarehouseCreate,
     WarehouseLocation,
@@ -25,6 +31,7 @@ from schemas.inventory import (
     WarehouseLocationUpdate,
     WarehouseUpdate,
 )
+from schemas.pagination import PaginatedResponse
 from services.notifications.notifications import (
     notify_inventory_movement,
     notify_movement_approval_requested,
@@ -45,17 +52,57 @@ ADMIN_ROLE = "admin"
 
 # ISO 3166-1 alpha-2 codes to full country/territory names (mirrors frontend warehouse-scope.util.ts)
 COUNTRY_CODE_MAP = {
-    "af": "afghanistan", "al": "albania", "dz": "algeria", "ar": "argentina", "au": "australia",
-    "at": "austria", "be": "belgium", "bo": "bolivia", "br": "brazil", "ca": "canada",
-    "cl": "chile", "cn": "china", "co": "colombia", "cr": "costa rica", "cu": "cuba",
-    "do": "dominican republic", "ec": "ecuador", "eg": "egypt", "sv": "el salvador",
-    "fr": "france", "de": "germany", "gt": "guatemala", "hn": "honduras", "in": "india",
-    "ie": "ireland", "il": "israel", "it": "italy", "jm": "jamaica", "jp": "japan",
-    "mx": "mexico", "nl": "netherlands", "nz": "new zealand", "ni": "nicaragua",
-    "ng": "nigeria", "no": "norway", "pa": "panama", "py": "paraguay", "pe": "peru",
-    "ph": "philippines", "pl": "poland", "pt": "portugal", "pr": "puerto rico",
-    "ru": "russia", "es": "spain", "se": "sweden", "ch": "switzerland", "tr": "turkey",
-    "gb": "united kingdom", "us": "united states", "uy": "uruguay", "ve": "venezuela",
+    "af": "afghanistan",
+    "al": "albania",
+    "dz": "algeria",
+    "ar": "argentina",
+    "au": "australia",
+    "at": "austria",
+    "be": "belgium",
+    "bo": "bolivia",
+    "br": "brazil",
+    "ca": "canada",
+    "cl": "chile",
+    "cn": "china",
+    "co": "colombia",
+    "cr": "costa rica",
+    "cu": "cuba",
+    "do": "dominican republic",
+    "ec": "ecuador",
+    "eg": "egypt",
+    "sv": "el salvador",
+    "fr": "france",
+    "de": "germany",
+    "gt": "guatemala",
+    "hn": "honduras",
+    "in": "india",
+    "ie": "ireland",
+    "il": "israel",
+    "it": "italy",
+    "jm": "jamaica",
+    "jp": "japan",
+    "mx": "mexico",
+    "nl": "netherlands",
+    "nz": "new zealand",
+    "ni": "nicaragua",
+    "ng": "nigeria",
+    "no": "norway",
+    "pa": "panama",
+    "py": "paraguay",
+    "pe": "peru",
+    "ph": "philippines",
+    "pl": "poland",
+    "pt": "portugal",
+    "pr": "puerto rico",
+    "ru": "russia",
+    "es": "spain",
+    "se": "sweden",
+    "ch": "switzerland",
+    "tr": "turkey",
+    "gb": "united kingdom",
+    "us": "united states",
+    "uy": "uruguay",
+    "ve": "venezuela",
     "vi": "us virgin islands",
 }
 
@@ -70,9 +117,7 @@ def get_movement_notification_emails(db: Session, warehouse: Warehouses) -> list
     warehouse_city = (warehouse.name or "").strip().lower()
     warehouse_country = normalize_country(warehouse.location)
 
-    employees = db.exec(
-        select(Employees).options(selectinload(Employees.roles), selectinload(Employees.country))
-    ).all()
+    employees = db.exec(select(Employees).options(selectinload(Employees.roles), selectinload(Employees.country))).all()
 
     emails = []
     for employee in employees:
@@ -99,9 +144,7 @@ def get_movement_notification_emails(db: Session, warehouse: Warehouses) -> list
 def employee_is_movement_approver(db: Session, employee: Employees) -> bool:
     """Admin, or an employee holding BOTH Project Manager and Business Proposals roles, can approve movements."""
     db_employee = db.exec(
-        select(Employees)
-        .options(selectinload(Employees.roles))
-        .where(Employees.employee_id == employee.employee_id)
+        select(Employees).options(selectinload(Employees.roles)).where(Employees.employee_id == employee.employee_id)
     ).first()
     if not db_employee:
         return False
@@ -254,6 +297,107 @@ def get_existing_location_by_name(db: Session, name: str) -> WarehouseLocations 
     return db.exec(select(WarehouseLocations).where(func.lower(WarehouseLocations.name) == normalized.lower())).first()
 
 
+def inventory_movement_filters(
+    *,
+    search: str | None = None,
+    movement_type: str | None = None,
+    warehouse_id: int | None = None,
+    product_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+):
+    filters = []
+    if movement_type:
+        filters.append(InventoryMovements.movement_type == movement_type.upper().strip())
+    if warehouse_id is not None:
+        filters.append(InventoryMovements.warehouse_id == warehouse_id)
+    if product_id is not None:
+        filters.append(InventoryMovements.product_id == product_id)
+    if start_date:
+        filters.append(InventoryMovements.movement_date >= start_date)
+    if end_date:
+        filters.append(InventoryMovements.movement_date <= end_date)
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        product_ids = select(Products.id).where(
+            or_(
+                func.lower(cast(Products.code, String)).like(term),
+                func.lower(cast(Products.name, String)).like(term),
+            )
+        )
+        warehouse_ids = select(Warehouses.warehouse_id).where(func.lower(cast(Warehouses.name, String)).like(term))
+        filters.append(
+            or_(
+                InventoryMovements.product_id.in_(product_ids),
+                InventoryMovements.warehouse_id.in_(warehouse_ids),
+                func.lower(cast(InventoryMovements.project, String)).like(term),
+                func.lower(cast(InventoryMovements.po_number, String)).like(term),
+                func.lower(cast(InventoryMovements.reference_type, String)).like(term),
+                func.lower(cast(InventoryMovements.notes, String)).like(term),
+                func.lower(cast(InventoryMovements.created_by, String)).like(term),
+            )
+        )
+    return filters
+
+
+def inventory_movement_order(sort_field: str, sort_direction: str):
+    columns = {
+        "movement_id": InventoryMovements.movement_id,
+        "movement_type": InventoryMovements.movement_type,
+        "quantity": InventoryMovements.quantity,
+        "movement_date": InventoryMovements.movement_date,
+        "created_at": InventoryMovements.created_at,
+    }
+    column = columns[sort_field]
+    order = column.asc() if sort_direction == "asc" else column.desc()
+    tie_breaker = (
+        InventoryMovements.movement_id.asc() if sort_direction == "asc" else InventoryMovements.movement_id.desc()
+    )
+    return order, tie_breaker
+
+
+def build_inventory_stock(db: Session, warehouse_id: int | None = None) -> list[InventoryStock]:
+    products = db.exec(select(Products)).all()
+    result: list[InventoryStock] = []
+    for product in products:
+        movements_query = select(InventoryMovements).where(InventoryMovements.product_id == product.id)
+        if warehouse_id is not None:
+            movements_query = movements_query.where(InventoryMovements.warehouse_id == warehouse_id)
+        movements = db.exec(movements_query).all()
+        total_in = sum((movement.quantity for movement in movements if movement.movement_type == "IN"), Decimal(0))
+        total_out = sum((movement.quantity for movement in movements if movement.movement_type == "OUT"), Decimal(0))
+        total_adjustment = sum(
+            (movement.quantity for movement in movements if movement.movement_type == "ADJUSTMENT"), Decimal(0)
+        )
+        stock_on_hand = total_in - total_out + total_adjustment
+        min_stock = getattr(product, "min_stock", None)
+        if stock_on_hand <= 0:
+            stock_status = "Out of Stock"
+        elif min_stock is not None and stock_on_hand < min_stock:
+            stock_status = "Low Stock"
+        else:
+            stock_status = "Active"
+        result.append(
+            InventoryStock(
+                product_id=product.id,
+                code=getattr(product, "code", None),
+                name=product.name,
+                family=get_product_family_name(db, product),
+                category=get_product_category_name(db, product),
+                size=getattr(product, "size", None),
+                material_type=getattr(product, "material_type", None),
+                unit=getattr(product, "unit", None),
+                min_stock=min_stock,
+                total_in=total_in,
+                total_out=total_out,
+                total_adjustment=total_adjustment,
+                stock_on_hand=stock_on_hand,
+                status=stock_status,
+            )
+        )
+    return result
+
+
 # ----------------------------
 # WAREHOUSE LOCATIONS
 # ----------------------------
@@ -281,7 +425,7 @@ def get_warehouse_locations(
 def create_warehouse_location(
     location: WarehouseLocationCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_create")),
 ):
     name = normalize_location_name(location.name)
     existing = get_existing_location_by_name(db, name)
@@ -302,7 +446,7 @@ def update_warehouse_location(
     location_id: int,
     location: WarehouseLocationUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_edit")),
 ):
     db_location = get_location_by_id(db, location_id)
     if not db_location:
@@ -329,9 +473,42 @@ def update_warehouse_location(
 # ----------------------------
 
 
-@router.get("/warehouses", response_model=list[Warehouse])
-def get_warehouses(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    return db.exec(select(Warehouses)).all()
+@router.get("/warehouses", response_model=list[Warehouse] | PaginatedResponse[Warehouse])
+def get_warehouses(
+    with_meta: bool = Query(False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    search: str | None = Query(None),
+    active_only: bool = Query(False),
+    sort_direction: str = Query("asc", pattern="^(asc|desc)$"),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    filters = []
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        filters.append(
+            or_(
+                func.lower(cast(Warehouses.name, String)).like(term),
+                func.lower(cast(Warehouses.location, String)).like(term),
+            )
+        )
+    if active_only:
+        filters.append(Warehouses.is_active == True)  # noqa: E712
+    name_order = Warehouses.name.asc() if sort_direction == "asc" else Warehouses.name.desc()
+    id_order = Warehouses.warehouse_id.asc() if sort_direction == "asc" else Warehouses.warehouse_id.desc()
+    query = select(Warehouses).where(*filters).order_by(name_order, id_order)
+    if not with_meta:
+        return db.exec(query).all()
+    total = db.exec(select(func.count()).select_from(Warehouses).where(*filters)).one()
+    items = db.exec(query.offset(skip).limit(limit)).all()
+    return PaginatedResponse[Warehouse](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 @router.get("/warehouses/{warehouse_id}", response_model=Warehouse)
@@ -352,7 +529,7 @@ def get_warehouse(
 def create_warehouse(
     warehouse: WarehouseCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_create")),
 ):
     data = warehouse.model_dump()
     location = get_location_by_id(db, warehouse.location_id)
@@ -383,7 +560,7 @@ def update_warehouse(
     warehouse_id: int,
     warehouse: WarehouseUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_edit")),
 ):
     db_warehouse = db.exec(select(Warehouses).where(Warehouses.warehouse_id == warehouse_id)).first()
 
@@ -418,7 +595,7 @@ def update_warehouse(
 def delete_warehouse(
     warehouse_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_delete")),
 ):
     db_warehouse = db.exec(select(Warehouses).where(Warehouses.warehouse_id == warehouse_id)).first()
 
@@ -444,14 +621,47 @@ def delete_warehouse(
 # ----------------------------
 
 
-@router.get("/movements", response_model=list[InventoryMovement])
+@router.get("/movements", response_model=list[InventoryMovement] | PaginatedResponse[InventoryMovement])
 def get_inventory_movements(
+    with_meta: bool = Query(False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    search: str | None = Query(None),
+    movement_type: str | None = Query(None, pattern="^(IN|OUT|ADJUSTMENT)$"),
+    warehouse_id: int | None = Query(None),
+    product_id: int | None = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    sort_field: str = Query("created_at", pattern="^(movement_id|movement_type|quantity|movement_date|created_at)$"),
+    sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    movements = db.exec(select(InventoryMovements).order_by(InventoryMovements.created_at.desc())).all()
-
-    return [movement_to_schema(db, movement) for movement in movements]
+    filters = inventory_movement_filters(
+        search=search,
+        movement_type=movement_type,
+        warehouse_id=warehouse_id,
+        product_id=product_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    order, tie_breaker = inventory_movement_order(sort_field, sort_direction)
+    query = select(InventoryMovements).where(*filters).order_by(order)
+    if sort_field != "movement_id":
+        query = query.order_by(tie_breaker)
+    if not with_meta:
+        movements = db.exec(query).all()
+        return [movement_to_schema(db, movement) for movement in movements]
+    total = db.exec(select(func.count()).select_from(InventoryMovements).where(*filters)).one()
+    movements = db.exec(query.offset(skip).limit(limit)).all()
+    items = [movement_to_schema(db, movement) for movement in movements]
+    return PaginatedResponse[InventoryMovement](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 @router.get("/movements/{movement_id}", response_model=InventoryMovement)
@@ -625,6 +835,7 @@ def create_inventory_movement(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    _perms: dict = Depends(require_module_permission("inventory", "can_create")),
     app_url: str = Depends(get_request_app_url),
 ):
     movement_type = movement.movement_type.upper().strip()
@@ -637,6 +848,7 @@ def create_inventory_entry(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    _perms: dict = Depends(require_module_permission("inventory", "can_create")),
     app_url: str = Depends(get_request_app_url),
 ):
     product, warehouse = validate_movement_and_load(db, movement, "IN")
@@ -652,6 +864,7 @@ def create_inventory_output(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    _perms: dict = Depends(require_module_permission("inventory", "can_create")),
     app_url: str = Depends(get_request_app_url),
 ):
     return create_movement_or_approval(movement, "OUT", background_tasks, db, current_employee, app_url)
@@ -663,6 +876,7 @@ def create_inventory_adjustment(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    _perms: dict = Depends(require_module_permission("inventory", "can_create")),
     app_url: str = Depends(get_request_app_url),
 ):
     return create_movement_or_approval(movement, "ADJUSTMENT", background_tasks, db, current_employee, app_url)
@@ -673,20 +887,70 @@ def create_inventory_adjustment(
 # ----------------------------
 
 
-@router.get("/movement-approvals", response_model=list[InventoryMovementApproval])
+@router.get(
+    "/movement-approvals",
+    response_model=list[InventoryMovementApproval] | PaginatedResponse[InventoryMovementApproval],
+)
 def get_movement_approvals(
+    with_meta: bool = Query(False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
     status: str | None = Query(default=None),
+    search: str | None = Query(None),
+    movement_type: str | None = Query(None, pattern="^(OUT|ADJUSTMENT)$"),
+    warehouse_id: int | None = Query(None),
+    sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    query = select(InventoryMovementApprovals)
-
+    filters = []
     if status:
-        query = query.where(InventoryMovementApprovals.status == status.upper().strip())
-
-    approvals = db.exec(query.order_by(InventoryMovementApprovals.created_at.desc())).all()
-
-    return [approval_to_schema(db, approval) for approval in approvals]
+        filters.append(InventoryMovementApprovals.status == status.upper().strip())
+    if movement_type:
+        filters.append(InventoryMovementApprovals.movement_type == movement_type)
+    if warehouse_id is not None:
+        filters.append(InventoryMovementApprovals.warehouse_id == warehouse_id)
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        product_ids = select(Products.id).where(
+            or_(
+                func.lower(cast(Products.code, String)).like(term),
+                func.lower(cast(Products.name, String)).like(term),
+            )
+        )
+        filters.append(
+            or_(
+                InventoryMovementApprovals.product_id.in_(product_ids),
+                func.lower(cast(InventoryMovementApprovals.project, String)).like(term),
+                func.lower(cast(InventoryMovementApprovals.po_number, String)).like(term),
+                func.lower(cast(InventoryMovementApprovals.notes, String)).like(term),
+                func.lower(cast(InventoryMovementApprovals.requested_by, String)).like(term),
+            )
+        )
+    created_order = (
+        InventoryMovementApprovals.created_at.asc()
+        if sort_direction == "asc"
+        else InventoryMovementApprovals.created_at.desc()
+    )
+    id_order = (
+        InventoryMovementApprovals.approval_id.asc()
+        if sort_direction == "asc"
+        else InventoryMovementApprovals.approval_id.desc()
+    )
+    query = select(InventoryMovementApprovals).where(*filters).order_by(created_order, id_order)
+    if not with_meta:
+        approvals = db.exec(query).all()
+        return [approval_to_schema(db, approval) for approval in approvals]
+    total = db.exec(select(func.count()).select_from(InventoryMovementApprovals).where(*filters)).one()
+    approvals = db.exec(query.offset(skip).limit(limit)).all()
+    items = [approval_to_schema(db, approval) for approval in approvals]
+    return PaginatedResponse[InventoryMovementApproval](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
 
 
 def get_pending_approval_for_review(
@@ -741,7 +1005,7 @@ def approve_movement_approval(
     approval.status = "APPROVED"
     approval.review_note = (review.note or "").strip() or None
     approval.reviewed_by = current_employee.display_name
-    approval.reviewed_at = datetime.now()
+    approval.reviewed_at = datetime.now()  # noqa: DTZ005
     approval.movement_id = db_movement.movement_id
 
     db.add(approval)
@@ -773,7 +1037,7 @@ def reject_movement_approval(
     approval.status = "REJECTED"
     approval.review_note = (review.note or "").strip() or None
     approval.reviewed_by = current_employee.display_name
-    approval.reviewed_at = datetime.now()
+    approval.reviewed_at = datetime.now()  # noqa: DTZ005
 
     db.add(approval)
     db.commit()
@@ -800,64 +1064,94 @@ def reject_movement_approval(
 # ----------------------------
 
 
-@router.get("/stock", response_model=list[InventoryStock])
+@router.get("/stock", response_model=list[InventoryStock] | PaginatedResponse[InventoryStock])
 def get_inventory_stock(
+    warehouse_id: int | None = None,
+    with_meta: bool = Query(False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    search: str | None = Query(None),
+    family: str | None = Query(None),
+    category: str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    sort_field: str = Query("name", pattern="^(product_id|code|name|family|category|stock_on_hand|status)$"),
+    sort_direction: str = Query("asc", pattern="^(asc|desc)$"),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    result = build_inventory_stock(db, warehouse_id)
+    term = (search or "").strip().casefold()
+    filtered = [
+        item
+        for item in result
+        if (
+            not term
+            or term
+            in " ".join(
+                str(value)
+                for value in [
+                    item.code,
+                    item.name,
+                    item.family,
+                    item.category,
+                    item.size,
+                    item.material_type,
+                    item.unit,
+                    item.status,
+                ]
+                if value is not None
+            ).casefold()
+        )
+        and (not family or item.family == family)
+        and (not category or item.category == category)
+        and (not status_filter or item.status == status_filter)
+    ]
+    reverse = sort_direction == "desc"
+    filtered.sort(key=lambda item: item.product_id, reverse=reverse)
+    if sort_field != "product_id":
+        filtered.sort(
+            key=lambda item: (
+                getattr(item, sort_field) is None,
+                str(getattr(item, sort_field) or "").casefold()
+                if sort_field != "stock_on_hand"
+                else item.stock_on_hand,
+            ),
+            reverse=reverse,
+        )
+    if not with_meta:
+        return filtered
+    total = len(filtered)
+    items = filtered[skip : skip + limit]
+    return PaginatedResponse[InventoryStock](
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=skip + len(items) < total,
+    )
+
+
+@router.get("/stock-metrics", response_model=InventoryStockMetrics)
+def get_inventory_stock_metrics(
     warehouse_id: int | None = None,
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    products = db.exec(select(Products)).all()
+    stock = build_inventory_stock(db, warehouse_id)
+    return InventoryStockMetrics(
+        total_on_hand=sum((item.stock_on_hand for item in stock), Decimal(0)),
+        low_stock_count=sum(1 for item in stock if item.status == "Low Stock"),
+    )
 
-    result: list[InventoryStock] = []
 
-    for product in products:
-        movements_query = select(InventoryMovements).where(InventoryMovements.product_id == product.id)
-        if warehouse_id is not None:
-            movements_query = movements_query.where(InventoryMovements.warehouse_id == warehouse_id)
-        movements = db.exec(movements_query).all()
-
-        total_in = Decimal(0)
-        total_out = Decimal(0)
-        total_adjustment = Decimal(0)
-
-        for movement in movements:
-            if movement.movement_type == "IN":
-                total_in += movement.quantity
-            elif movement.movement_type == "OUT":
-                total_out += movement.quantity
-            elif movement.movement_type == "ADJUSTMENT":
-                total_adjustment += movement.quantity
-
-        stock_on_hand = total_in - total_out + total_adjustment
-
-        min_stock = getattr(product, "min_stock", None)
-        if stock_on_hand <= 0:
-            status = "Out of Stock"
-        elif min_stock is not None and stock_on_hand < min_stock:
-            status = "Low Stock"
-        else:
-            status = "Active"
-
-        result.append(
-            InventoryStock(
-                product_id=product.id,
-                code=getattr(product, "code", None),
-                name=product.name,
-                family=get_product_family_name(db, product),
-                category=get_product_category_name(db, product),
-                size=getattr(product, "size", None),
-                material_type=getattr(product, "material_type", None),
-                unit=getattr(product, "unit", None),
-                min_stock=min_stock,
-                total_in=total_in,
-                total_out=total_out,
-                total_adjustment=total_adjustment,
-                stock_on_hand=stock_on_hand,
-                status=status,
-            )
-        )
-
-    return result
+@router.get("/stock-facets", response_model=dict[str, list[str]])
+def get_inventory_stock_facets(
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    families = db.exec(select(ProductFamilies.name).order_by(ProductFamilies.name, ProductFamilies.id)).all()
+    categories = db.exec(select(ProductCategories.name).order_by(ProductCategories.name, ProductCategories.id)).all()
+    return {"families": list(dict.fromkeys(families)), "categories": list(dict.fromkeys(categories))}
 
 
 @router.get("/stock/{product_id}", response_model=InventoryStock)
@@ -866,7 +1160,7 @@ def get_product_stock(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    stock_items = get_inventory_stock(db, _auth)
+    stock_items = build_inventory_stock(db)
 
     for item in stock_items:
         if item.product_id == product_id:

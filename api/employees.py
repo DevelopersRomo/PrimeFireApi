@@ -24,10 +24,11 @@ router = APIRouter()
 # staleness between workers is limited by this TTL. Inserts/deletes are detected
 # earlier via the DB marker.
 EMPLOYEES_CACHE_TTL_SECONDS = 300
-# Key: (tenant_scope, include_license_status, license_filter) — el tenant_scope
+# Key: tenant, Microsoft status, legacy/new status filters, and structured employee filters.
 # firma la clave para que un tenant nunca reciba el cache de otro.
 # Value: (cached_at, db_marker, items)
-_employees_list_cache: dict[tuple[str, bool, str], tuple[float, tuple, list[Employee]]] = {}
+EmployeeCacheKey = tuple[str, bool, str, str, str | None, int | None, int | None]
+_employees_list_cache: dict[EmployeeCacheKey, tuple[float, tuple, list[Employee]]] = {}
 
 
 def clear_employees_cache() -> None:
@@ -47,7 +48,7 @@ def employees_db_marker(db: Session) -> tuple:
     return tuple(row)
 
 
-def get_cached_employee_items(cache_key: tuple[str, bool, str], db_marker: tuple) -> list[Employee] | None:
+def get_cached_employee_items(cache_key: EmployeeCacheKey, db_marker: tuple) -> list[Employee] | None:
     cached = _employees_list_cache.get(cache_key)
     if not cached:
         return None
@@ -60,8 +61,20 @@ def get_cached_employee_items(cache_key: tuple[str, bool, str], db_marker: tuple
     return [item.model_copy(deep=True) for item in items]
 
 
-def set_cached_employee_items(cache_key: tuple[str, bool, str], db_marker: tuple, items: list[Employee]) -> None:
+def set_cached_employee_items(cache_key: EmployeeCacheKey, db_marker: tuple, items: list[Employee]) -> None:
     _employees_list_cache[cache_key] = (time.monotonic(), db_marker, [item.model_copy(deep=True) for item in items])
+
+
+def matches_employee_status(employee: Employee, status_filter: str) -> bool:
+    if status_filter == "active_licensed":
+        return employee.is_active is True and employee.has_active_license is True
+    if status_filter == "active_needs_license":
+        return employee.is_active is True and employee.has_active_license is False
+    if status_filter == "former_licensed":
+        return employee.is_active is False and employee.has_license is True
+    if status_filter == "former_unlicensed":
+        return employee.is_active is False and employee.has_license is False
+    return status_filter == "all"
 
 
 def normalize_country_to_code(country_name: str) -> str | None:
@@ -172,26 +185,38 @@ def employee_to_schema(db_employee: Employees) -> Employee:
         roles=roles,
         has_license=False,
         has_active_license=False,
+        is_active=None,
     )
 
 
-async def enrich_employee_license_flags(schema: Employee, azure_oid: str | None) -> Employee:
+async def enrich_employee_license_flags(
+    schema: Employee, azure_oid: str | None, *, include_account_status: bool = False
+) -> Employee:
     if not azure_oid:
         # Sin identidad Microsoft la licencia NO APLICA (None), no es "sin licencia".
         # El frontend solo marca en rojo has_license === false.
         schema.has_license = None
         schema.has_active_license = None
+        schema.is_active = None
         return schema
 
-    try:
-        license_details = await graph_client.get_user_license_details(azure_oid)
+    try:  # noqa: PLW0717
+        if include_account_status:
+            license_details, account_enabled = await asyncio.gather(
+                graph_client.get_user_license_details(azure_oid),
+                graph_client.get_user_account_enabled(azure_oid),
+            )
+            schema.is_active = account_enabled
+        else:
+            license_details = await graph_client.get_user_license_details(azure_oid)
         has_m365_license = len(license_details) > 0
         schema.has_license = has_m365_license
         schema.has_active_license = has_m365_license
     except Exception:
-        logger.exception("Failed to load Microsoft 365 licenses for employee azure_oid=%s", azure_oid)
-        schema.has_license = False
-        schema.has_active_license = False
+        logger.exception("Failed to load Microsoft 365 status for employee azure_oid=%s", azure_oid)
+        schema.has_license = None
+        schema.has_active_license = None
+        schema.is_active = None
 
     return schema
 
@@ -382,6 +407,12 @@ async def get_employees(
     with_meta: bool = Query(False),
     include_license_status: bool = Query(False),
     license_filter: str = Query("all", pattern="^(all|with_license|without_license|with_active_license)$"),
+    status_filter: str = Query(
+        "all", pattern="^(all|active_licensed|active_needs_license|former_licensed|former_unlicensed)$"
+    ),
+    department: str | None = Query(None),
+    manager_employee_id: int | None = Query(None, ge=1),
+    role_id: int | None = Query(None, ge=1),
     search: str | None = Query(None),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
@@ -391,34 +422,60 @@ async def get_employees(
     # tienen licencias M365, asi que no se consulta Graph ni se filtra por licencia.
     # (Futuro: si un tenant N usa Microsoft, agregar su scope aqui.)
     is_microsoft_tenant = tenant_scope == "primefire"
-    effective_license_status = include_license_status and is_microsoft_tenant
+    effective_license_status = (
+        include_license_status or license_filter != "all" or status_filter != "all"
+    ) and is_microsoft_tenant
     effective_license_filter = license_filter if is_microsoft_tenant else "all"
+    effective_status_filter = status_filter if is_microsoft_tenant else "all"
+    effective_department = department.strip() if department and department.strip() else None
 
     db_marker = employees_db_marker(db)
-    cache_key = (tenant_scope, effective_license_status, effective_license_filter)
+    cache_key: EmployeeCacheKey = (
+        tenant_scope,
+        effective_license_status,
+        effective_license_filter,
+        effective_status_filter,
+        effective_department,
+        manager_employee_id,
+        role_id,
+    )
     items = get_cached_employee_items(cache_key, db_marker)
 
     if items is None:
-        statement = (
-            select(Employees)
-            .join(Countries, isouter=True)
-            .options(selectinload(Employees.roles))
-            .order_by(Employees.display_name, Employees.employee_id)
-        )
+        statement = select(Employees).join(Countries, isouter=True).options(selectinload(Employees.roles))
+        if effective_department:
+            statement = statement.where(Employees.department == effective_department)
+        if manager_employee_id is not None:
+            statement = statement.where(Employees.manager_employee_id == manager_employee_id)
+        if role_id is not None:
+            statement = (
+                statement.join(EmployeeRoles, Employees.employee_id == EmployeeRoles.employee_id)
+                .where(EmployeeRoles.role_id == role_id)
+                .distinct()
+            )
+        statement = statement.order_by(Employees.display_name, Employees.employee_id)
         employees = db.exec(statement).all()
         if effective_license_status:
             items = list(
                 await asyncio.gather(
-                    *[enrich_employee_license_flags(employee_to_schema(emp), emp.azure_oid) for emp in employees]
+                    *[
+                        enrich_employee_license_flags(
+                            employee_to_schema(emp), emp.azure_oid, include_account_status=True
+                        )
+                        for emp in employees
+                    ]
                 )
             )
 
             if effective_license_filter == "with_license":
-                items = [item for item in items if item.has_license]
+                items = [item for item in items if item.has_license is True]
             elif effective_license_filter == "without_license":
-                items = [item for item in items if not item.has_license]
+                items = [item for item in items if item.has_license is False]
             elif effective_license_filter == "with_active_license":
-                items = [item for item in items if item.has_active_license]
+                items = [item for item in items if item.has_active_license is True]
+
+            if effective_status_filter != "all":
+                items = [item for item in items if matches_employee_status(item, effective_status_filter)]
         else:
             items = [employee_to_schema(emp) for emp in employees]
 
@@ -490,6 +547,7 @@ async def get_employee(
         # Tenant user/pass: licencias M365 no aplican
         schema.has_license = None
         schema.has_active_license = None
+        schema.is_active = None
         return schema
     return await enrich_employee_license_flags(schema, db_employee.azure_oid)
 

@@ -76,9 +76,10 @@ class Employee(SQLModel):
 
     country_name: str | None = None
     roles: list[EmployeeRole] = []
-    # None = no aplica (tenant sin Microsoft); False = sin licencia (marcar en rojo)
+    # None means the Microsoft status is unavailable or does not apply to the tenant.
     has_license: bool | None = None
     has_active_license: bool | None = None
+    is_active: bool | None = None
 
 
 class EmployeeRead(SQLModel):

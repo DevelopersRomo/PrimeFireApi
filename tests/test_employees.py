@@ -4,8 +4,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from api.employees import enrich_employee_license_flags, get_employees, matches_employee_status
 from main import app
-from models.employees import Employees, Roles
+from models.employees import EmployeeRoles, Employees, Roles
+from schemas.employees import Employee
 
 
 def _override_employee_permissions(permissions: dict):
@@ -66,6 +68,218 @@ class TestEmployeesAPI:
         assert response.status_code == 200
         assert response.json()["total"] == 1
         assert response.json()["items"][0]["first_name"] == "Needle"
+
+    @pytest.mark.parametrize(
+        ("status_filter", "is_active", "has_license", "has_active_license"),
+        [
+            ("active_licensed", True, True, True),
+            ("active_needs_license", True, False, False),
+            ("former_licensed", False, True, True),
+            ("former_unlicensed", False, False, False),
+        ],
+    )
+    def test_combined_status_filter_matches_only_its_exact_state(
+        self, status_filter, is_active, has_license, has_active_license
+    ) -> None:
+        matching = Employee(
+            employee_id=1,
+            is_active=is_active,
+            has_license=has_license,
+            has_active_license=has_active_license,
+        )
+        unknown = Employee(employee_id=2)
+
+        assert matches_employee_status(matching, status_filter) is True
+        assert matches_employee_status(unknown, status_filter) is False
+        assert matches_employee_status(unknown, "all") is True
+
+    def test_get_employees_rejects_unknown_combined_status(self, client, auth_headers) -> None:
+        response = client.get("/employees?status_filter=unknown", headers=auth_headers)
+
+        assert response.status_code == 422
+
+    def test_get_employees_keeps_legacy_license_filter(self, client, auth_headers) -> None:
+        response = client.get("/employees?license_filter=with_license", headers=auth_headers)
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_combined_status_filter_runs_before_pagination(self, db_session) -> None:
+        employees = [
+            Employees(display_name="Active Licensed", azure_oid="active-licensed"),
+            Employees(display_name="Active Needs License", azure_oid="active-needs-license"),
+            Employees(display_name="Former Licensed", azure_oid="former-licensed"),
+            Employees(display_name="Former Unlicensed", azure_oid="former-unlicensed"),
+            Employees(display_name="Unknown", azure_oid="unknown"),
+        ]
+        db_session.add_all(employees)
+        db_session.commit()
+
+        statuses = {
+            "active-licensed": (True, True, True),
+            "active-needs-license": (True, False, False),
+            "former-licensed": (False, True, True),
+            "former-unlicensed": (False, False, False),
+            "unknown": (None, None, None),
+        }
+
+        async def enrich(schema, azure_oid, *, include_account_status=False):
+            schema.is_active, schema.has_license, schema.has_active_license = statuses[azure_oid]
+            return schema
+
+        with patch("api.employees.enrich_employee_license_flags", side_effect=enrich):
+            response = await get_employees(
+                skip=0,
+                limit=1,
+                with_meta=True,
+                include_license_status=False,
+                license_filter="all",
+                status_filter="active_needs_license",
+                department=None,
+                manager_employee_id=None,
+                role_id=None,
+                search=None,
+                db=db_session,
+                _auth=None,
+                tenant_scope="primefire",
+            )
+
+        assert response.total == 1
+        assert response.items[0].display_name == "Active Needs License"
+
+    @pytest.mark.asyncio
+    async def test_structured_employee_filters_use_stable_relations_and_intersect_with_status(self, db_session) -> None:
+        manager = Employees(display_name="Filter Manager")
+        engineering_role = Roles(role_name="Filter Engineer")
+        support_role = Roles(role_name="Filter Support")
+        db_session.add_all([manager, engineering_role, support_role])
+        db_session.commit()
+        db_session.refresh(manager)
+        db_session.refresh(engineering_role)
+        db_session.refresh(support_role)
+
+        target = Employees(
+            display_name="Structured Target",
+            department="Filter Engineering",
+            manager_employee_id=manager.employee_id,
+            azure_oid="structured-target",
+        )
+        same_department = Employees(display_name="Same Department", department="Filter Engineering")
+        same_manager = Employees(
+            display_name="Same Manager",
+            department="Filter Support",
+            manager_employee_id=manager.employee_id,
+        )
+        db_session.add_all([target, same_department, same_manager])
+        db_session.commit()
+        db_session.refresh(target)
+        db_session.refresh(same_department)
+        db_session.refresh(same_manager)
+        db_session.add_all(
+            [
+                EmployeeRoles(employee_id=target.employee_id, role_id=engineering_role.role_id),
+                EmployeeRoles(employee_id=same_department.employee_id, role_id=support_role.role_id),
+                EmployeeRoles(employee_id=same_manager.employee_id, role_id=support_role.role_id),
+            ]
+        )
+        db_session.commit()
+
+        async def list_employees(**filters):
+            params = {
+                "skip": 0,
+                "limit": 50,
+                "with_meta": True,
+                "include_license_status": False,
+                "license_filter": "all",
+                "status_filter": "all",
+                "department": None,
+                "manager_employee_id": None,
+                "role_id": None,
+                "search": None,
+                "db": db_session,
+                "_auth": None,
+                "tenant_scope": "primefire",
+            }
+            params.update(filters)
+            return await get_employees(**params)
+
+        department_response = await list_employees(department="Filter Engineering")
+        manager_response = await list_employees(manager_employee_id=manager.employee_id)
+        role_response = await list_employees(role_id=support_role.role_id)
+
+        assert department_response.total == 2
+        assert manager_response.total == 2
+        assert role_response.total == 2
+
+        async def enrich(schema, azure_oid, *, include_account_status=False):
+            schema.is_active = True
+            schema.has_license = True
+            schema.has_active_license = True
+            return schema
+
+        with patch("api.employees.enrich_employee_license_flags", side_effect=enrich):
+            intersection = await list_employees(
+                status_filter="active_licensed",
+                department="Filter Engineering",
+                manager_employee_id=manager.employee_id,
+                role_id=engineering_role.role_id,
+            )
+
+        assert intersection.total == 1
+        assert intersection.items[0].employee_id == target.employee_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("account_enabled", "license_details", "expected_license"),
+        [
+            (True, [{"skuId": "active-license"}], True),
+            (True, [], False),
+            (False, [{"skuId": "retained-license"}], True),
+            (False, [], False),
+        ],
+    )
+    async def test_enrich_employee_license_flags_maps_account_and_license_status(
+        self, account_enabled, license_details, expected_license
+    ) -> None:
+        employee = Employee(employee_id=1)
+
+        with patch("api.employees.graph_client") as mock_graph:
+            mock_graph.get_user_license_details = AsyncMock(return_value=license_details)
+            mock_graph.get_user_account_enabled = AsyncMock(return_value=account_enabled)
+
+            enriched = await enrich_employee_license_flags(employee, "azure-oid", include_account_status=True)
+
+        assert enriched.is_active is account_enabled
+        assert enriched.has_license is expected_license
+        assert enriched.has_active_license is expected_license
+
+    @pytest.mark.asyncio
+    async def test_enrich_employee_license_flags_keeps_graph_failures_unknown(self) -> None:
+        employee = Employee(employee_id=1)
+
+        with patch("api.employees.graph_client") as mock_graph:
+            mock_graph.get_user_license_details = AsyncMock(side_effect=RuntimeError("Graph unavailable"))
+            mock_graph.get_user_account_enabled = AsyncMock(return_value=True)
+
+            enriched = await enrich_employee_license_flags(employee, "azure-oid", include_account_status=True)
+
+        assert enriched.is_active is None
+        assert enriched.has_license is None
+        assert enriched.has_active_license is None
+
+    @pytest.mark.asyncio
+    async def test_enrich_employee_license_flags_skips_account_status_without_opt_in(self) -> None:
+        employee = Employee(employee_id=1)
+
+        with patch("api.employees.graph_client") as mock_graph:
+            mock_graph.get_user_license_details = AsyncMock(return_value=[])
+            mock_graph.get_user_account_enabled = AsyncMock(return_value=True)
+
+            enriched = await enrich_employee_license_flags(employee, "azure-oid")
+
+        mock_graph.get_user_account_enabled.assert_not_called()
+        assert enriched.is_active is None
+        assert enriched.has_license is False
 
     def test_create_and_get_employee(self, client, auth_headers, db_session) -> None:
         """Test GET /employees/{id} successfully returns an employee."""

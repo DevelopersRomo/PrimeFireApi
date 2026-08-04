@@ -185,6 +185,12 @@ class MicrosoftGraphClient:
         data = await self._make_request("GET", endpoint)
         return data.get("value", [])
 
+    async def get_user_account_enabled(self, user_id: str) -> bool | None:
+        """Return whether a Microsoft 365 user account is enabled."""
+        data = await self._make_request("GET", f"/users/{user_id}?$select=accountEnabled")
+        account_enabled = data.get("accountEnabled")
+        return account_enabled if isinstance(account_enabled, bool) else None
+
     async def find_user_by_display_name(self, display_name: str) -> dict[str, Any] | None:
         """Find a Microsoft user by exact displayName."""
         if not display_name or not display_name.strip():

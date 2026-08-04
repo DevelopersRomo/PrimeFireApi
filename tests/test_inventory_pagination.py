@@ -132,6 +132,40 @@ def test_stock_metadata_filters_metrics_order_and_array_compatibility(
     assert metrics.json()["low_stock_count"] == 1
 
 
+def test_stock_product_filter_is_exact_and_preserves_pagination_metadata(
+    client, auth_headers, db_session, inventory_catalog
+):
+    _, _, warehouse, _, product, other_product = inventory_catalog
+    add_movement(db_session, product, warehouse, "IN", 2)
+    add_movement(db_session, other_product, warehouse, "IN", 3)
+    params = {
+        "with_meta": "true",
+        "warehouse_id": warehouse.warehouse_id,
+        "product_id": product.id,
+        "limit": 1,
+    }
+
+    first_page = client.get("/inventory/stock", params=params, headers=auth_headers)
+    empty_page = client.get("/inventory/stock", params={**params, "skip": 1}, headers=auth_headers)
+
+    assert first_page.status_code == 200
+    assert first_page.json() == {
+        "items": [first_page.json()["items"][0]],
+        "total": 1,
+        "skip": 0,
+        "limit": 1,
+        "has_more": False,
+    }
+    assert first_page.json()["items"][0]["product_id"] == product.id
+    assert empty_page.json() == {
+        "items": [],
+        "total": 1,
+        "skip": 1,
+        "limit": 1,
+        "has_more": False,
+    }
+
+
 def test_warehouse_metadata_filters_count_order_and_array_compatibility(client, auth_headers, inventory_catalog):
     _, _, warehouse, _, _, _ = inventory_catalog
 
@@ -169,6 +203,18 @@ def test_approval_metadata_filters_count_order_and_array_compatibility(
         db_session.commit()
         db_session.refresh(approval)
         approvals.append(approval)
+    other_approval = InventoryMovementApprovals(
+        product_id=inventory_catalog[5].id,
+        warehouse_id=warehouse.warehouse_id,
+        movement_type="OUT",
+        quantity=Decimal(1),
+        status="PENDING",
+        project="Approval Search",
+        requested_by="Requester",
+        created_at=datetime(2026, 7, 15, 12, tzinfo=UTC),
+    )
+    db_session.add(other_approval)
+    db_session.commit()
 
     response = client.get(
         "/inventory/movement-approvals",
@@ -178,6 +224,18 @@ def test_approval_metadata_filters_count_order_and_array_compatibility(
             "status": "PENDING",
             "movement_type": "OUT",
             "warehouse_id": warehouse.warehouse_id,
+            "product_id": product.id,
+            "limit": 1,
+        },
+        headers=auth_headers,
+    )
+    second_page = client.get(
+        "/inventory/movement-approvals",
+        params={
+            "with_meta": "true",
+            "status": "PENDING",
+            "product_id": product.id,
+            "skip": 1,
             "limit": 1,
         },
         headers=auth_headers,
@@ -186,6 +244,15 @@ def test_approval_metadata_filters_count_order_and_array_compatibility(
 
     assert response.status_code == 200
     assert response.json()["total"] == 2
+    assert response.json()["skip"] == 0
+    assert response.json()["limit"] == 1
+    assert response.json()["has_more"] is True
+    assert second_page.json()["total"] == 2
+    assert second_page.json()["skip"] == 1
+    assert second_page.json()["has_more"] is False
+    assert {response.json()["items"][0]["product_id"], second_page.json()["items"][0]["product_id"]} == {
+        product.id
+    }
     assert response.json()["items"][0]["approval_id"] == max(item.approval_id for item in approvals)
     assert isinstance(compatible.json(), list)
-    assert len(compatible.json()) == 2
+    assert len(compatible.json()) == 3

@@ -356,8 +356,13 @@ def inventory_movement_order(sort_field: str, sort_direction: str):
     return order, tie_breaker
 
 
-def build_inventory_stock(db: Session, warehouse_id: int | None = None) -> list[InventoryStock]:
-    products = db.exec(select(Products)).all()
+def build_inventory_stock(
+    db: Session, warehouse_id: int | None = None, product_id: int | None = None
+) -> list[InventoryStock]:
+    products_query = select(Products)
+    if product_id is not None:
+        products_query = products_query.where(Products.id == product_id)
+    products = db.exec(products_query).all()
     result: list[InventoryStock] = []
     for product in products:
         movements_query = select(InventoryMovements).where(InventoryMovements.product_id == product.id)
@@ -899,6 +904,7 @@ def get_movement_approvals(
     search: str | None = Query(None),
     movement_type: str | None = Query(None, pattern="^(OUT|ADJUSTMENT)$"),
     warehouse_id: int | None = Query(None),
+    product_id: int | None = Query(None),
     sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
@@ -910,6 +916,8 @@ def get_movement_approvals(
         filters.append(InventoryMovementApprovals.movement_type == movement_type)
     if warehouse_id is not None:
         filters.append(InventoryMovementApprovals.warehouse_id == warehouse_id)
+    if product_id is not None:
+        filters.append(InventoryMovementApprovals.product_id == product_id)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         product_ids = select(Products.id).where(
@@ -1067,6 +1075,7 @@ def reject_movement_approval(
 @router.get("/stock", response_model=list[InventoryStock] | PaginatedResponse[InventoryStock])
 def get_inventory_stock(
     warehouse_id: int | None = None,
+    product_id: int | None = Query(None),
     with_meta: bool = Query(False),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -1079,7 +1088,7 @@ def get_inventory_stock(
     db: Session = Depends(get_db),
     _auth=Depends(require_authentication),
 ):
-    result = build_inventory_stock(db, warehouse_id)
+    result = build_inventory_stock(db, warehouse_id, product_id)
     term = (search or "").strip().casefold()
     filtered = [
         item

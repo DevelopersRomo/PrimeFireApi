@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 
 from bd.dependencies import get_main_db
 from core.config import settings
+from core.datetime_utils import utcnow
 from models.auth_tokens import AuthToken
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
@@ -465,13 +466,13 @@ async def password_recovery(request: PasswordRecoveryRequest, db: Session = Depe
         )
     ).all()
     for tok in existing:
-        tok.used_at = datetime.now(UTC)
+        tok.used_at = utcnow()
     db.add_all(existing)
     db.commit()
 
     # Create new token
     token = _generate_secure_token()
-    expires_at = datetime.now(UTC) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    expires_at = utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
     auth_token = AuthToken(
         email=target_email,
         token=token,
@@ -508,7 +509,7 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
     if auth_token.used_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This token has already been used.")
 
-    if auth_token.expires_at < datetime.now(UTC):
+    if auth_token.expires_at < utcnow():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="This token has expired. Please request a new one."
         )
@@ -531,7 +532,7 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
     db.add(user)
 
     # Mark token as used
-    auth_token.used_at = datetime.now(UTC)
+    auth_token.used_at = utcnow()
     db.add(auth_token)
     db.commit()
 
@@ -565,13 +566,13 @@ async def request_magic_link(request: MagicLinkRequest, db: Session = Depends(ge
         )
     ).all()
     for tok in existing:
-        tok.used_at = datetime.now(UTC)
+        tok.used_at = utcnow()
     db.add_all(existing)
     db.commit()
 
     # Create new token
     token = _generate_secure_token()
-    expires_at = datetime.now(UTC) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    expires_at = utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
     auth_token = AuthToken(
         email=target_email,
         token=token,
@@ -607,7 +608,7 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
     if auth_token.used_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This link has already been used.")
 
-    if auth_token.expires_at < datetime.now(UTC):
+    if auth_token.expires_at < utcnow():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="This link has expired. Please request a new one."
         )
@@ -620,7 +621,7 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
     # Mark token as used
-    auth_token.used_at = datetime.now(UTC)
+    auth_token.used_at = utcnow()
     db.add(auth_token)
     db.commit()
 

@@ -2,6 +2,8 @@ from datetime import datetime
 
 from sqlmodel import Field, SQLModel
 
+from core.datetime_utils import utcnow
+
 
 class AuthToken(SQLModel, table=True):
     """Tokens para password recovery y magic link."""
@@ -15,4 +17,4 @@ class AuthToken(SQLModel, table=True):
     token_type: str = Field(max_length=50)  # "password_recovery" | "magic_link"
     expires_at: datetime
     used_at: datetime | None = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)

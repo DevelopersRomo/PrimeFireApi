@@ -71,17 +71,17 @@ def get_or_create_country_id(db: Session, country_input: str) -> tuple[int | Non
         return None, False
 
     # Try to find existing country by code
-    existing_country = db.exec(select(Countries).filter(Countries.Name == country_code)).first()  # type: ignore[arg-type]
+    existing_country = db.exec(select(Countries).filter(Countries.name == country_code)).first()
 
     if existing_country:
-        return existing_country.CountryId, False
+        return existing_country.country_id, False
 
     # Create new country with ISO code
-    new_country = Countries(Name=country_code)
+    new_country = Countries(name=country_code)
     db.add(new_country)
     db.commit()
     db.refresh(new_country)
-    return new_country.CountryId, True
+    return new_country.country_id, True
 
 
 def is_primefire_domain(email: str) -> bool:
@@ -224,8 +224,10 @@ class EmployeeSyncScheduler:
             stats["primefire_users"] += 1
             logger.debug(f"✅ Processing PrimeFire user: {email}")
 
-            # Get country from Graph user data
-            graph_country = ms_user.get("country")
+            employee_data = graph_client.map_graph_user_to_employee(ms_user)
+
+            # Resolve the mapped country without assigning it to the SQLAlchemy relationship.
+            graph_country = employee_data.pop("country", None)
             country_id, country_created = (
                 get_or_create_country_id(db, graph_country) if graph_country else (None, False)
             )
@@ -233,7 +235,6 @@ class EmployeeSyncScheduler:
             if country_created:
                 stats["countries_created"] += 1
 
-            employee_data = graph_client.map_graph_user_to_employee(ms_user)
             employee_data["last_synced_at"] = datetime.now()  # noqa: DTZ005
             employee_data["country_id"] = country_id
 

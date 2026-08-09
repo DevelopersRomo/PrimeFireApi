@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from api.employees import enrich_employee_license_flags, get_employees, matches_employee_status
+from core.microsoft_graph import graph_client as microsoft_graph_client
 from main import app
 from models.employees import EmployeeRoles, Employees, Roles
 from schemas.employees import Employee
@@ -419,6 +420,16 @@ class TestEmployeesAPI:
     @patch("api.employees.graph_client")
     def test_sync_from_microsoft(self, mock_graph, client, auth_headers, db_session, employees_admin_overrides) -> None:
         """Test GET /employees/sync/from-microsoft endpoints logic."""
+        manager = Employees(
+            first_name="Sync",
+            last_name="Manager",
+            display_name="Sync Manager",
+            email="manager@primefire.com",
+        )
+        db_session.add(manager)
+        db_session.commit()
+        db_session.refresh(manager)
+
         mock_ms_users = [
             {
                 "id": "mock-oid-abc",
@@ -427,19 +438,13 @@ class TestEmployeesAPI:
                 "displayName": "Sync User",
                 "givenName": "Sync",
                 "surname": "User",
-                "country": "US",
+                "countryLetterCode": "US",
+                "manager": {"displayName": "Sync Manager", "mail": "manager@primefire.com"},
             }
         ]
 
         mock_graph.get_all_users = AsyncMock(return_value=mock_ms_users)
-        mock_graph.map_graph_user_to_employee.return_value = {
-            "azure_oid": "mock-oid-abc",
-            "azure_upn": "testsync@primefire.com",
-            "email": "testsync@primefire.com",
-            "display_name": "Sync User",
-            "first_name": "Sync",
-            "last_name": "User",
-        }
+        mock_graph.map_graph_user_to_employee.side_effect = microsoft_graph_client.map_graph_user_to_employee
 
         response = client.get("/employees/sync/from-microsoft", headers=auth_headers)
         assert response.status_code == 200
@@ -449,6 +454,28 @@ class TestEmployeesAPI:
         sync_user = next((u for u in data if u["azure_oid"] == "mock-oid-abc"), None)
         assert sync_user is not None
         assert sync_user["email"] == "testsync@primefire.com"
+        assert sync_user["manager_employee_id"] == manager.employee_id
+
+        employee = db_session.get(Employees, sync_user["employee_id"])
+        assert employee is not None
+        assert employee.country_id == sync_user["country_id"]
+        assert employee.country is not None
+        assert employee.country.name == "US"
+        assert not isinstance(employee.country, str)
+
+        employee.first_name = "Stale"
+        db_session.commit()
+
+        update_response = client.get("/employees/sync/from-microsoft", headers=auth_headers)
+        assert update_response.status_code == 200
+
+        db_session.expire_all()
+        updated_employee = db_session.get(Employees, sync_user["employee_id"])
+        assert updated_employee is not None
+        assert updated_employee.first_name == "Sync"
+        assert updated_employee.country is not None
+        assert updated_employee.country.name == "US"
+        assert updated_employee.manager_employee_id == manager.employee_id
 
     @patch("api.employees.graph_client")
     def test_sync_employee_to_microsoft(

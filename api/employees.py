@@ -747,11 +747,12 @@ async def sync_from_microsoft(
             if not any(part == "primefire" for part in domain_parts):
                 continue  # Skip non-PrimeFire users
 
-            # Get country from Graph user data
-            graph_country = ms_user.get("country")
+            employee_data = graph_client.map_graph_user_to_employee(ms_user)
+
+            # Resolve the mapped country without assigning it to the SQLAlchemy relationship.
+            graph_country = employee_data.pop("country", None)
             country_id, _ = await get_or_create_country_id(db, graph_country) if graph_country else (None, False)
 
-            employee_data = graph_client.map_graph_user_to_employee(ms_user)
             employee_data["last_synced_at"] = datetime.now()  # noqa: DTZ005
             employee_data["country_id"] = country_id
 

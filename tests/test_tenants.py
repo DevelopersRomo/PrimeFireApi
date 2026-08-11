@@ -59,9 +59,27 @@ def test_logos_metadata_filters_tenant_and_preserves_public_read(client, db_sess
     db_session.commit()
     db_session.add_all(
         [
-            TenantLogos(tenant_id=first.tenant_id, title="Zulu", path="/z", url="z.example"),
-            TenantLogos(tenant_id=first.tenant_id, title="Alpha", path="/a", url="a.example"),
-            TenantLogos(tenant_id=second.tenant_id, title="Other", path="/o", url="o.example"),
+            TenantLogos(
+                tenant_id=first.tenant_id,
+                title="Zulu",
+                logo_dark="/z-dark",
+                logo_light="/z-light",
+                url="z.example",
+            ),
+            TenantLogos(
+                tenant_id=first.tenant_id,
+                title="Alpha",
+                logo_dark="/a-dark",
+                logo_light="/a-light",
+                url="a.example",
+            ),
+            TenantLogos(
+                tenant_id=second.tenant_id,
+                title="Other",
+                logo_dark="/o-dark",
+                logo_light="/o-light",
+                url="o.example",
+            ),
         ]
     )
     db_session.commit()
@@ -81,7 +99,17 @@ def test_logos_metadata_filters_tenant_and_preserves_public_read(client, db_sess
         ("post", "/tenants/", {"name": "Denied", "db_connection_key": "denied"}),
         ("post", "/tenants/approve-user", {"tenant_employee_id": 1, "tenant_id": 1}),
         ("post", "/tenants/approve", {"tenant_id": 1}),
-        ("post", "/tenants/logos", {"tenant_id": 1, "title": "Denied", "path": "/d", "url": "d"}),
+        (
+            "post",
+            "/tenants/logos",
+            {
+                "tenant_id": 1,
+                "title": "Denied",
+                "logo_dark": "/d-dark",
+                "logo_light": "/d-light",
+                "url": "d",
+            },
+        ),
         ("put", "/tenants/1", {"name": "Denied"}),
         ("put", "/tenants/logos/1", {"title": "Denied"}),
         ("delete", "/tenants/1", None),
@@ -205,7 +233,8 @@ def test_tenant_logos_crud(client, db_session, auth_headers):
         "tenant_id": t.tenant_id,
         "url": "https://example.com/logo",
         "title": "Logo title",
-        "path": "/some/path",
+        "logo_dark": "/some/path-dark",
+        "logo_light": "/some/path-light",
     }
     response = client.post("/tenants/logos", json=create_payload, headers=auth_headers)
     assert response.status_code == status.HTTP_201_CREATED

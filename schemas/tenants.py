@@ -63,7 +63,8 @@ class TenantLogoCreate(SQLModel):
     tenant_id: int
     title: str
     description: str | None = None
-    path: str
+    logo_dark: str
+    logo_light: str
     url: str
     email: str | None = None
     path_background: str | None = None
@@ -77,7 +78,8 @@ class TenantLogoCreate(SQLModel):
 class TenantLogoUpdate(SQLModel):
     title: str | None = None
     description: str | None = None
-    path: str | None = None
+    logo_dark: str | None = None
+    logo_light: str | None = None
     url: str | None = None
     email: str | None = None
     path_background: str | None = None
@@ -93,7 +95,8 @@ class TenantLogoRead(SQLModel):
     tenant_id: int
     title: str
     description: str | None = None
-    path: str
+    logo_dark: str
+    logo_light: str
     url: str
     email: str | None = None
     path_background: str | None = None

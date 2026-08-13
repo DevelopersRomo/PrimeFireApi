@@ -1,7 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
-from sqlmodel import SQLModel
+from sqlmodel import Field, SQLModel
+
+Money = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
+TaxRate = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
 
 
 class ProductFamilyCreate(SQLModel):
@@ -123,43 +127,43 @@ class ProductCatalogRead(SQLModel):
 
 
 class ProductCreate(SQLModel):
-    name: str
-    description: str | None = None
-    type: str
-    sku: str | None = None
-    code: str | None = None
+    name: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    type: str = Field(max_length=50)
+    sku: str | None = Field(default=None, max_length=100)
+    code: str | None = Field(default=None, max_length=50)
     family_id: int | None = None
     category_id: int | None = None
-    size: str | None = None
-    material_type: str | None = None
-    specification: str | None = None
-    manufacturer: str | None = None
-    model: str | None = None
-    unit_price: float = 0
-    cost: float = 0
-    tax_rate: float = 0
-    unit: str = "pieza"
+    size: str | None = Field(default=None, max_length=100)
+    material_type: str | None = Field(default=None, max_length=100)
+    specification: str | None = Field(default=None, max_length=100)
+    manufacturer: str | None = Field(default=None, max_length=100)
+    model: str | None = Field(default=None, max_length=100)
+    unit_price: Money = Decimal("0.00")
+    cost: Money = Decimal("0.00")
+    tax_rate: TaxRate = Decimal("0.00")
+    unit: str = Field(default="pieza", max_length=20)
 
     is_active: bool = True
 
 
 class ProductUpdate(SQLModel):
-    name: str | None = None
-    description: str | None = None
-    type: str | None = None
-    sku: str | None = None
-    code: str | None = None
+    name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    type: str | None = Field(default=None, max_length=50)
+    sku: str | None = Field(default=None, max_length=100)
+    code: str | None = Field(default=None, max_length=50)
     family_id: int | None = None
     category_id: int | None = None
-    size: str | None = None
-    material_type: str | None = None
-    specification: str | None = None
-    manufacturer: str | None = None
-    model: str | None = None
-    unit_price: float | None = None
-    cost: float | None = None
-    tax_rate: float | None = None
-    unit: str | None = None
+    size: str | None = Field(default=None, max_length=100)
+    material_type: str | None = Field(default=None, max_length=100)
+    specification: str | None = Field(default=None, max_length=100)
+    manufacturer: str | None = Field(default=None, max_length=100)
+    model: str | None = Field(default=None, max_length=100)
+    unit_price: Money | None = None
+    cost: Money | None = None
+    tax_rate: TaxRate | None = None
+    unit: str | None = Field(default=None, max_length=20)
 
     is_active: bool | None = None
 

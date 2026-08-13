@@ -77,8 +77,8 @@ class Products(SQLModel, table=True):
     name: str = Field(max_length=200, index=True)
     description: str | None = Field(default=None, max_length=2000)
     # Product | Service
-    type: str = Field(index=True)
-    sku: str | None = Field(default=None, index=True)
+    type: str = Field(max_length=50, index=True)
+    sku: str | None = Field(default=None, max_length=100, index=True)
     code: str | None = Field(default=None, max_length=50, index=True)
     family_id: int | None = Field(default=None, foreign_key="dbo.product_families.id", index=True)
     category_id: int | None = Field(default=None, foreign_key="dbo.product_categories.id", index=True)
@@ -87,11 +87,11 @@ class Products(SQLModel, table=True):
     specification: str | None = Field(default=None, max_length=100)
     manufacturer: str | None = Field(default=None, max_length=100)
     model: str | None = Field(default=None, max_length=100)
-    unit_price: float = 0
-    cost: float = 0
-    tax_rate: float = 0
+    unit_price: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
+    cost: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
+    tax_rate: Decimal = Field(default=Decimal("0.00"), max_digits=5, decimal_places=2)
     # pieza, hora, mes, licencia...
-    unit: str = "pieza"
+    unit: str = Field(default="pieza", max_length=20)
     min_stock: Decimal = Field(default=Decimal(0), max_digits=12, decimal_places=2)
     stock_quantity: int = 0
     is_active: bool = True

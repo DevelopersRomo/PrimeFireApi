@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
 
 from api.dependencies import require_authentication, require_module_permission
@@ -158,8 +158,7 @@ def sync_product_catalog_from_product(db: Session, product: Products) -> None:
     catalog_item.active = product.is_active
     catalog_item.description = product.description
 
-    db.commit()
-    db.refresh(catalog_item)
+    db.flush()
 
     catalog_spec = db.exec(
         select(ProductSpecifications).where(ProductSpecifications.product_id == catalog_item.id)
@@ -173,7 +172,20 @@ def sync_product_catalog_from_product(db: Session, product: Products) -> None:
     catalog_spec.material = product.material_type
     catalog_spec.manufacturer = product.manufacturer
     catalog_spec.model = product.model
-    db.commit()
+    db.flush()
+
+
+def commit_product_with_catalog(db: Session, product: Products) -> None:
+    try:
+        db.flush()
+        sync_product_catalog_from_product(db, product)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Product could not be saved because its data conflicts with the product catalog",
+        ) from exc
 
 
 @router.get("/families", response_model=list[ProductFamilyRead])
@@ -537,9 +549,8 @@ def create_product(
     validate_product_catalog_refs(db, product.family_id, product.category_id)
     db_product = Products(**product.model_dump())
     db.add(db_product)
-    db.commit()
+    commit_product_with_catalog(db, db_product)
     db.refresh(db_product)
-    sync_product_catalog_from_product(db, db_product)
     return product_to_read(db, db_product)
 
 
@@ -657,9 +668,8 @@ def update_product(
     for key, value in product.model_dump().items():
         setattr(db_product, key, value)
 
-    db.commit()
+    commit_product_with_catalog(db, db_product)
     db.refresh(db_product)
-    sync_product_catalog_from_product(db, db_product)
     return product_to_read(db, db_product)
 
 
@@ -686,9 +696,8 @@ def patch_product(
     for key, value in update_data.items():
         setattr(db_product, key, value)
 
-    db.commit()
+    commit_product_with_catalog(db, db_product)
     db.refresh(db_product)
-    sync_product_catalog_from_product(db, db_product)
     return product_to_read(db, db_product)
 
 

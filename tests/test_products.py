@@ -1,6 +1,8 @@
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+import api.products as products_api
 from api.products import product_to_read
 from models.products import ProductCatalog, ProductCategories, ProductFamilies, ProductSpecifications, Products
 
@@ -32,6 +34,73 @@ def test_create_product(client, auth_headers, db_session: Session):
     assert data["name"] == "Test Product"
     assert data["type"] == "Product"
     assert data["sku"] == "TEST-001"
+
+
+def test_create_product_accepts_percentage_tax_rate(client, auth_headers, db_session: Session):
+    family = ProductFamilies(name="Exact Payload Family")
+    db_session.add(family)
+    db_session.commit()
+    category = ProductCategories(family_id=family.id, name="Exact Payload Category")
+    db_session.add(category)
+    db_session.commit()
+
+    payload = {
+        "name": 'INTELLIGENT FLANGED MOUNTING BASE; 6" INCH; WHITE',
+        "description": "Test description",
+        "type": "Product",
+        "sku": "TEST",
+        "code": "B300-6",
+        "family_id": family.id,
+        "category_id": category.id,
+        "size": "NA",
+        "material_type": "Electronic",
+        "specification": "Addressable Fire Panel",
+        "manufacturer": "Potter",
+        "model": "IPA-4000E",
+        "unit_price": 17.5,
+        "cost": 0,
+        "tax_rate": 11.5,
+        "unit": "pieza",
+        "is_active": True,
+    }
+
+    response = client.post("/products", json=payload, headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["tax_rate"] == pytest.approx(11.5)
+
+
+@pytest.mark.parametrize("tax_rate", [-0.01, 100.01])
+def test_create_product_rejects_out_of_range_tax_rate(client, auth_headers, tax_rate: float):
+    response = client.post(
+        "/products",
+        json={"name": "Invalid Tax Product", "type": "Product", "tax_rate": tax_rate},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_product_rolls_back_when_catalog_sync_fails(
+    client, auth_headers, db_session: Session, monkeypatch: pytest.MonkeyPatch
+):
+    def fail_catalog_sync(_db: Session, _product: Products) -> None:
+        raise IntegrityError("forced catalog failure", {}, RuntimeError("forced"))
+
+    monkeypatch.setattr(products_api, "sync_product_catalog_from_product", fail_catalog_sync)
+
+    response = client.post(
+        "/products",
+        json={"name": "Atomic Product", "type": "Product", "code": "ATOMIC-001"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Product could not be saved because its data conflicts with the product catalog"
+    )
+    db_session.expire_all()
+    assert db_session.exec(select(Products).where(Products.code == "ATOMIC-001")).first() is None
 
 
 def test_product_search_metadata_uses_matching_predicates(client, auth_headers, db_session: Session):

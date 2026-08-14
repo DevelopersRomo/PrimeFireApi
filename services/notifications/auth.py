@@ -6,6 +6,7 @@ from enum import StrEnum
 import httpx
 
 from core.config import settings
+from core.mail_profiles import DEFAULT_MAIL_PROFILE, get_mail_credentials, normalize_profile_key
 
 
 class GraphAuthScope(StrEnum):
@@ -17,10 +18,16 @@ class GraphAuthScope(StrEnum):
 class GraphAuthClient:
     """Client for Microsoft Graph API authentication."""
 
-    def __init__(self) -> None:
-        self.tenant_id = settings.MICROSOFT_TENANT_ID or settings.TENANT_ID
-        self.client_id = settings.MICROSOFT_CLIENT_ID or settings.BACKEND_CLIENT_ID
-        self.client_secret = settings.MICROSOFT_CLIENT_SECRET or settings.BACKEND_CLIENT_SECRET
+    def __init__(
+        self,
+        *,
+        tenant_id: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+    ) -> None:
+        self.tenant_id = tenant_id or settings.MICROSOFT_TENANT_ID or settings.TENANT_ID
+        self.client_id = client_id or settings.MICROSOFT_CLIENT_ID or settings.BACKEND_CLIENT_ID
+        self.client_secret = client_secret or settings.MICROSOFT_CLIENT_SECRET or settings.BACKEND_CLIENT_SECRET
         self._token: str | None = None
         self._token_expiry: datetime | None = None
 
@@ -63,9 +70,30 @@ class GraphAuthClient:
 
 graph_auth_client = GraphAuthClient()
 
+# One client per named mail profile, built on first use so each keeps its own token cache.
+_profile_auth_clients: dict[str, GraphAuthClient] = {}
+
+
+def get_auth_client(mail_profile: str = DEFAULT_MAIL_PROFILE) -> GraphAuthClient:
+    """Get the auth client for a mail profile, or the default one when it is unconfigured."""
+    credentials = get_mail_credentials(mail_profile)
+    if not credentials:
+        return graph_auth_client
+
+    key = normalize_profile_key(mail_profile)
+    if key not in _profile_auth_clients:
+        _profile_auth_clients[key] = GraphAuthClient(
+            tenant_id=credentials.tenant_id,
+            client_id=credentials.client_id,
+            client_secret=credentials.client_secret,
+        )
+    return _profile_auth_clients[key]
+
 
 async def get_graph_api_auth_headers(
     graph_scope: GraphAuthScope = GraphAuthScope.GRAPH,
+    *,
+    mail_profile: str = DEFAULT_MAIL_PROFILE,
 ) -> dict[str, str] | None:
-    """Get authentication headers for Graph API."""
-    return await graph_auth_client.get_auth_headers(graph_scope)
+    """Get authentication headers for Graph API, issued by the profile's tenant."""
+    return await get_auth_client(mail_profile).get_auth_headers(graph_scope)

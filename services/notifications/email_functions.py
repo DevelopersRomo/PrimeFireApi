@@ -8,6 +8,7 @@ import logging
 import httpx
 
 from core.config import settings
+from core.mail_profiles import DEFAULT_MAIL_PROFILE, get_mail_credentials, normalize_profile_key
 from services.notifications.auth import get_graph_api_auth_headers
 from services.notifications.schemas import EmailAttachment
 
@@ -54,6 +55,7 @@ async def send_outlook_email(
     bcc_emails: list[str] | None = None,
     attachments: list[EmailAttachment] | None = None,
     save_to_sent_items: bool = True,
+    mail_profile: str = DEFAULT_MAIL_PROFILE,
 ) -> tuple[bool, str | None, str | None]:
     """
     Send email using Microsoft Graph API.
@@ -61,14 +63,22 @@ async def send_outlook_email(
     NOTE: send_as_email should always be BOT_EMAIL (the orchestrator).
     All notifications are sent from BOT_EMAIL, even though actions may be performed by different users.
 
+    mail_profile names the Microsoft tenant that issues the token and owns the sender
+    mailbox (see core/mail_profiles). A named profile replaces send_as_email with its
+    own BOT_EMAIL; an unconfigured one falls back to the default tenant.
+
     Returns:
         (success: bool, message_id: str | None, error_message: str | None)
     """
+    credentials = get_mail_credentials(mail_profile)
+    if credentials:
+        send_as_email = credentials.bot_email
+
     logger.info(
-        f"[SEND_OUTLOOK_EMAIL] Starting email send - send_as={send_as_email}, subject='{subject}', to_count={len(to_emails)}"
+        f"[SEND_OUTLOOK_EMAIL] Starting email send - send_as={send_as_email}, mail_profile={normalize_profile_key(mail_profile)}, resolved={bool(credentials)}, subject='{subject}', to_count={len(to_emails)}"
     )
 
-    headers = await get_graph_api_auth_headers()
+    headers = await get_graph_api_auth_headers(mail_profile=mail_profile)
     if not headers:
         logger.error("[SEND_OUTLOOK_EMAIL] Failed to get authentication headers")
         return False, None, "Failed to get authentication headers"
@@ -183,17 +193,19 @@ async def send_notification_email(
     bcc_emails: list[str] | None = None,
     sender_email: str | None = None,
     attachments: list[EmailAttachment] | None = None,
+    mail_profile: str = DEFAULT_MAIL_PROFILE,
 ) -> tuple[bool, str | None]:
     """
     Send a notification email.
 
-    Always uses BOT_EMAIL as sender (orchestrator).
-    The sender_email parameter is ignored - BOT_EMAIL is always used.
+    Always uses the bot mailbox of the given mail profile, or BOT_EMAIL when that
+    profile is the default or unconfigured. The sender_email parameter is ignored.
 
     Returns:
         (success: bool, error_message: str | None)
     """
-    sender_email = getattr(settings, "BOT_EMAIL", None)
+    credentials = get_mail_credentials(mail_profile)
+    sender_email = credentials.bot_email if credentials else getattr(settings, "BOT_EMAIL", None)
     if not sender_email:
         return False, "No sender email configured (BOT_EMAIL)"
 
@@ -205,6 +217,7 @@ async def send_notification_email(
         cc_emails=cc_emails,
         bcc_emails=bcc_emails,
         attachments=attachments,
+        mail_profile=mail_profile,
     )
 
     return success, error_message

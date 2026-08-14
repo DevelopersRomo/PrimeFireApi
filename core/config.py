@@ -88,6 +88,9 @@ class Settings(BaseSettings):
         default="", validation_alias="MICROSOFT_CLIENT_SECRET", description="Microsoft client secret for Graph API"
     )
 
+    # Extra mail tenants are not declared here - see core/mail_profiles.py, which reads
+    # <PROFILE_KEY>_TENANT_ID / _CLIENT_ID / _CLIENT_SECRET / _BOT_EMAIL dynamically.
+
     # Employee sync settings
     SYNC_EMPLOYEES_PRIMEFIRE: bool = Field(
         default=True,

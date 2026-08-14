@@ -70,6 +70,10 @@ class ContactPrimeFireRequest(BaseModel):
     to_email: EmailStr | None = None
     cc_email: str | None = Field(default=None, max_length=500)
     logo_url: AnyHttpUrl | None = None
+    # Site URL, matched against tenant_logos.url to pick the sending tenant
+    tenant_url: str | None = Field(default=None, max_length=500)
+    # Explicit profile key override, wins over whatever tenant_url resolves to
+    mail_profile: str | None = Field(default=None, max_length=50)
     title: str | None = Field(default=None, max_length=180)
     subject: str | None = Field(default=None, max_length=180)
     subtitle: str | None = Field(default=None, max_length=300)

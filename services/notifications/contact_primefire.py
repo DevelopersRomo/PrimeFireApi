@@ -4,6 +4,7 @@ from html import escape
 from urllib.parse import urlparse
 
 from core.config import settings
+from core.mail_profiles import DEFAULT_MAIL_PROFILE
 from schemas.notifications import ContactPrimeFireRequest
 from services.notifications.email_functions import parse_email_list, send_outlook_email
 from services.notifications.schemas import NotificationResponse
@@ -233,6 +234,7 @@ def generate_confirmation_html(
 
 async def send_contact_primefire_notification(
     notification_data: ContactPrimeFireRequest,
+    mail_profile: str = DEFAULT_MAIL_PROFILE,
 ) -> NotificationResponse:
     """Send contact-primefire notification email."""
     to_emails = parse_email_list(str(notification_data.to_email))
@@ -262,6 +264,7 @@ async def send_contact_primefire_notification(
         subject=notification_data.title,
         body=html_body,
         cc_emails=cc_emails,
+        mail_profile=mail_profile,
     )
 
     if not success:
@@ -283,6 +286,7 @@ async def send_contact_primefire_notification(
                 to_emails=user_emails,
                 subject="We Received Your Message - PrimeFire",
                 body=confirmation_html,
+                mail_profile=mail_profile,
             )
 
     return NotificationResponse(success=True, message_id=message_id)

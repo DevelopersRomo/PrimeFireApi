@@ -1,12 +1,36 @@
 from datetime import datetime
 
+from pydantic import field_validator
 from sqlmodel import SQLModel
+
+from core.mail_profiles import is_valid_profile_key
+
+_MAIL_PROFILE_ERROR = (
+    "mail_profile must be lowercase letters, digits and underscores, e.g. devromo_tenant"
+)
+
+
+def _clean_mail_profile(value: str | None) -> str | None:
+    """Reject keys that cannot become an env var prefix, so typos fail loudly."""
+    if value is None:
+        return None
+    key = value.strip().lower()
+    if not is_valid_profile_key(key):
+        raise ValueError(_MAIL_PROFILE_ERROR)
+    return key
 
 
 class TenantCreate(SQLModel):
     name: str
     db_connection_key: str
     description: str | None = None
+    # Named mail profile key, e.g. devromo_tenant. See core/mail_profiles.py.
+    mail_profile: str = "default"
+
+    @field_validator("mail_profile")
+    @classmethod
+    def validate_mail_profile(cls, value: str) -> str:
+        return _clean_mail_profile(value) or "default"
 
 
 class TenantUpdate(SQLModel):
@@ -14,6 +38,12 @@ class TenantUpdate(SQLModel):
     db_connection_key: str | None = None
     description: str | None = None
     is_active: bool | None = None
+    mail_profile: str | None = None
+
+    @field_validator("mail_profile")
+    @classmethod
+    def validate_mail_profile(cls, value: str | None) -> str | None:
+        return _clean_mail_profile(value)
 
 
 class TenantRead(SQLModel):
@@ -22,6 +52,7 @@ class TenantRead(SQLModel):
     db_connection_key: str
     description: str | None
     is_active: bool
+    mail_profile: str = "default"
     created_at: datetime
 
 

@@ -5,6 +5,7 @@ Even though actions are performed by specific users, the email always comes from
 """
 
 from core.config import settings
+from core.mail_profiles import DEFAULT_MAIL_PROFILE
 from services.notifications.email_functions import (
     parse_email_list,
     send_outlook_email,
@@ -46,7 +47,10 @@ def _form_notification_attachments(notification_data: FormNotificationRequest) -
     ]
 
 
-async def _send_form_notification(notification_data: FormNotificationRequest) -> FormNotificationResponse:
+async def _send_form_notification(
+    notification_data: FormNotificationRequest,
+    mail_profile: str = DEFAULT_MAIL_PROFILE,
+) -> FormNotificationResponse:
     to_emails, cc_emails, error_response = _form_notification_recipients(notification_data)
     if error_response:
         return error_response
@@ -65,6 +69,7 @@ async def _send_form_notification(notification_data: FormNotificationRequest) ->
         body=generate_form_notification_html(notification_data),
         cc_emails=cc_emails,
         attachments=_form_notification_attachments(notification_data),
+        mail_profile=mail_profile,
     )
     if success:
         return FormNotificationResponse(
@@ -232,6 +237,7 @@ def generate_form_notification_html(
 
 async def send_form_notification(
     notification_data: FormNotificationRequest,
+    mail_profile: str = DEFAULT_MAIL_PROFILE,
 ) -> FormNotificationResponse:
     """
     Send form notification email.
@@ -240,7 +246,7 @@ async def send_form_notification(
         FormNotificationResponse with success status and message_id or error_message
     """
     try:
-        return await _send_form_notification(notification_data)
+        return await _send_form_notification(notification_data, mail_profile)
     except Exception as e:
         return FormNotificationResponse(
             success=False,

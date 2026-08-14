@@ -12,6 +12,7 @@ class Tenants(SQLModel, table=True):
     db_connection_key: str = Field(max_length=50)
     description: str | None = Field(default=None, max_length=255)
     is_active: bool = Field(default=True)
+    mail_profile: str = Field(default="default", max_length=50)
     created_at: datetime = Field(default_factory=datetime.now)
 
     # Relationships

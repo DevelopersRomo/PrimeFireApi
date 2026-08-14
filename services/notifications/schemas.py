@@ -86,6 +86,10 @@ class FormNotificationRequest(BaseModel):
     pdf_file_name: str | None = None
     form_data: FormData | None = None
     notification_fields: list[dict] | None = None
+    # Site URL, matched against tenant_logos.url to pick the sending tenant
+    tenant_url: str | None = None
+    # Explicit profile key override, wins over whatever tenant_url resolves to
+    mail_profile: str | None = None
 
 
 class DocumentUpload(BaseModel):

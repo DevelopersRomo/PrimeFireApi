@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlmodel import Session
 
 from api.dependencies import get_current_employee
-from bd.dependencies import get_db
+from bd.dependencies import get_db, get_main_db
 from core.config import settings
 from schemas.notifications import (
     ContactPrimeFireRequest,
@@ -20,6 +20,7 @@ from schemas.notifications import (
 )
 from services.notifications.contact_primefire import send_contact_primefire_notification
 from services.notifications.forms import send_form_notification
+from services.notifications.mail_profile import resolve_mail_profile
 from services.notifications.notifications import (
     notify_ticket_created,
     notify_ticket_message,
@@ -177,6 +178,7 @@ async def send_notification(
     request: NotificationRequestWrapper,
     current_employee=Depends(get_current_employee),
     db: Session = Depends(get_db),
+    main_db: Session = Depends(get_main_db),
 ) -> NotificationResponse:
     """
     Send a notification email.
@@ -357,7 +359,15 @@ async def send_notification(
                     detail="form notification data is required",
                 )
 
-            return await send_form_notification(notification_data=request.form)  # type: ignore[return-value]
+            mail_profile = resolve_mail_profile(
+                main_db,
+                tenant_url=request.form.tenant_url,
+                override=request.form.mail_profile,
+            )
+            return await send_form_notification(  # type: ignore[return-value]
+                notification_data=request.form,
+                mail_profile=mail_profile,
+            )
 
         raise HTTPException(
             status_code=400,
@@ -379,6 +389,7 @@ async def send_contact_primefire(
     http_request: Request,
     authorization: str | None = Header(default=None),
     x_contact_token: str | None = Header(default=None),
+    db: Session = Depends(get_main_db),
 ) -> ContactPrimeFireResponse:
     """Send PrimeFire contact template email with dedicated static token auth."""
     received_token = _extract_contact_token(authorization, x_contact_token)
@@ -392,7 +403,9 @@ async def send_contact_primefire(
 
     await _verify_turnstile_token(request.cf_turnstile_response, http_request)
 
-    notification_result = await send_contact_primefire_notification(request)
+    mail_profile = resolve_mail_profile(db, tenant_url=request.tenant_url, override=request.mail_profile)
+
+    notification_result = await send_contact_primefire_notification(request, mail_profile=mail_profile)
     if not notification_result.success:
         raise HTTPException(
             status_code=503,

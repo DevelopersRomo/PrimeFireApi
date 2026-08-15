@@ -1,7 +1,10 @@
 """Schemas for notification API endpoints."""
 
+import base64
+import binascii
 import re
-from typing import Literal
+from pathlib import PurePosixPath
+from typing import ClassVar, Literal
 
 from pydantic import AnyHttpUrl, BaseModel, EmailStr, Field, field_validator
 
@@ -54,6 +57,34 @@ class ContactPrimeFireField(BaseModel):
         return value
 
 
+class ContactPrimeFireAttachment(BaseModel):
+    """A file attached to a contact submission, carried as base64."""
+
+    # Graph caps a simple sendMail around 4 MB, and base64 inflates by ~33%.
+    MAX_CONTENT_BYTES: ClassVar[int] = 3_000_000
+
+    name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(default="application/octet-stream", max_length=150)
+    content_bytes: str = Field(min_length=1)
+
+    @field_validator("content_bytes")
+    @classmethod
+    def validate_content_bytes(cls, value: str) -> str:
+        if len(value) > cls.MAX_CONTENT_BYTES:
+            raise ValueError("Attachment is too large")
+        try:
+            base64.b64decode(value, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError("Attachment must be base64 encoded") from exc
+        return value
+
+    @field_validator("name")
+    @classmethod
+    def strip_path_from_name(cls, value: str) -> str:
+        # Browsers send a bare filename, but never trust it as a path.
+        return PurePosixPath(value.strip().replace("\\", "/")).name or "attachment"
+
+
 class ContactPrimeFireRequest(BaseModel):
     """Request body for /notifications/send/contact-primefire."""
 
@@ -83,6 +114,7 @@ class ContactPrimeFireRequest(BaseModel):
     website: str | None = Field(default=None, max_length=255)
     fields: list[ContactPrimeFireField] = Field(default_factory=list)
     note: str | None = Field(default=None, max_length=4000)
+    attachments: list[ContactPrimeFireAttachment] = Field(default_factory=list, max_length=5)
 
     @classmethod
     @field_validator(

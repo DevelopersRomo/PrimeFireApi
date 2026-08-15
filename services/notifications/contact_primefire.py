@@ -7,7 +7,7 @@ from core.config import settings
 from core.mail_profiles import DEFAULT_MAIL_PROFILE
 from schemas.notifications import ContactPrimeFireRequest
 from services.notifications.email_functions import parse_email_list, send_outlook_email
-from services.notifications.schemas import NotificationResponse
+from services.notifications.schemas import EmailAttachment, NotificationResponse
 
 DEFAULT_LOGO_URL = "https://primefire.do/assets/images/logoRDF.png"
 
@@ -264,6 +264,15 @@ async def send_contact_primefire_notification(
         subject=notification_data.title,
         body=html_body,
         cc_emails=cc_emails,
+        attachments=[
+            EmailAttachment(
+                name=attachment.name,
+                content_type=attachment.content_type,
+                content_bytes=attachment.content_bytes,
+            )
+            for attachment in notification_data.attachments
+        ]
+        or None,
         mail_profile=mail_profile,
     )
 

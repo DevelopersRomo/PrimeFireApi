@@ -79,7 +79,61 @@ ensure_weasyprint_native_libs() {
   fi
 }
 
+check_tesseract_binary() {
+  # Both the binary and the Spanish traineddata must be present: receipts are
+  # recognised with `spa+eng`, and a missing language pack fails at OCR time.
+  command -v tesseract >/dev/null 2>&1 || return 1
+  tesseract --list-langs 2>/dev/null | grep -qx "spa" || return 1
+  tesseract --list-langs 2>/dev/null | grep -qx "eng" || return 1
+}
+
+ensure_tesseract_binary() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    return
+  fi
+
+  local marker="/home/site/.tesseract-installed"
+  local deploy_id
+  deploy_id="$(current_deploy_id || true)"
+
+  if [ -f "$marker" ] && [ -n "$deploy_id" ] \
+     && [ "$(cat "$marker" 2>/dev/null)" = "$deploy_id" ] \
+     && check_tesseract_binary; then
+    echo "Tesseract valid for deploy $deploy_id — skipping install."
+    return
+  fi
+
+  if [ -f "$marker" ]; then
+    echo "Tesseract marker stale or binary missing — reinstalling."
+    rm -f "$marker"
+  fi
+
+  if check_tesseract_binary; then
+    echo "Tesseract already available."
+    touch "$marker"
+    return
+  fi
+
+  echo "Installing Tesseract OCR and language packs..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-spa \
+    tesseract-ocr-eng
+  rm -rf /var/lib/apt/lists/*
+
+  if check_tesseract_binary; then
+    echo "${deploy_id:-unknown}" > "$marker"
+    echo "Tesseract installed and verified for deploy ${deploy_id:-unknown}."
+  else
+    # Receipt OCR degrades to manual capture rather than taking the API down.
+    echo "WARNING: Tesseract install did not resolve; receipt OCR will be unavailable." >&2
+  fi
+}
+
 ensure_weasyprint_native_libs
+ensure_tesseract_binary
 
 if ! python -c "import uvicorn" >/dev/null 2>&1; then
   echo "ERROR: uvicorn is not installed. Deploy must run Oryx remote build (SCM_DO_BUILD_DURING_DEPLOYMENT=true)." >&2

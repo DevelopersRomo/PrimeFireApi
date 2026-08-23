@@ -25,7 +25,11 @@ from api.customers import router as customers_router
 # Config
 from api.dependencies import require_authentication
 from api.employees import router as employees_router
+from api.expense_messages import router as expense_messages_router
+from api.expense_receipts import router as expense_receipts_router
+from api.expenses import router as expenses_router
 from api.hardware_inventory import router as hardware_inventory_router
+from api.impersonation import router as impersonation_router
 from api.inventory import router as inventory_router
 from api.jobs import router as jobs_router
 
@@ -308,6 +312,9 @@ app.include_router(customer_notes_router, tags=["customer_notes"])
 app.include_router(customer_contacts_router, tags=["customer_contacts"])
 app.include_router(customer_attachments_router, tags=["customer_attachments"])
 app.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
+app.include_router(expenses_router, prefix="/expenses", tags=["expenses"])
+app.include_router(expense_receipts_router, prefix="/expenses", tags=["expense_receipts"])
+app.include_router(expense_messages_router, prefix="/expenses", tags=["expense_messages"])
 
 # IMPORTANT
 app.include_router(products_router, prefix="/products", tags=["products"])
@@ -316,6 +323,7 @@ app.include_router(quotations_router)  # prefix already defined in router
 app.include_router(quotation_items_router)
 app.include_router(it_router)  # /it prefix defined in router
 app.include_router(backups_router, prefix="/backups", tags=["backups"])
+app.include_router(impersonation_router, prefix="/impersonation", tags=["impersonation"])
 
 
 @app.get("/")

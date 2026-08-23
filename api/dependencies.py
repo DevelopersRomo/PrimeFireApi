@@ -1,5 +1,7 @@
 """Dependencies."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from urllib.parse import urlparse
 
@@ -7,18 +9,24 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi import Request as FastAPIRequest
 from jose import JWTError  # type: ignore[import-untyped]
 from jose import jwt as jose_jwt  # type: ignore[import-untyped]
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from bd.dependencies import get_db, get_primefire_session, is_primefire_email
 from bd.multitenancy import ConnectionManager
 from core.azure_token import looks_like_azure_token, validate_azure_token
-from core.config import settings
+from core.config import EnvironmentMode, settings
 from models.employees import Employees
 from models.tenants import TenantEmployees, Tenants
 
 # Internal JWT signing secret (see core/config.py)
 SECRET_KEY = settings.jwt_secret
 ALGORITHM = "HS256"
+
+# Local-only testing aid: an Admin can act as another employee by sending this
+# header. No token is minted or exchanged - only the resolved employee changes.
+IMPERSONATION_HEADER = "X-Impersonate-Employee-Id"
+ADMIN_ROLE_NAME = "admin"
 
 
 async def extract_token_from_azure_scheme(request: Request) -> str:
@@ -84,13 +92,13 @@ async def simple_token_validator(
     )
 
 
-async def get_current_employee(
+async def get_authenticated_employee(
     token_data: dict[str, Any] | None = Depends(simple_token_validator),
     request: FastAPIRequest = None,
     db: Session = Depends(get_db),
 ) -> Employees:
     """
-    Get current employee.
+    Get the employee the token actually belongs to, ignoring impersonation.
     Si es usuario externo (tiene tenant_key en token), busca en BD del tenant.
     Si es usuario interno, busca en BD principal.
     Valida que usuarios externos tengan tenant activo asignado.
@@ -182,6 +190,92 @@ async def get_current_employee(
         )
 
     return employee
+
+
+def impersonation_enabled() -> bool:
+    """Impersonation only exists on local environments. Fails closed everywhere else."""
+    return settings.ENVIRONMENT == EnvironmentMode.LOCAL
+
+
+@contextmanager
+def employee_lookup_session(
+    token_data: dict[str, Any] | None,
+    db: Session,
+) -> Iterator[tuple[Session, bool]]:
+    """Yield (session, owned) for the database that resolved the caller.
+
+    Mirrors the branching in get_authenticated_employee so an impersonation
+    target is looked up in the same database as the real caller. `owned` tells
+    the caller whether the session is closed on exit.
+    """
+    token_data = token_data or {}
+    tenant_key = token_data.get("tenant_key")
+
+    if tenant_key:
+        tenant_db = ConnectionManager.get_session(tenant_key)
+        try:
+            yield tenant_db, True
+        finally:
+            tenant_db.close()
+    elif token_data.get("type") == "internal":
+        yield db, False
+    else:
+        with get_primefire_session() as primefire_db:
+            yield primefire_db, True
+
+
+def employee_has_admin_role(session: Session, employee_id: int) -> bool:
+    """Whether the employee holds the Admin role in the given database."""
+    employee = session.exec(
+        select(Employees).options(selectinload(Employees.roles)).where(Employees.employee_id == employee_id)
+    ).first()
+    if not employee:
+        return False
+    return any((role.role_name or "").strip().lower() == ADMIN_ROLE_NAME for role in employee.roles)
+
+
+async def get_current_employee(
+    request: FastAPIRequest,
+    real_employee: Employees = Depends(get_authenticated_employee),
+    token_data: dict[str, Any] | None = Depends(simple_token_validator),
+    db: Session = Depends(get_db),
+) -> Employees:
+    """Get the effective employee for this request, applying local impersonation.
+
+    Every permission and ownership check in the API derives from this dependency,
+    so swapping the employee here is enough to browse the API as somebody else.
+    """
+    raw_target = request.headers.get(IMPERSONATION_HEADER) if request else None
+    if not raw_target or not impersonation_enabled():
+        return real_employee
+
+    try:
+        target_id = int(raw_target)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{IMPERSONATION_HEADER} must be an employee id.",
+        ) from None
+
+    if target_id == real_employee.employee_id:
+        return real_employee
+
+    with employee_lookup_session(token_data, db) as (session, owned):
+        if not employee_has_admin_role(session, real_employee.employee_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Impersonation requires the Admin role.",
+            )
+
+        target = session.exec(select(Employees).where(Employees.employee_id == target_id)).first()
+        if not target:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Impersonation target not found.",
+            )
+        if owned:
+            session.expunge(target)
+        return target
 
 
 def get_request_app_url(request: Request) -> str:

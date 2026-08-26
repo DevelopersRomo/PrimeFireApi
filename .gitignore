@@ -228,3 +228,5 @@ site/
 # Windows specific
 desktop.ini
 $RECYCLE.BIN/
+# Secrets dumps: never commit these
+azure-appsettings.json

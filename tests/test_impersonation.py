@@ -1,17 +1,20 @@
-"""Tests for the local-only employee impersonation header."""
+"""Tests for admin impersonation via signed, expiring grants."""
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from jose import jwt as jose_jwt
 from sqlmodel import select
 
-from api.dependencies import IMPERSONATION_HEADER
-from core.config import EnvironmentMode, settings
+from api.dependencies import (
+    ALGORITHM,
+    IMPERSONATION_GRANT_TYPE,
+    IMPERSONATION_HEADER,
+    SECRET_KEY,
+    issue_impersonation_grant,
+)
 from models.employees import EmployeeRoles, Employees, Roles
 from tests.conftest import create_test_record
-
-
-@pytest.fixture
-def local_environment(monkeypatch):
-    monkeypatch.setattr(settings, "ENVIRONMENT", EnvironmentMode.LOCAL)
 
 
 @pytest.fixture
@@ -28,66 +31,162 @@ def make_admin(db_session, employee: Employees) -> None:
     db_session.commit()
 
 
-def test_admin_impersonates_another_employee(
-    client, auth_headers, db_session, caller, other_employee, local_environment
-):
+def sign(claims: dict) -> str:
+    return jose_jwt.encode(claims, SECRET_KEY, algorithm=ALGORITHM)
+
+
+# --- Issuing -----------------------------------------------------------------
+
+
+def test_admin_can_start_impersonation(client, auth_headers, db_session, caller, other_employee):
     make_admin(db_session, caller)
 
-    response = client.get(
-        "/permissions/me",
-        headers={**auth_headers, IMPERSONATION_HEADER: str(other_employee.employee_id)},
+    response = client.post(
+        "/impersonation/start",
+        headers=auth_headers,
+        json={"employee_id": other_employee.employee_id},
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["employee"]["employee_id"] == other_employee.employee_id
+    body = response.json()
+    assert body["employee_id"] == other_employee.employee_id
+    assert body["grant"]
+    assert body["expires_at"]
 
 
-def test_non_admin_cannot_impersonate(client, auth_headers, db_session, caller, other_employee, local_environment):
-    response = client.get(
-        "/permissions/me",
-        headers={**auth_headers, IMPERSONATION_HEADER: str(other_employee.employee_id)},
+def test_non_admin_cannot_start_impersonation(client, auth_headers, db_session, caller, other_employee):
+    response = client.post(
+        "/impersonation/start",
+        headers=auth_headers,
+        json={"employee_id": other_employee.employee_id},
     )
 
     assert response.status_code == 403
     assert "Admin" in response.json()["detail"]
 
 
-def test_header_is_ignored_outside_local(client, auth_headers, db_session, caller, other_employee, monkeypatch):
-    monkeypatch.setattr(settings, "ENVIRONMENT", EnvironmentMode.PROD)
+def test_cannot_start_against_unknown_employee(client, auth_headers, db_session, caller):
     make_admin(db_session, caller)
 
-    response = client.get(
-        "/permissions/me",
-        headers={**auth_headers, IMPERSONATION_HEADER: str(other_employee.employee_id)},
-    )
+    response = client.post("/impersonation/start", headers=auth_headers, json={"employee_id": 999999})
+
+    assert response.status_code == 404
+
+
+def test_grant_expires_in_one_hour(db_session, caller, other_employee):
+    _grant, expires_at = issue_impersonation_grant(caller.employee_id, other_employee.employee_id)
+
+    remaining = expires_at - datetime.now(UTC)
+    assert timedelta(minutes=55) < remaining <= timedelta(hours=1)
+
+
+# --- Using -------------------------------------------------------------------
+
+
+def test_grant_swaps_the_employee(client, auth_headers, db_session, caller, other_employee):
+    make_admin(db_session, caller)
+    grant, _ = issue_impersonation_grant(caller.employee_id, other_employee.employee_id)
+
+    response = client.get("/permissions/me", headers={**auth_headers, IMPERSONATION_HEADER: grant})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["employee"]["employee_id"] == other_employee.employee_id
+
+
+def test_no_grant_means_no_impersonation(client, auth_headers, db_session, caller):
+    make_admin(db_session, caller)
+
+    response = client.get("/permissions/me", headers=auth_headers)
 
     assert response.status_code == 200, response.text
     assert response.json()["employee"]["employee_id"] == caller.employee_id
 
 
-def test_unknown_target_is_rejected(client, auth_headers, db_session, caller, local_environment):
+def test_expired_grant_is_rejected(client, auth_headers, db_session, caller, other_employee):
+    """The whole point of signing: the client cannot extend its own session."""
     make_admin(db_session, caller)
-
-    response = client.get(
-        "/permissions/me",
-        headers={**auth_headers, IMPERSONATION_HEADER: "999999"},
+    expired = sign(
+        {
+            "type": IMPERSONATION_GRANT_TYPE,
+            "act": caller.employee_id,
+            "sub": str(other_employee.employee_id),
+            "exp": datetime.now(UTC) - timedelta(minutes=1),
+        }
     )
 
-    assert response.status_code == 404
+    response = client.get("/permissions/me", headers={**auth_headers, IMPERSONATION_HEADER: expired})
+
+    assert response.status_code == 403
+    assert "expired" in response.json()["detail"].lower()
 
 
-def test_non_numeric_target_is_rejected(client, auth_headers, db_session, caller, local_environment):
+def test_forged_grant_is_rejected(client, auth_headers, db_session, caller, other_employee):
     make_admin(db_session, caller)
-
-    response = client.get(
-        "/permissions/me",
-        headers={**auth_headers, IMPERSONATION_HEADER: "not-an-id"},
+    forged = jose_jwt.encode(
+        {
+            "type": IMPERSONATION_GRANT_TYPE,
+            "act": caller.employee_id,
+            "sub": str(other_employee.employee_id),
+            "exp": datetime.now(UTC) + timedelta(hours=1),
+        },
+        "not-the-real-secret",
+        algorithm=ALGORITHM,
     )
 
-    assert response.status_code == 400
+    response = client.get("/permissions/me", headers={**auth_headers, IMPERSONATION_HEADER: forged})
+
+    assert response.status_code == 403
 
 
-def test_context_reports_admin_can_impersonate(client, auth_headers, db_session, caller, local_environment):
+def test_grant_issued_for_somebody_else_is_rejected(
+    client, auth_headers, db_session, caller, other_employee, manager_employee
+):
+    """A leaked grant is useless: it only works for the actor it names."""
+    make_admin(db_session, caller)
+    grant, _ = issue_impersonation_grant(manager_employee.employee_id, other_employee.employee_id)
+
+    response = client.get("/permissions/me", headers={**auth_headers, IMPERSONATION_HEADER: grant})
+
+    assert response.status_code == 403
+    assert "another user" in response.json()["detail"].lower()
+
+
+def test_ordinary_access_token_is_not_a_grant(client, auth_headers, db_session, caller):
+    """Signed with the same secret, but the wrong type must not be accepted."""
+    make_admin(db_session, caller)
+    not_a_grant = sign(
+        {
+            "type": "internal",
+            "act": caller.employee_id,
+            "sub": "test@example.com",
+            "exp": datetime.now(UTC) + timedelta(hours=1),
+        }
+    )
+
+    response = client.get("/permissions/me", headers={**auth_headers, IMPERSONATION_HEADER: not_a_grant})
+
+    assert response.status_code == 403
+
+
+def test_grant_stops_working_when_admin_role_is_revoked(client, auth_headers, db_session, caller, other_employee):
+    """Authority is re-checked per request, not frozen at issue time."""
+    make_admin(db_session, caller)
+    grant, _ = issue_impersonation_grant(caller.employee_id, other_employee.employee_id)
+
+    for link in db_session.exec(select(EmployeeRoles).where(EmployeeRoles.employee_id == caller.employee_id)).all():
+        db_session.delete(link)
+    db_session.commit()
+
+    response = client.get("/permissions/me", headers={**auth_headers, IMPERSONATION_HEADER: grant})
+
+    assert response.status_code == 403
+    assert "Admin" in response.json()["detail"]
+
+
+# --- Context -----------------------------------------------------------------
+
+
+def test_context_reports_admin_can_impersonate(client, auth_headers, db_session, caller):
     make_admin(db_session, caller)
 
     response = client.get("/impersonation/context", headers=auth_headers)
@@ -96,33 +195,19 @@ def test_context_reports_admin_can_impersonate(client, auth_headers, db_session,
     assert response.json()["can_impersonate"] is True
 
 
-def test_context_denies_non_admin(client, auth_headers, db_session, caller, local_environment):
+def test_context_denies_non_admin(client, auth_headers, db_session, caller):
     response = client.get("/impersonation/context", headers=auth_headers)
 
     assert response.status_code == 200, response.text
     assert response.json()["can_impersonate"] is False
 
 
-def test_context_denies_outside_local(client, auth_headers, db_session, caller, monkeypatch):
-    monkeypatch.setattr(settings, "ENVIRONMENT", EnvironmentMode.PROD)
-    make_admin(db_session, caller)
-
-    response = client.get("/impersonation/context", headers=auth_headers)
-
-    assert response.status_code == 200, response.text
-    assert response.json()["can_impersonate"] is False
-
-
-def test_context_stays_reachable_while_impersonating(
-    client, auth_headers, db_session, caller, other_employee, local_environment
-):
+def test_context_stays_reachable_while_impersonating(client, auth_headers, db_session, caller, other_employee):
     """The switch must resolve from the real caller, not the impersonated one."""
     make_admin(db_session, caller)
+    grant, _ = issue_impersonation_grant(caller.employee_id, other_employee.employee_id)
 
-    response = client.get(
-        "/impersonation/context",
-        headers={**auth_headers, IMPERSONATION_HEADER: str(other_employee.employee_id)},
-    )
+    response = client.get("/impersonation/context", headers={**auth_headers, IMPERSONATION_HEADER: grant})
 
     assert response.status_code == 200, response.text
     assert response.json()["can_impersonate"] is True

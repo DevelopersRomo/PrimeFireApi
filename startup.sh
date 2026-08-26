@@ -132,13 +132,50 @@ ensure_tesseract_binary() {
   fi
 }
 
+ensure_python_dependencies() {
+  # Oryx normally builds the virtualenv at deploy time and points PYTHONPATH at
+  # it. When that does not happen the app cannot boot at all, so build the
+  # environment here instead of failing. /home is the only persisted path, so
+  # the venv survives restarts and the install is paid once per requirements
+  # change rather than on every cold start.
+  if python -c "import uvicorn" >/dev/null 2>&1; then
+    echo "Dependencies already importable (Oryx build present)."
+    return
+  fi
+
+  local script_dir venv="/home/site/antenv"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  if [ -f "$venv/bin/activate" ]; then
+    # shellcheck disable=SC1091
+    . "$venv/bin/activate"
+    if python -c "import uvicorn" >/dev/null 2>&1; then
+      echo "Using persisted virtualenv at $venv."
+      return
+    fi
+    echo "Persisted virtualenv at $venv is incomplete — rebuilding."
+    rm -rf "$venv"
+  fi
+
+  echo "Oryx build output not found. Building virtualenv at $venv..."
+  python -m venv "$venv"
+  # shellcheck disable=SC1091
+  . "$venv/bin/activate"
+  python -m pip install --upgrade pip
+  python -m pip install -r "$script_dir/requirements.txt"
+
+  if ! python -c "import uvicorn" >/dev/null 2>&1; then
+    echo "ERROR: pip install finished but uvicorn is still missing." >&2
+    echo "       python: $(command -v python || echo 'not on PATH')" >&2
+    echo "       requirements: $script_dir/requirements.txt" >&2
+    exit 1
+  fi
+  echo "Virtualenv ready at $venv."
+}
+
 ensure_weasyprint_native_libs
 ensure_tesseract_binary
-
-if ! python -c "import uvicorn" >/dev/null 2>&1; then
-  echo "ERROR: uvicorn is not installed. Deploy must run Oryx remote build (SCM_DO_BUILD_DURING_DEPLOYMENT=true)." >&2
-  exit 1
-fi
+ensure_python_dependencies
 
 exec python -m uvicorn main:app \
   --host 0.0.0.0 \

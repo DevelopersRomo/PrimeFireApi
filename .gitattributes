@@ -1,0 +1,5 @@
+# Shell scripts must keep LF endings even on Windows checkouts (core.autocrlf=true).
+# startup.sh is deployed to Azure App Service on Linux, where a CRLF shebang makes
+# the kernel look for the interpreter "/bin/bash\r" and the boot fails with the
+# misleading message "startup.sh: not found".
+*.sh text eol=lf

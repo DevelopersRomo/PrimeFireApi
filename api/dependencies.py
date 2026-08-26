@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -15,7 +16,7 @@ from sqlmodel import Session, select
 from bd.dependencies import get_db, get_primefire_session, is_primefire_email
 from bd.multitenancy import ConnectionManager
 from core.azure_token import looks_like_azure_token, validate_azure_token
-from core.config import EnvironmentMode, settings
+from core.config import settings
 from models.employees import Employees
 from models.tenants import TenantEmployees, Tenants
 
@@ -23,9 +24,12 @@ from models.tenants import TenantEmployees, Tenants
 SECRET_KEY = settings.jwt_secret
 ALGORITHM = "HS256"
 
-# Local-only testing aid: an Admin can act as another employee by sending this
-# header. No token is minted or exchanged - only the resolved employee changes.
-IMPERSONATION_HEADER = "X-Impersonate-Employee-Id"
+# An Admin can act as another employee by sending a short-lived grant in this
+# header. The grant is signed and carries its own expiry, so the time limit is
+# enforced here and not by the browser that holds it.
+IMPERSONATION_HEADER = "X-Impersonate-Grant"
+IMPERSONATION_GRANT_TYPE = "impersonation"
+IMPERSONATION_TTL = timedelta(hours=1)
 ADMIN_ROLE_NAME = "admin"
 
 
@@ -192,9 +196,61 @@ async def get_authenticated_employee(
     return employee
 
 
-def impersonation_enabled() -> bool:
-    """Impersonation only exists on local environments. Fails closed everywhere else."""
-    return settings.ENVIRONMENT == EnvironmentMode.LOCAL
+def issue_impersonation_grant(actor_employee_id: int, target_employee_id: int) -> tuple[str, datetime]:
+    """Sign a short-lived grant letting `actor` act as `target`.
+
+    The actor is bound into the grant so a leaked one is useless to anybody
+    else: get_current_employee only honours it for the employee it was issued to.
+    """
+    expires_at = datetime.now(UTC) + IMPERSONATION_TTL
+    grant = jose_jwt.encode(
+        {
+            "type": IMPERSONATION_GRANT_TYPE,
+            "act": actor_employee_id,
+            # `sub` is a registered claim and must be a string, or the decoder
+            # rejects the whole grant.
+            "sub": str(target_employee_id),
+            "exp": expires_at,
+        },
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+    return grant, expires_at
+
+
+def decode_impersonation_grant(raw_grant: str, actor_employee_id: int) -> int:
+    """Return the impersonated employee id, or raise 403 if the grant is not usable.
+
+    Signature and expiry are both checked here, which is what makes the one-hour
+    limit real: the browser cannot extend it by editing what it stored.
+    """
+    try:
+        payload = jose_jwt.decode(raw_grant, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Impersonation grant is invalid or has expired.",
+        ) from None
+
+    if payload.get("type") != IMPERSONATION_GRANT_TYPE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token is not an impersonation grant.",
+        )
+
+    if payload.get("act") != actor_employee_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This impersonation grant belongs to another user.",
+        )
+
+    raw_subject = payload.get("sub")
+    if not isinstance(raw_subject, str) or not raw_subject.isdigit():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Impersonation grant has no valid subject.",
+        )
+    return int(raw_subject)
 
 
 @contextmanager
@@ -240,27 +296,22 @@ async def get_current_employee(
     token_data: dict[str, Any] | None = Depends(simple_token_validator),
     db: Session = Depends(get_db),
 ) -> Employees:
-    """Get the effective employee for this request, applying local impersonation.
+    """Get the effective employee for this request, applying impersonation.
 
     Every permission and ownership check in the API derives from this dependency,
     so swapping the employee here is enough to browse the API as somebody else.
     """
-    raw_target = request.headers.get(IMPERSONATION_HEADER) if request else None
-    if not raw_target or not impersonation_enabled():
+    raw_grant = request.headers.get(IMPERSONATION_HEADER) if request else None
+    if not raw_grant:
         return real_employee
 
-    try:
-        target_id = int(raw_target)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{IMPERSONATION_HEADER} must be an employee id.",
-        ) from None
-
+    target_id = decode_impersonation_grant(raw_grant, real_employee.employee_id)
     if target_id == real_employee.employee_id:
         return real_employee
 
     with employee_lookup_session(token_data, db) as (session, owned):
+        # Re-checked on every request: a grant issued before the role was
+        # revoked stops working immediately.
         if not employee_has_admin_role(session, real_employee.employee_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

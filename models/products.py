@@ -96,6 +96,9 @@ class Products(SQLModel, table=True):
     stock_quantity: int = 0
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Set on every write. Bulk import compares it against the export timestamp
+    # to detect rows edited by somebody else after the file was downloaded.
+    updated_at: datetime | None = Field(default=None)
 
     family: ProductFamilies | None = Relationship(back_populates="products")
     category: ProductCategories | None = Relationship(back_populates="products")

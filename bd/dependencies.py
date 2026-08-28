@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 
 from fastapi import HTTPException, Request
 from jose import JWTError  # type: ignore[import-untyped]
@@ -132,6 +132,31 @@ def get_db(request: Request = None) -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def get_session_factory(request: Request = None) -> Callable[[], Session]:
+    """Return a factory that opens sessions on this request's tenant database.
+
+    `get_db` yields a session tied to the request, which is closed as soon as the
+    response is sent. Background work that outlives the request needs to open its
+    own session against the same tenant, and this resolves that routing once,
+    while the token is still available.
+    """
+    tenant_key, is_azure_token, azure_email = _get_token_route(_extract_bearer_token(request))
+
+    if tenant_key:
+        _validate_tenant_exists(tenant_key)
+        return lambda: ConnectionManager.get_session(tenant_key)
+
+    if is_azure_token:
+        if not is_primefire_email(azure_email):
+            raise HTTPException(
+                status_code=403,
+                detail="Azure AD user is not allowed for this database route.",
+            )
+        return get_primefire_session
+
+    return SessionLocal
 
 
 def get_tenant_cache_scope(request: Request = None) -> str:

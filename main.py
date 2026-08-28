@@ -40,6 +40,7 @@ from api.modules import router as modules_router
 from api.notifications import router as notifications_router
 from api.permissions import router as permissions_router
 from api.product_attachments import router as product_attachments_router
+from api.product_bulk_imports import router as product_bulk_imports_router
 from api.products import router as products_router
 from api.quotation_items import router as quotation_items_router
 from api.quotations import router as quotations_router
@@ -317,6 +318,9 @@ app.include_router(expense_receipts_router, prefix="/expenses", tags=["expense_r
 app.include_router(expense_messages_router, prefix="/expenses", tags=["expense_messages"])
 
 # IMPORTANT
+# Must come first: /products/export and /products/bulk-imports would otherwise
+# be captured by the /products/{product_id} route below.
+app.include_router(product_bulk_imports_router, tags=["product_bulk_imports"])
 app.include_router(products_router, prefix="/products", tags=["products"])
 app.include_router(product_attachments_router, tags=["product_attachments"])
 app.include_router(quotations_router)  # prefix already defined in router

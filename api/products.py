@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
+from core.datetime_utils import utcnow
 from models.products import ProductCatalog, ProductCategories, ProductFamilies, ProductSpecifications, Products
 from schemas.pagination import PaginatedResponse
 from schemas.products import (
@@ -176,6 +177,9 @@ def sync_product_catalog_from_product(db: Session, product: Products) -> None:
 
 
 def commit_product_with_catalog(db: Session, product: Products) -> None:
+    # Every product write funnels through here, so this is the one place the
+    # bulk import's conflict detection needs to be able to trust.
+    product.updated_at = utcnow()
     try:
         db.flush()
         sync_product_catalog_from_product(db, product)
@@ -557,19 +561,14 @@ def create_product(
 # ----------------------------
 # READ ALL
 # ----------------------------
-@router.get("", response_model=list[ProductRead] | PaginatedResponse[ProductRead])
-def get_products(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(1000, ge=1, le=1000),
-    with_meta: bool = Query(False),
-    search: str | None = Query(None),
-    family_id: int | None = Query(None),
-    category_id: int | None = Query(None),
-    type: str | None = Query(None),
-    is_active: bool | None = Query(None),
-    db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
-):
+def build_product_filters(
+    search: str | None = None,
+    family_id: int | None = None,
+    category_id: int | None = None,
+    type: str | None = None,
+    is_active: bool | None = None,
+) -> list:
+    """Build the WHERE clauses shared by the product list and the Excel export."""
     filters = []
     if family_id is not None:
         filters.append(Products.family_id == family_id)
@@ -598,6 +597,23 @@ def get_products(
                 ProductCategories.name.ilike(term),
             )
         )
+    return filters
+
+
+@router.get("", response_model=list[ProductRead] | PaginatedResponse[ProductRead])
+def get_products(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    search: str | None = Query(None),
+    family_id: int | None = Query(None),
+    category_id: int | None = Query(None),
+    type: str | None = Query(None),
+    is_active: bool | None = Query(None),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    filters = build_product_filters(search, family_id, category_id, type, is_active)
 
     statement = (
         select(Products)

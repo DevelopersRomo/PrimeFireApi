@@ -177,6 +177,17 @@ class Settings(BaseSettings):
         description="Hours between ticket recurrence job runs (default: 1)",
     )
 
+    # Novu (in-app notifications). Empty secret key = Novu disabled; the app keeps working.
+    NOVU_SECRET_KEY: str = Field(default="", validation_alias="NOVU_SECRET_KEY")
+    NOVU_APPLICATION_IDENTIFIER: str = Field(default="", validation_alias="NOVU_APPLICATION_IDENTIFIER")
+    SLA_WARNING_JOB_INTERVAL_MINUTES: int = Field(
+        # 10 min keeps >=5 min of notice on the shortest SLA (1h, warned at 45 min). It costs no
+        # Novu runs: only tickets that are actually at risk trigger a workflow.
+        default=10,
+        validation_alias="SLA_WARNING_JOB_INTERVAL_MINUTES",
+        description="Minutes between SLA-at-risk checks (default: 10)",
+    )
+
     @property
     def scope_name(self) -> str:
         """Returns the scope name."""

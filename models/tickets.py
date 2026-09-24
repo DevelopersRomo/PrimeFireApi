@@ -22,6 +22,13 @@ class TicketStatus(enum.StrEnum):
     ON_HOLD = "on_hold"
 
 
+# Reaching one of these statuses marks the ticket resolved; leaving them reopens it
+RESOLVED_STATUSES = (TicketStatus.DONE, TicketStatus.CLOSED, TicketStatus.INACTIVE)
+
+# SLA time only passes while the ticket is in one of these statuses
+SLA_RUNNING_STATUSES = (TicketStatus.ACTIVE, TicketStatus.IN_PROGRESS)
+
+
 class TicketPriority(enum.StrEnum):
     LOW = "low"
     NORMAL = "normal"
@@ -111,6 +118,12 @@ class Tickets(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     in_progress_at: datetime | None = Field(default=None)
+    resolved_at: datetime | None = Field(default=None)
+    sla_warning_sent_at: datetime | None = Field(default=None)
+    # SLA clock: seconds accumulated in finished active/in_progress stretches, plus the start of
+    # the current stretch (None while the clock is stopped). Elapsed = seconds + (now - since).
+    sla_elapsed_seconds: int = Field(default=0)
+    sla_running_since: datetime | None = Field(default=None)
 
     # Relationships
     creator: Optional["Employees"] = Relationship(
@@ -144,3 +157,21 @@ class TicketRecurrenceConfig(SQLModel, table=True):
         back_populates="recurrence_config",
         sa_relationship_kwargs={"foreign_keys": "TicketRecurrenceConfig.ticket_id"},
     )
+
+
+class TicketEvents(SQLModel, table=True):
+    """Audit trail of a ticket: its creation and every tracked field change."""
+
+    __tablename__ = "ticket_events"
+    __table_args__ = {"schema": "dbo"}
+
+    event_id: int | None = Field(default=None, primary_key=True, index=True)
+    ticket_id: int = Field(foreign_key="dbo.tickets.ticket_id", index=True)
+    employee_id: int = Field(foreign_key="dbo.employees.employee_id")
+    event_type: str = Field(max_length=20)  # "created" | "changed"
+    field: str | None = Field(default=None, max_length=50)
+    from_value: str | None = Field(default=None, max_length=100)
+    to_value: str | None = Field(default=None, max_length=100)
+    created_at: datetime = Field(default_factory=utcnow)
+
+    employee: Optional["Employees"] = Relationship()

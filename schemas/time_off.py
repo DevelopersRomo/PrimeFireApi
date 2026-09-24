@@ -157,3 +157,11 @@ class ReportSummary(SQLModel):
     status: StatusSummary
     totals_by_absence: AbsenceTotals
     balances: dict[str, BalanceTotals]
+
+
+class TimeOffSettingsRead(SQLModel):
+    allow_weekends: bool
+
+
+class TimeOffSettingsUpdate(SQLModel):
+    allow_weekends: bool

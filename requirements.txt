@@ -30,3 +30,4 @@ ruff
 codespell
 mypy
 python-dateutil
+novu-py==3.19.0

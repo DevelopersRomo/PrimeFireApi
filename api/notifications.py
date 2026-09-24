@@ -11,13 +11,14 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlmodel import Session
 
 from api.dependencies import get_current_employee
-from bd.dependencies import get_db, get_main_db
+from bd.dependencies import get_db, get_db_route, get_main_db
 from core.config import settings
 from schemas.notifications import (
     ContactPrimeFireRequest,
     ContactPrimeFireResponse,
     NotificationRequestWrapper,
 )
+from services.notifications import novu
 from services.notifications.contact_primefire import send_contact_primefire_notification
 from services.notifications.forms import send_form_notification
 from services.notifications.mail_profile import resolve_mail_profile
@@ -32,6 +33,25 @@ from services.notifications.notifications import (
 from services.notifications.schemas import NotificationField, NotificationResponse
 
 router = APIRouter()
+
+
+@router.get("/inbox")
+def get_inbox_config(
+    request: Request,
+    current_employee=Depends(get_current_employee),
+):
+    """Novu Inbox settings for the signed-in employee; {"enabled": false} when Novu is not configured."""
+    if not novu.is_configured() or not settings.NOVU_APPLICATION_IDENTIFIER:
+        return {"enabled": False}
+
+    subscriber = novu.subscriber_id(get_db_route(request), current_employee.employee_id)
+    return {
+        "enabled": True,
+        "application_identifier": settings.NOVU_APPLICATION_IDENTIFIER,
+        "subscriber_id": subscriber,
+        "subscriber_hash": novu.subscriber_hash(subscriber),
+    }
+
 
 _CONTACT_RATE_LIMIT_BUCKETS: dict[str, deque[float]] = {}
 _CONTACT_DUPLICATE_INDEX: dict[str, float] = {}

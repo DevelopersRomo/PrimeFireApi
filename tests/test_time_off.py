@@ -1,5 +1,5 @@
 import csv
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from io import StringIO
 from unittest.mock import patch
@@ -24,6 +24,17 @@ from models.time_off import (
     TimeOffRequest,
     TimeUnitEnum,
 )
+
+
+def _workday(n: int) -> str:
+    """n-th weekday (1-based) starting next Monday, so tests don't depend on today's weekday."""
+    day = date.today() + timedelta(days=7 - date.today().weekday())  # noqa: DTZ011
+    remaining = n - 1
+    while remaining:
+        day += timedelta(days=1)
+        if day.weekday() < 5:
+            remaining -= 1
+    return day.strftime("%Y-%m-%d")
 
 
 @pytest.fixture
@@ -72,8 +83,8 @@ def time_off_request(db_session: Session, emp_user: Employees):
         absence_type=AbsenceTypeEnum.VACATION.value,
         status=RequestStatusEnum.PENDING.value,
         time_unit=TimeUnitEnum.FULL_DAY.value,
-        start_date=(datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d"),
-        end_date=(datetime.now(UTC) + timedelta(days=2)).strftime("%Y-%m-%d"),
+        start_date=_workday(1),
+        end_date=_workday(2),
         total_days="2.00",
         reason="Need a break",
         created_at=now_str,
@@ -279,8 +290,8 @@ def test_create_request_full_day(
     payload = {
         "absence_type": "vacation",
         "time_unit": "full_day",
-        "start_date": (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d"),
-        "end_date": (datetime.now(UTC) + timedelta(days=2)).strftime("%Y-%m-%d"),
+        "start_date": _workday(1),
+        "end_date": _workday(2),
         "reason": "Test logic",
     }
 
@@ -293,7 +304,7 @@ def test_create_request_full_day(
         select(TimeOffBalance).where(
             TimeOffBalance.employee_id == emp_user.employee_id,
             TimeOffBalance.absence_type == "vacation",
-            TimeOffBalance.year == (datetime.now(UTC) + timedelta(days=1)).year,
+            TimeOffBalance.year == int(_workday(1)[:4]),
         )
     ).first()
     assert balance.pending_days == "2.00"
@@ -323,8 +334,8 @@ def test_create_request_hours(
     payload = {
         "absence_type": "personal",
         "time_unit": "hours",
-        "start_date": (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d"),
-        "end_date": (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d"),
+        "start_date": _workday(1),
+        "end_date": _workday(1),
         "start_time": "10:00:00",
         "end_time": "14:00:00",
         "reason": "Doctor",
@@ -346,8 +357,8 @@ def test_create_request_half_day_requires_single_day(
     payload = {
         "absence_type": "vacation",
         "time_unit": "half_day",
-        "start_date": (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d"),
-        "end_date": (datetime.now(UTC) + timedelta(days=2)).strftime("%Y-%m-%d"),
+        "start_date": _workday(1),
+        "end_date": _workday(2),
         "reason": "Invalid half-day range",
     }
 
@@ -362,8 +373,8 @@ def test_create_request_rejects_overlap_with_active_request(
 ):
     override_deps(emp_user, {})
 
-    start = (datetime.now(UTC) + timedelta(days=3)).strftime("%Y-%m-%d")
-    end = (datetime.now(UTC) + timedelta(days=4)).strftime("%Y-%m-%d")
+    start = _workday(3)
+    end = _workday(4)
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     existing = TimeOffRequest(
@@ -541,8 +552,8 @@ def test_employee_can_edit_own_pending_request(
 ):
     override_deps(emp_user, {})
 
-    new_start = (datetime.now(UTC) + timedelta(days=5)).strftime("%Y-%m-%d")
-    new_end = (datetime.now(UTC) + timedelta(days=6)).strftime("%Y-%m-%d")
+    new_start = _workday(5)
+    new_end = _workday(6)
 
     payload = {
         "start_date": new_start,
@@ -591,8 +602,8 @@ def test_manager_can_edit_pending_request_of_direct_report(
 ):
     override_deps(emp_manager, {})
 
-    new_start = (datetime.now(UTC) + timedelta(days=10)).strftime("%Y-%m-%d")
-    new_end = (datetime.now(UTC) + timedelta(days=11)).strftime("%Y-%m-%d")
+    new_start = _workday(10)
+    new_end = _workday(11)
 
     payload = {
         "start_date": new_start,
@@ -644,8 +655,8 @@ def test_balance_recalculation_when_editing_approved_request(
 ):
     # Create an approved request: 3 full days
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
-    start = (datetime.now(UTC) + timedelta(days=20)).strftime("%Y-%m-%d")
-    end = (datetime.now(UTC) + timedelta(days=22)).strftime("%Y-%m-%d")
+    start = _workday(20)
+    end = _workday(22)
     current_year = datetime.now(UTC).year
 
     req = TimeOffRequest(
@@ -680,7 +691,7 @@ def test_balance_recalculation_when_editing_approved_request(
     override_deps(emp_other, admin_perms)
 
     # Edit to 2 days instead of 3
-    new_end = (datetime.now(UTC) + timedelta(days=21)).strftime("%Y-%m-%d")
+    new_end = _workday(21)
     payload = {"end_date": new_end}
 
     response = client.patch(f"/api/v1/requests/{req.request_id}", json=payload)
@@ -704,8 +715,8 @@ def test_overlap_validation_on_edit(
 ):
     # Create another approved request that will conflict
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
-    conflict_start = (datetime.now(UTC) + timedelta(days=10)).strftime("%Y-%m-%d")
-    conflict_end = (datetime.now(UTC) + timedelta(days=12)).strftime("%Y-%m-%d")
+    conflict_start = _workday(10)
+    conflict_end = _workday(12)
 
     conflicting = TimeOffRequest(
         employee_id=emp_user.employee_id,
@@ -818,3 +829,163 @@ def test_cannot_cancel_approved_request(
     response = client.delete(f"/api/v1/requests/{time_off_request.request_id}")
     assert response.status_code == 400
     assert "Only pending requests can be cancelled" in response.json()["detail"]
+
+
+# =============================================================================
+# Weekend rule (time_off_settings.allow_weekends, default False)
+# =============================================================================
+
+ADMIN_PERMS = {"permissions": [{"module_key": "timeoff", "permissions": {"admin_actions": True}}]}
+
+
+@pytest.fixture
+def vacation_balance(db_session: Session, emp_user: Employees):
+    db_session.add(
+        TimeOffBalance(
+            employee_id=emp_user.employee_id,
+            absence_type=AbsenceTypeEnum.VACATION.value,
+            year=int(_workday(1)[:4]),
+            entitled_days="10.00",
+            used_days="0.00",
+            pending_days="0.00",
+            carryover_days="0.00",
+        )
+    )
+    db_session.commit()
+
+
+def _saturday_after(day: str) -> str:
+    base = datetime.strptime(day, "%Y-%m-%d").date()  # noqa: DTZ007
+    return (base + timedelta(days=(5 - base.weekday()) % 7)).strftime("%Y-%m-%d")
+
+
+def test_settings_default_disallow_weekends(override_deps, client: TestClient, emp_user: Employees):
+    override_deps(emp_user, {})
+
+    response = client.get("/api/v1/settings")
+    assert response.status_code == 200
+    assert response.json() == {"allow_weekends": False}
+
+
+def test_non_admin_cannot_change_settings(override_deps, client: TestClient, emp_user: Employees):
+    override_deps(emp_user, {})
+
+    response = client.put("/api/v1/settings", json={"allow_weekends": True})
+    assert response.status_code == 403
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_weekend_start_rejected_by_default(_mock_add_task, override_deps, client: TestClient, emp_user: Employees):
+    override_deps(emp_user, {})
+    saturday = _saturday_after(_workday(1))
+
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": saturday, "end_date": saturday}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 400
+    assert "weekend" in response.json()["detail"].lower()
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_range_across_weekend_counts_only_weekdays(
+    _mock_add_task, override_deps, client: TestClient, emp_user: Employees, vacation_balance
+):
+    override_deps(emp_user, {})
+
+    # Workdays 5 and 6 are Friday and the following Monday
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": _workday(5), "end_date": _workday(6)}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 201
+    assert response.json()["total_days"] == "2.00"
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_admin_can_allow_weekends(
+    _mock_add_task, override_deps, client: TestClient, emp_user: Employees, vacation_balance
+):
+    override_deps(emp_user, ADMIN_PERMS)
+
+    response = client.put("/api/v1/settings", json={"allow_weekends": True})
+    assert response.status_code == 200
+    assert response.json() == {"allow_weekends": True}
+
+    saturday = _saturday_after(_workday(1))
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": _workday(5), "end_date": saturday}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 201
+    # Calendar days once weekends are allowed: Friday + Saturday
+    assert response.json()["total_days"] == "2.00"
+
+
+# =============================================================================
+# Past dates are not requestable
+# =============================================================================
+
+
+def _past_weekday(days_back: int) -> str:
+    day = date.today() - timedelta(days=days_back)  # noqa: DTZ011
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day.strftime("%Y-%m-%d")
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_request_starting_in_the_past_is_rejected(
+    _mock_add_task, override_deps, client: TestClient, emp_user: Employees, vacation_balance
+):
+    override_deps(emp_user, {})
+    past = _past_weekday(10)
+
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": past, "end_date": past}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 400
+    assert "past" in response.json()["detail"].lower()
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_editing_a_request_into_the_past_is_rejected(
+    _mock_add_task, override_deps, client: TestClient, emp_user: Employees, time_off_request: TimeOffRequest
+):
+    override_deps(emp_user, {})
+    past = _past_weekday(10)
+
+    response = client.patch(
+        f"/api/v1/requests/{time_off_request.request_id}", json={"start_date": past, "end_date": past}
+    )
+    assert response.status_code == 400
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_editing_other_fields_of_an_old_request_still_works(
+    _mock_add_task, override_deps, client: TestClient, emp_user: Employees, db_session: Session
+):
+    # A request whose dates are already in the past can still get its reason fixed
+    past = _past_weekday(10)
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    old = TimeOffRequest(
+        employee_id=emp_user.employee_id,
+        absence_type=AbsenceTypeEnum.VACATION.value,
+        status=RequestStatusEnum.PENDING.value,
+        time_unit=TimeUnitEnum.FULL_DAY.value,
+        start_date=past,
+        end_date=past,
+        total_days="1.00",
+        created_at=now_str,
+        updated_at=now_str,
+    )
+    db_session.add(old)
+    db_session.add(
+        TimeOffBalance(
+            employee_id=emp_user.employee_id,
+            absence_type=AbsenceTypeEnum.VACATION.value,
+            year=int(past[:4]),
+            entitled_days="10.00",
+            used_days="0.00",
+            pending_days="1.00",
+            carryover_days="0.00",
+        )
+    )
+    db_session.commit()
+    override_deps(emp_user, {})
+
+    response = client.patch(f"/api/v1/requests/{old.request_id}", json={"reason": "Fixed typo"})
+    assert response.status_code == 200

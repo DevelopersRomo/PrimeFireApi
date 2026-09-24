@@ -92,6 +92,19 @@ def _validate_tenant_exists(tenant_key: str) -> None:
         main_db.close()
 
 
+def get_db_route(request: Request) -> str:
+    """Which database this request uses, mirroring get_db: the tenant key, "primefire" or "main".
+
+    IDs are only unique per database, so anything shared across databases (e.g. Novu
+    subscribers) must be namespaced with this route.
+    """
+    tenant_key, is_azure_token, _ = _get_token_route(_extract_bearer_token(request))
+    # ConnectionManager sends a "main" tenant key (any case) to the main DB: same database, same route
+    if tenant_key and tenant_key.lower() != "main":
+        return tenant_key
+    return "primefire" if is_azure_token and not tenant_key else "main"
+
+
 # Dependency function to get DB session
 def get_db(request: Request = None) -> Generator[Session, None, None]:
     """

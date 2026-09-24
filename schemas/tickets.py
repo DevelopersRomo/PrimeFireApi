@@ -63,6 +63,9 @@ class Ticket(SQLModel):
     created_at: datetime
     updated_at: datetime
     in_progress_at: datetime | None = None
+    resolved_at: datetime | None = None
+    sla_elapsed_seconds: int = 0
+    sla_running_since: datetime | None = None
     recurrence_type: TicketRecurrenceType | None = None
 
     creator: TicketEmployee | None = None
@@ -76,3 +79,16 @@ class TicketFilters(SQLModel):
     assigned_to: int | None = None
     created_by: int | None = None
     search: str | None = None
+
+
+class TicketEvent(SQLModel):
+    event_id: int
+    event_type: str
+    field: str | None = None
+    from_value: str | None = None
+    to_value: str | None = None
+    # Human-readable values, only set where the raw value is an id (assigned_to)
+    from_label: str | None = None
+    to_label: str | None = None
+    created_at: datetime
+    employee: TicketEmployee | None = None

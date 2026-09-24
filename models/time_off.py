@@ -86,3 +86,13 @@ class Department(SQLModel, table=True):
     department_id: int | None = Field(default=None, primary_key=True)
     name: str = Field(max_length=100, nullable=False, unique=True)
     code: str | None = Field(default=None, max_length=20)
+
+
+class TimeOffSettings(SQLModel, table=True):
+    __tablename__ = "time_off_settings"
+    __table_args__ = {"schema": "dbo"}
+
+    setting_id: int | None = Field(default=None, primary_key=True)
+    allow_weekends: bool = Field(default=False)
+    created_at: str = Field(nullable=False, max_length=19)
+    updated_at: str = Field(nullable=False, max_length=19)

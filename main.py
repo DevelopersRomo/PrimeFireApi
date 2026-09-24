@@ -132,6 +132,13 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+    # SLA-at-risk warnings via Novu (solo en el scheduler worker; no-op sin NOVU_SECRET_KEY)
+    sla_warning_task = None
+    if is_scheduler_worker:
+        from core.ticket_sla_scheduler import run_sla_warning_loop
+
+        sla_warning_task = asyncio.create_task(run_sla_warning_loop())
+
     try:
         yield
     finally:
@@ -149,6 +156,11 @@ async def lifespan(app: FastAPI):
             recurrence_task.cancel()
             with suppress(asyncio.CancelledError):
                 await recurrence_task
+
+        if sla_warning_task and not sla_warning_task.done():
+            sla_warning_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await sla_warning_task
 
         try:
             from core.ticket_recurrence_scheduler import recurrence_scheduler

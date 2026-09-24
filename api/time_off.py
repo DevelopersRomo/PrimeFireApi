@@ -1,5 +1,5 @@
 import csv
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from io import StringIO
 from typing import Literal
@@ -23,6 +23,7 @@ from models.time_off import (
     RequestStatusEnum,
     TimeOffBalance,
     TimeOffRequest,
+    TimeOffSettings,
     TimeUnitEnum,
 )
 from schemas.pagination import PaginatedResponse
@@ -40,6 +41,8 @@ from schemas.time_off import (
     TimeOffRequestListRead,
     TimeOffRequestRead,
     TimeOffRequestUpdate,
+    TimeOffSettingsRead,
+    TimeOffSettingsUpdate,
 )
 from services.notifications.notifications import (
     notify_time_off_approved,
@@ -80,12 +83,18 @@ def _time_to_utc_str(t: time | str) -> str:
     return t.strftime("%H:%M:%S")
 
 
-def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal | None]:
+def _calculate_totals(payload: TimeOffRequestCreate, allow_weekends: bool) -> tuple[Decimal, Decimal | None]:
     """Calculate total days and hours based on payload."""
     if payload.end_date < payload.start_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="end_date must be greater than or equal to start_date",
+        )
+
+    if not allow_weekends and (payload.start_date.weekday() >= 5 or payload.end_date.weekday() >= 5):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Time off cannot start or end on a weekend",
         )
 
     if payload.time_unit == TimeUnitEnum.HALF_DAY and payload.start_date != payload.end_date:
@@ -95,6 +104,8 @@ def _calculate_totals(payload: TimeOffRequestCreate) -> tuple[Decimal, Decimal |
         )
 
     days_span = (payload.end_date - payload.start_date).days + 1
+    if not allow_weekends:
+        days_span = sum(1 for offset in range(days_span) if (payload.start_date + timedelta(days=offset)).weekday() < 5)
 
     if payload.time_unit == TimeUnitEnum.FULL_DAY:
         return Decimal(days_span), None
@@ -225,6 +236,28 @@ def _get_request_or_404(db: Session, request_id: int) -> TimeOffRequest:
     if not request:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
     return request
+
+
+def _assert_not_in_past(start_date: date) -> None:
+    # Server "today" is UTC; allow yesterday so users behind UTC (e.g. UTC-6 in the evening)
+    # can still request their own today.
+    earliest = datetime.now(UTC).date() - timedelta(days=1)
+    if start_date < earliest:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Time off cannot start in the past",
+        )
+
+
+def _get_time_off_settings(db: Session) -> TimeOffSettings:
+    settings_row = db.exec(select(TimeOffSettings).order_by(TimeOffSettings.setting_id)).first()
+    if not settings_row:
+        now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        settings_row = TimeOffSettings(allow_weekends=False, created_at=now_str, updated_at=now_str)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
 
 
 def _has_timeoff_admin_actions(user_permissions: dict) -> bool:
@@ -413,7 +446,8 @@ def create_request(
     if not employee_exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
-    total_days, total_hours = _calculate_totals(payload)
+    _assert_not_in_past(payload.start_date)
+    total_days, total_hours = _calculate_totals(payload, _get_time_off_settings(db).allow_weekends)
     _assert_no_active_overlap(db, employee_id, payload)
 
     start_time_str = None
@@ -542,8 +576,12 @@ def update_request(
         reason=effective_reason,
     )
 
+    # Only a new start date is checked, so old requests can still get other fields fixed
+    if effective_start_date.strftime("%Y-%m-%d") != request.start_date:
+        _assert_not_in_past(effective_start_date)
+
     # Validate and calculate totals
-    new_total_days, new_total_hours = _calculate_totals(validation_payload)
+    new_total_days, new_total_hours = _calculate_totals(validation_payload, _get_time_off_settings(db).allow_weekends)
 
     # Overlap check (exclude current request)
     _assert_no_active_overlap(db, request.employee_id, validation_payload, exclude_request_id=request_id)
@@ -1001,3 +1039,26 @@ def list_holidays(db: Session = Depends(get_db), _auth=Depends(require_authentic
 @router.get("/departments", response_model=list[DepartmentRead])
 def list_departments(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
     return db.exec(select(Department)).all()
+
+
+@router.get("/settings", response_model=TimeOffSettingsRead)
+def get_settings(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+    return _get_time_off_settings(db)
+
+
+@router.put("/settings", response_model=TimeOffSettingsRead)
+def update_settings(
+    payload: TimeOffSettingsUpdate,
+    db: Session = Depends(get_db),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+):
+    if not _has_timeoff_admin_actions(user_permissions):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can change time off settings")
+
+    settings_row = _get_time_off_settings(db)
+    settings_row.allow_weekends = payload.allow_weekends
+    settings_row.updated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    db.add(settings_row)
+    db.commit()
+    db.refresh(settings_row)
+    return settings_row

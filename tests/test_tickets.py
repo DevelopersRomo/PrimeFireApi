@@ -1,5 +1,7 @@
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
@@ -143,6 +145,34 @@ def test_update_ticket(
         assert data["assigned_to"] == other_employee.employee_id
 
         mock_notify.assert_called_once()
+
+
+def test_update_ticket_to_active_stops_sla_clock(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    ticket = create_test_record(
+        db_session, Tickets, title="Test Ticket", status=TicketStatus.TODO, created_by=current_employee.employee_id
+    )
+    db_session.commit()
+
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json={"status": "active"}, headers=auth_headers)
+    assert response.status_code == 200
+    first_in_progress_at = response.json()["in_progress_at"]
+    assert first_in_progress_at is not None
+
+    # Later transitions never move the SLA stop time
+    response = client.patch(f"/tickets/{ticket.ticket_id}", json={"status": "in_progress"}, headers=auth_headers)
+    assert response.json()["in_progress_at"] == first_in_progress_at
+
+
+def test_create_ticket_already_in_progress_stops_sla_clock(
+    client: TestClient, auth_headers: dict, current_employee: Employees, auth_overrides
+):
+    with patch("api.tickets.notify_ticket_created"):
+        payload = {"title": "Started", "status": "in_progress", "priority": "normal", "ticket_type": "issue"}
+        response = client.post("/tickets", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["in_progress_at"] is not None
 
 
 def test_delete_ticket(
@@ -1339,3 +1369,254 @@ def test_update_ticket_admin_can_change_assignee(
     payload = {"assigned_to": non_it_employee.employee_id}
     response = client.patch(f"/tickets/{ticket.ticket_id}", json=payload, headers=auth_headers)
     assert response.status_code == 200
+
+
+# =============================================================================
+# Ticket history (ticket_events) and resolved_at
+# =============================================================================
+
+
+def test_create_ticket_records_created_event(
+    client: TestClient, auth_headers: dict, current_employee: Employees, auth_overrides
+):
+    with patch("api.tickets.notify_ticket_created"):
+        response = client.post(
+            "/tickets",
+            json={"title": "History", "status": "todo", "priority": "normal", "ticket_type": "issue"},
+            headers=auth_headers,
+        )
+    ticket_id = response.json()["ticket_id"]
+
+    events = client.get(f"/tickets/{ticket_id}/events", headers=auth_headers).json()
+    assert [e["event_type"] for e in events] == ["created"]
+    assert events[0]["employee"]["employee_id"] == current_employee.employee_id
+
+
+def test_update_ticket_records_field_changes(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    ticket = create_test_record(
+        db_session, Tickets, title="T", status=TicketStatus.TODO, created_by=current_employee.employee_id
+    )
+    db_session.commit()
+
+    with patch("api.tickets.send_ticket_assigned_notification"):
+        client.patch(
+            f"/tickets/{ticket.ticket_id}",
+            json={"status": "in_progress", "priority": "normal", "assigned_to": other_employee.employee_id},
+            headers=auth_headers,
+        )
+
+    events = client.get(f"/tickets/{ticket.ticket_id}/events", headers=auth_headers).json()
+    changes = {e["field"]: (e["from_value"], e["to_value"]) for e in events if e["event_type"] == "changed"}
+    assert changes["status"] == ("todo", "in_progress")
+    assert changes["assigned_to"] == (None, str(other_employee.employee_id))
+    assignment = next(e for e in events if e["field"] == "assigned_to")
+    assert assignment["to_label"] == other_employee.display_name
+    # Unchanged values are not recorded
+    assert "priority" not in changes
+
+
+def test_ticket_events_hidden_outside_visibility(
+    client: TestClient, auth_headers: dict, other_employee: Employees, db_session: Session, auth_overrides
+):
+    ticket = create_test_record(
+        db_session, Tickets, title="Private", status=TicketStatus.TODO, created_by=other_employee.employee_id
+    )
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.ticket_id}/events", headers=auth_headers)
+    assert response.status_code == 403
+
+
+def test_resolved_at_set_on_resolution_and_cleared_on_reopen(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    ticket = create_test_record(
+        db_session, Tickets, title="T", status=TicketStatus.IN_PROGRESS, created_by=current_employee.employee_id
+    )
+    db_session.commit()
+
+    done = client.patch(f"/tickets/{ticket.ticket_id}", json={"status": "done"}, headers=auth_headers).json()
+    assert done["resolved_at"] is not None
+
+    reopened = client.patch(f"/tickets/{ticket.ticket_id}", json={"status": "todo"}, headers=auth_headers).json()
+    assert reopened["resolved_at"] is None
+
+
+def test_delete_ticket_with_history(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    ticket = create_test_record(
+        db_session, Tickets, title="T", status=TicketStatus.TODO, created_by=current_employee.employee_id
+    )
+    db_session.commit()
+    client.patch(f"/tickets/{ticket.ticket_id}", json={"status": "done"}, headers=auth_headers)
+
+    response = client.delete(f"/tickets/{ticket.ticket_id}", headers=auth_headers)
+    assert response.status_code == 200
+
+
+def test_ticket_stats_date_filter_and_durations(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    created = datetime(2026, 3, 10, 8, 0, 0)  # noqa: DTZ001 - DB stores naive UTC
+    create_test_record(
+        db_session,
+        Tickets,
+        title="Fast",
+        status=TicketStatus.DONE,
+        created_by=current_employee.employee_id,
+        created_at=created,
+        in_progress_at=created + timedelta(hours=1),
+        resolved_at=created + timedelta(hours=4),
+    )
+    create_test_record(
+        db_session,
+        Tickets,
+        title="Slow",
+        status=TicketStatus.DONE,
+        created_by=current_employee.employee_id,
+        created_at=created,
+        in_progress_at=created + timedelta(hours=3),
+        resolved_at=created + timedelta(hours=8),
+    )
+    create_test_record(
+        db_session,
+        Tickets,
+        title="Out of range",
+        status=TicketStatus.TODO,
+        created_by=current_employee.employee_id,
+        created_at=datetime(2025, 1, 1),  # noqa: DTZ001
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/tickets/stats", params={"start_date": "2026-03-01", "end_date": "2026-03-31"}, headers=auth_headers
+    )
+    data = response.json()
+    assert data["total"] == 2
+    assert data["avg_time_to_start_hours"] == pytest.approx(2.0)
+    assert data["avg_resolution_hours"] == pytest.approx(6.0)
+
+
+# =============================================================================
+# Novu: ticket-closed notification
+# =============================================================================
+
+
+def test_closing_ticket_notifies_creator_and_assignee_except_actor(
+    client: TestClient,
+    auth_headers: dict,
+    current_employee: Employees,
+    other_employee: Employees,
+    db_session: Session,
+    auth_overrides,
+):
+    # other_employee created it, current_employee (the actor) is assigned and closes it
+    ticket = create_test_record(
+        db_session,
+        Tickets,
+        title="Broken laptop",
+        status=TicketStatus.IN_PROGRESS,
+        created_by=other_employee.employee_id,
+        assigned_to=current_employee.employee_id,
+    )
+    db_session.commit()
+
+    with patch("api.tickets.novu.trigger") as trigger:
+        client.patch(f"/tickets/{ticket.ticket_id}", json={"status": "done"}, headers=auth_headers)
+
+    trigger.assert_called_once()
+    workflow_id, db_route, recipients, payload, transaction_id = trigger.call_args.args
+    assert workflow_id == "ticket-closed"
+    assert db_route == "main"
+    assert [e.employee_id for e in recipients] == [other_employee.employee_id]
+    assert payload["ticket_id"] == ticket.ticket_id
+    assert payload["title"] == "Broken laptop"
+    assert payload["status"] == "done"
+    assert payload["url"].endswith(f"/tickets/{ticket.ticket_id}")
+    assert transaction_id.startswith(f"ticket-{ticket.ticket_id}-closed-")
+
+
+def test_updates_that_do_not_close_do_not_notify(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    ticket = create_test_record(
+        db_session, Tickets, title="T", status=TicketStatus.DONE, created_by=current_employee.employee_id
+    )
+    db_session.commit()
+
+    with patch("api.tickets.novu.trigger") as trigger:
+        # Already resolved -> moving between resolved statuses is not a new closure
+        client.patch(f"/tickets/{ticket.ticket_id}", json={"status": "closed"}, headers=auth_headers)
+        client.patch(f"/tickets/{ticket.ticket_id}", json={"priority": "high"}, headers=auth_headers)
+
+    trigger.assert_not_called()
+
+
+# =============================================================================
+# SLA clock: time only passes while the ticket is active / in_progress
+# =============================================================================
+
+
+def _patch_ticket_at(client, auth_headers, ticket_id, status, when):
+    with patch("api.tickets.utcnow", return_value=when):
+        return client.patch(f"/tickets/{ticket_id}", json={"status": status}, headers=auth_headers).json()
+
+
+def test_sla_clock_only_runs_while_active_or_in_progress(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    t0 = datetime(2026, 3, 10, 8, 0, 0)  # noqa: DTZ001 - DB stores naive UTC
+    ticket = create_test_record(
+        db_session, Tickets, title="T", status=TicketStatus.TODO, created_by=current_employee.employee_id, created_at=t0
+    )
+    db_session.commit()
+
+    # 2h in todo: no time counted
+    started = _patch_ticket_at(client, auth_headers, ticket.ticket_id, "in_progress", t0 + timedelta(hours=2))
+    assert started["sla_elapsed_seconds"] == 0
+    assert started["sla_running_since"].startswith("2026-03-10T10:00:00")
+
+    # 30 min in progress, then on hold: 30 min counted, clock stopped
+    paused = _patch_ticket_at(client, auth_headers, ticket.ticket_id, "on_hold", t0 + timedelta(hours=2, minutes=30))
+    assert paused["sla_elapsed_seconds"] == 30 * 60
+    assert paused["sla_running_since"] is None
+
+    # 5h on hold (not counted), then active for 15 min, then done
+    _patch_ticket_at(client, auth_headers, ticket.ticket_id, "active", t0 + timedelta(hours=7, minutes=30))
+    done = _patch_ticket_at(client, auth_headers, ticket.ticket_id, "done", t0 + timedelta(hours=7, minutes=45))
+    assert done["sla_elapsed_seconds"] == 45 * 60
+    assert done["sla_running_since"] is None
+
+
+def test_moving_between_running_statuses_does_not_restart_the_clock(
+    client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
+):
+    t0 = datetime(2026, 3, 10, 8, 0, 0)  # noqa: DTZ001
+    ticket = create_test_record(
+        db_session, Tickets, title="T", status=TicketStatus.TODO, created_by=current_employee.employee_id
+    )
+    db_session.commit()
+
+    _patch_ticket_at(client, auth_headers, ticket.ticket_id, "active", t0)
+    moved = _patch_ticket_at(client, auth_headers, ticket.ticket_id, "in_progress", t0 + timedelta(minutes=20))
+    assert moved["sla_running_since"].startswith("2026-03-10T08:00:00")
+    assert moved["sla_elapsed_seconds"] == 0
+
+
+def test_ticket_created_in_progress_starts_the_clock(
+    client: TestClient, auth_headers: dict, current_employee: Employees, auth_overrides
+):
+    with patch("api.tickets.notify_ticket_created"):
+        payload = {"title": "Started", "status": "active", "priority": "normal", "ticket_type": "issue"}
+        data = client.post("/tickets", json=payload, headers=auth_headers).json()
+
+    assert data["sla_running_since"] is not None
+    assert data["sla_elapsed_seconds"] == 0

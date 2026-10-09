@@ -209,13 +209,8 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None,
             f.write("-- CREATE ALL TABLES\n")
             f.write("-- =============================================\n\n")
 
-            for table in tables:
-                f.write("-- =============================================\n")
-                f.write(f"-- Table: {table}\n")
-                f.write("-- =============================================\n\n")
-
-                # Get columns info
-                columns_query = f"""
+            identity_tables: set[str] = set()
+            columns_query = text("""
                 SELECT
                     c.COLUMN_NAME,
                     c.DATA_TYPE,
@@ -224,13 +219,25 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None,
                     c.NUMERIC_SCALE,
                     c.IS_NULLABLE,
                     c.COLUMN_DEFAULT,
-                    COLUMNPROPERTY(OBJECT_ID('{table}'), c.COLUMN_NAME, 'IsIdentity') AS IS_IDENTITY
+                    sc.is_identity AS IS_IDENTITY
                 FROM INFORMATION_SCHEMA.COLUMNS c
-                WHERE c.TABLE_NAME = '{table}'
+                INNER JOIN sys.tables t
+                    ON t.name = c.TABLE_NAME
+                    AND SCHEMA_NAME(t.schema_id) = c.TABLE_SCHEMA
+                INNER JOIN sys.columns sc
+                    ON sc.object_id = t.object_id
+                    AND sc.name = c.COLUMN_NAME
+                WHERE c.TABLE_SCHEMA = 'dbo'
+                  AND c.TABLE_NAME = :table_name
                 ORDER BY c.ORDINAL_POSITION
-                """
+                """)
 
-                cols_result = session.exec(text(columns_query))
+            for table in tables:
+                f.write("-- =============================================\n")
+                f.write(f"-- Table: {table}\n")
+                f.write("-- =============================================\n\n")
+
+                cols_result = session.exec(columns_query, params={"table_name": table})
                 columns = cols_result.fetchall()
 
                 # Build CREATE TABLE statement
@@ -249,6 +256,7 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None,
                         col_def += f"({precision},{scale})"
 
                     if is_identity:
+                        identity_tables.add(table)
                         col_def += " IDENTITY(1,1)"
 
                     col_def += " NOT NULL" if is_nullable == "NO" else " NULL"
@@ -292,17 +300,7 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None,
 
                         f.write(f"\n-- Data for {table} ({len(rows)} records)\n")
 
-                        # Check if table has identity column
-                        has_identity_query = f"""
-                        SELECT COUNT(*)
-                        FROM INFORMATION_SCHEMA.COLUMNS
-                        WHERE TABLE_NAME = '{table}'
-                        AND COLUMNPROPERTY(OBJECT_ID('{table}'), COLUMN_NAME, 'IsIdentity') = 1
-                        """
-                        has_identity_result = session.exec(text(has_identity_query))
-                        has_identity = has_identity_result.fetchone()[0] > 0
-
-                        if has_identity:
+                        if table in identity_tables:
                             f.write(f"SET IDENTITY_INSERT [dbo].[{table}] ON\n")
                             f.write("GO\n\n")
 
@@ -311,7 +309,7 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None,
                             values = ", ".join([format_value(val) for val in row])
                             f.write(f"INSERT [dbo].[{table}] ({col_names}) VALUES ({values})\n")
 
-                        if has_identity:
+                        if table in identity_tables:
                             f.write(f"\nSET IDENTITY_INSERT [dbo].[{table}] OFF\n")
 
                         f.write("GO\n\n")

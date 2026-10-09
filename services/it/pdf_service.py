@@ -1,8 +1,14 @@
 """PDF generation for IT quotations using Jinja2 + WeasyPrint."""
 
+import ipaddress
+import socket
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
+
+import httpx
 
 from fastapi import HTTPException, status
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -20,6 +26,7 @@ from services.it.document_storage import save_pdf
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates" / "it"
 DEFAULT_TEMPLATE_KEY = "quotation_standard"
+MAX_REMOTE_ASSET_BYTES = 5 * 1024 * 1024
 
 _env = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),
@@ -98,6 +105,50 @@ def render_quotation_html(db: Session, quotation: ITQuotations) -> str:
     )
 
 
+def _is_public_host(host: str | None) -> bool:
+    """Every address the host resolves to must be globally routable (no loopback, private or metadata IPs)."""
+    if not host:
+        return False
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except OSError:
+        return False
+    return bool(addresses) and all(ipaddress.ip_address(address.split("%")[0]).is_global for address in addresses)
+
+
+def safe_url_fetcher(url: str) -> dict:
+    """WeasyPrint fetcher: template assets, uploaded logos, data: URIs and public http(s) images only.
+
+    Raising makes WeasyPrint skip the resource, so a bad logo_url never reaches local files or
+    internal network services.
+    """
+    from weasyprint import default_url_fetcher  # heavy native import, keep lazy
+
+    import api.it.templates  # read the current LOGO_UPLOAD_DIR at call time
+
+    parsed = urlparse(url)
+    if parsed.scheme == "data":
+        return default_url_fetcher(url)
+    if parsed.scheme == "file":
+        path = Path(url2pathname(parsed.path)).resolve()
+        allowed_roots = (TEMPLATES_DIR.resolve(), Path(api.it.templates.LOGO_UPLOAD_DIR).resolve())
+        if not any(path.is_relative_to(root) for root in allowed_roots):
+            raise ValueError(f"Refusing to load local file outside the template and logo folders: {url}")
+        return default_url_fetcher(url)
+    if parsed.scheme in {"http", "https"}:
+        if not _is_public_host(parsed.hostname):
+            raise ValueError(f"Refusing to fetch a non-public address: {url}")
+        # Known limit: httpx resolves the host again, so a DNS-rebinding host could still race this check.
+        response = httpx.get(url, follow_redirects=False, timeout=10.0)
+        if response.status_code != 200:
+            raise ValueError(f"Remote asset returned HTTP {response.status_code}: {url}")
+        if len(response.content) > MAX_REMOTE_ASSET_BYTES:
+            raise ValueError(f"Remote asset is larger than {MAX_REMOTE_ASSET_BYTES} bytes: {url}")
+        mime_type = response.headers.get("content-type", "").split(";")[0].strip() or None
+        return {"string": response.content, "mime_type": mime_type, "redirected_url": url}
+    raise ValueError(f"Unsupported URL scheme for PDF assets: {url}")
+
+
 def generate_quotation_pdf(
     db: Session,
     quotation: ITQuotations,
@@ -114,7 +165,7 @@ def generate_quotation_pdf(
             detail=f"PDF engine not available: {exc}",
         ) from exc
 
-    pdf_bytes = HTML(string=html, base_url=str(TEMPLATES_DIR)).write_pdf()
+    pdf_bytes = HTML(string=html, base_url=str(TEMPLATES_DIR), url_fetcher=safe_url_fetcher).write_pdf()
 
     last_version = db.exec(
         select(ITQuotationDocuments)

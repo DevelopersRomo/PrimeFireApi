@@ -4,6 +4,19 @@ import pytest
 
 
 @pytest.fixture
+def admin_caller(db_session, auth_headers):
+    """Give the auth_headers employee (id 1) the Admin role."""
+    from models.employees import EmployeeRoles, Roles
+
+    role = Roles(role_name="Admin")
+    db_session.add(role)
+    db_session.commit()
+    db_session.refresh(role)
+    db_session.add(EmployeeRoles(employee_id=1, role_id=role.role_id))
+    db_session.commit()
+
+
+@pytest.fixture
 def mock_subprocess_run():
     with patch("api.backups.subprocess.run") as mock_run:
         yield mock_run
@@ -21,7 +34,7 @@ def mock_pathlib_exists():
         yield mock_exists
 
 
-def test_trigger_backup_success_all(client, auth_headers, mock_subprocess_run, mock_os_listdir):
+def test_trigger_backup_success_all(client, auth_headers, admin_caller, mock_subprocess_run, mock_os_listdir):
     # Mock subprocess.run to return success
     mock_result = MagicMock()
     mock_result.returncode = 0
@@ -47,7 +60,7 @@ def test_trigger_backup_success_all(client, auth_headers, mock_subprocess_run, m
     assert mock_subprocess_run.call_count == 2
 
 
-def test_trigger_backup_failure(client, auth_headers, mock_subprocess_run, mock_os_listdir):
+def test_trigger_backup_failure(client, auth_headers, admin_caller, mock_subprocess_run, mock_os_listdir):
     # Mock subprocess.run to return failure
     mock_result = MagicMock()
     mock_result.returncode = 1
@@ -62,10 +75,11 @@ def test_trigger_backup_failure(client, auth_headers, mock_subprocess_run, mock_
     data = response.json()
     assert data["success"] is False
     assert "Backup error" in data["message"]
+    assert "Error during backup" not in response.text
     assert mock_subprocess_run.call_count == 1
 
 
-def test_trigger_backup_structure_only(client, auth_headers, mock_subprocess_run, mock_os_listdir):
+def test_trigger_backup_structure_only(client, auth_headers, admin_caller, mock_subprocess_run, mock_os_listdir):
     # Mock subprocess.run to return success
     mock_result = MagicMock()
     mock_result.returncode = 0
@@ -89,12 +103,12 @@ def test_trigger_backup_structure_only(client, auth_headers, mock_subprocess_run
     assert "structure" in call_args
 
 
-def test_trigger_backup_invalid_type(client, auth_headers, mock_subprocess_run, mock_os_listdir):
+def test_trigger_backup_invalid_type(client, auth_headers, admin_caller, mock_subprocess_run, mock_os_listdir):
     response = client.post("/backups/trigger?db_prefix=DB&backup_type=invalid", headers=auth_headers)
     assert response.status_code == 422
 
 
-def test_get_backup_status(client, auth_headers, mock_pathlib_exists, mock_os_listdir):
+def test_get_backup_status(client, auth_headers, admin_caller, mock_pathlib_exists, mock_os_listdir):
     mock_pathlib_exists.return_value = True
     # The status endpoint also calls stat on the files to order them
     with patch("api.backups.pathlib.Path.stat") as mock_stat:
@@ -108,5 +122,21 @@ def test_get_backup_status(client, auth_headers, mock_pathlib_exists, mock_os_li
         assert response.status_code == 200
         data = response.json()
         assert "environment" in data
-        assert "backup_dir" in data
+        assert "backup_dir" not in data
         assert len(data["recent_backups"]) == 2
+
+
+@pytest.mark.parametrize(("method", "path"), [("post", "/backups/trigger?db_prefix=all"), ("get", "/backups/status")])
+def test_backups_require_admin(client, auth_headers, mock_subprocess_run, method, path):
+    """A valid token alone must not dump the main and PrimeFire databases."""
+    response = client.request(method.upper(), path, headers=auth_headers)
+
+    assert response.status_code == 403
+    mock_subprocess_run.assert_not_called()
+
+
+def test_trigger_backup_rejects_unknown_db_prefix(client, auth_headers, admin_caller, mock_subprocess_run):
+    response = client.post("/backups/trigger?db_prefix=DB_CONNECTION_ACME", headers=auth_headers)
+
+    assert response.status_code == 422
+    mock_subprocess_run.assert_not_called()

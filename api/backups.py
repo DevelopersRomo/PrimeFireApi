@@ -1,5 +1,6 @@
 """Backup API - Endpoints para ejecutar backups manualmente."""
 
+import logging
 import os
 import pathlib
 import subprocess
@@ -8,11 +9,16 @@ from datetime import datetime
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlmodel import Session
 
-from api.dependencies import require_authentication
+from api.dependencies import employee_has_admin_role, get_current_employee
+from bd.dependencies import PLATFORM_DB_ROUTES, get_db, get_db_route
+from models.employees import Employees
+
+logger = logging.getLogger(__name__)
 
 # Load .env before accessing settings
 load_dotenv()
@@ -33,6 +39,17 @@ else:
 pathlib.Path(BACKUP_DIR).mkdir(exist_ok=True, parents=True)
 
 router = APIRouter(tags=["backups"])
+
+
+async def require_platform_admin(
+    request: Request,
+    employee: Employees = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> Employees:
+    """Backups dump the main and PrimeFire databases: Admins of those databases only."""
+    if get_db_route(request) not in PLATFORM_DB_ROUTES or not employee_has_admin_role(db, employee.employee_id):
+        raise HTTPException(status_code=403, detail="Backups require an administrator.")
+    return employee
 
 
 class BackupResponse(BaseModel):
@@ -56,17 +73,20 @@ def run_backup(db_prefix: str, backup_type: str = "full") -> dict:
 
         if result.returncode == 0:
             return {"success": True, "db": db_prefix, "output": result.stdout}
-        return {"success": False, "db": db_prefix, "error": result.stderr}
+        # Script output can carry connection details: log it, never return it.
+        logger.error("Backup script failed for %s: %s", db_prefix, result.stderr)
+        return {"success": False, "db": db_prefix, "error": "backup script failed"}
 
-    except Exception as e:
-        return {"success": False, "db": db_prefix, "error": str(e)}
+    except Exception:
+        logger.exception("Backup script could not run for %s", db_prefix)
+        return {"success": False, "db": db_prefix, "error": "backup script could not run"}
 
 
 @router.post("/trigger", response_model=BackupResponse)
 async def trigger_backup(
-    db_prefix: str = "all",
+    db_prefix: Literal["DB", "PRIMEFIRE_DB", "all"] = "all",
     backup_type: Literal["full", "structure"] = "full",
-    _: dict = Depends(require_authentication),
+    _: Employees = Depends(require_platform_admin),
 ):
     """
     Trigger un backup manual de la base de datos.
@@ -114,7 +134,7 @@ async def trigger_backup(
 
 
 @router.get("/status")
-async def get_backup_status(_: dict = Depends(require_authentication)):
+async def get_backup_status(_: Employees = Depends(require_platform_admin)):
     """Get backup status and recent files."""
     files = []
     if pathlib.Path(BACKUP_DIR).exists():  # noqa: ASYNC240
@@ -125,6 +145,5 @@ async def get_backup_status(_: dict = Depends(require_authentication)):
 
     return {
         "environment": "production" if IS_PRODUCTION else "local",
-        "backup_dir": BACKUP_DIR,
         "recent_backups": files,
     }

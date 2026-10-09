@@ -92,6 +92,10 @@ def _validate_tenant_exists(tenant_key: str) -> None:
         main_db.close()
 
 
+# Routes whose administrators operate the platform itself (not a tenant workspace).
+PLATFORM_DB_ROUTES = frozenset({"main", "primefire"})
+
+
 def get_db_route(request: Request) -> str:
     """Which database this request uses, mirroring get_db: the tenant key, "primefire" or "main".
 

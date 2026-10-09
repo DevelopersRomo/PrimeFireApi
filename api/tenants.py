@@ -6,7 +6,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_module_permission
-from bd.dependencies import get_db_route, get_main_db
+from bd.dependencies import PLATFORM_DB_ROUTES, get_db_route, get_main_db
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
 from schemas.pagination import PaginatedResponse
@@ -23,9 +23,6 @@ from schemas.tenants import (
 )
 
 router = APIRouter()
-
-# Databases whose administrators manage the global tenant registry.
-PLATFORM_DB_ROUTES = {"main", "primefire"}
 
 
 def require_platform_tenant_permission(action: str):

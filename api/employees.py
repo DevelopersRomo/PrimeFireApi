@@ -8,11 +8,17 @@ from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication, require_module_permission
+from api.dependencies import (
+    ADMIN_ROLE_NAME,
+    employee_has_admin_role,
+    require_authentication,
+    require_module_permission,
+)
 from bd.dependencies import get_db, get_tenant_cache_scope
 from core.microsoft_graph import graph_client
 from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
+from models.modules import Modules, RoleModules
 from schemas.employees import Employee, EmployeeRole, EmployeeRoleAssignment, EmployeeUpdate
 from schemas.pagination import PaginatedResponse
 
@@ -641,12 +647,38 @@ async def update_employee(
 # ----------------------------
 # EMPLOYEE ROLES MANAGEMENT
 # ----------------------------
+_ROLE_PERMISSION_FLAGS = (
+    "can_view",
+    "can_create",
+    "can_edit",
+    "can_delete",
+    "can_export",
+    "admin_actions",
+    "other_actions",
+)
+
+
+def _role_exceeds_permissions(db: Session, role_id: int, caller_permissions: dict) -> bool:
+    """Whether the role grants any module flag the caller does not hold."""
+    held = {p["module_key"]: p.get("permissions", {}) for p in caller_permissions.get("permissions", [])}
+    rows = db.exec(
+        select(RoleModules, Modules)
+        .join(Modules, RoleModules.module_id == Modules.module_id)  # type: ignore[arg-type]
+        .where(RoleModules.role_id == role_id)
+    ).all()
+    return any(
+        getattr(role_module, flag) and not held.get(module.module_key, {}).get(flag)
+        for role_module, module in rows
+        for flag in _ROLE_PERMISSION_FLAGS
+    )
+
+
 @router.post("/{employee_id}/roles", response_model=Employee)
 async def assign_role_to_employee(
     employee_id: int,
     role_assignment: EmployeeRoleAssignment,
     db: Session = Depends(get_db),
-    _perms: dict = Depends(require_module_permission("employees", "admin_actions")),
+    caller_permissions: dict = Depends(require_module_permission("employees", "admin_actions")),
 ):
     """Assign a role to an employee."""
     # Check if employee exists
@@ -658,6 +690,17 @@ async def assign_role_to_employee(
     db_role = db.exec(select(Roles).filter(Roles.role_id == role_assignment.role_id)).first()
     if not db_role:
         raise HTTPException(status_code=404, detail="Role not found")
+
+    # Non-admins may not raise privileges: role names carry authority too (Admin, inventory approvers),
+    # so self-assignment is blocked outright and assigned roles must stay within the caller's own flags.
+    caller_id = caller_permissions["employee"]["employee_id"]
+    if not employee_has_admin_role(db, caller_id):
+        if caller_id == employee_id:
+            raise HTTPException(status_code=403, detail="You cannot assign roles to yourself.")
+        if (db_role.role_name or "").strip().lower() == ADMIN_ROLE_NAME:
+            raise HTTPException(status_code=403, detail="Only an administrator can assign the Admin role.")
+        if _role_exceeds_permissions(db, db_role.role_id, caller_permissions):
+            raise HTTPException(status_code=403, detail="You cannot assign a role with permissions you do not hold.")
 
     # Check if employee already has this role
     existing_assignment = db.exec(

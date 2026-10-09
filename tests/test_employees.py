@@ -8,6 +8,7 @@ from api.employees import enrich_employee_license_flags, get_employees, matches_
 from core.microsoft_graph import graph_client as microsoft_graph_client
 from main import app
 from models.employees import EmployeeRoles, Employees, Roles
+from models.modules import Modules, RoleModules
 from schemas.employees import Employee
 
 
@@ -590,4 +591,72 @@ class TestEmployeesPermissions:
 
     def test_patch_allows_editor(self, client, auth_headers, target_employee, employees_editor_overrides) -> None:
         response = client.patch(f"/employees/{target_employee.employee_id}", json={}, headers=auth_headers)
+        assert response.status_code == 200
+
+
+@pytest.mark.usefixtures("employees_admin_overrides")
+class TestRoleAssignmentEscalation:
+    """employees.admin_actions must not let a caller grant themselves or others more than they hold."""
+
+    @staticmethod
+    def _employee(db_session, email: str) -> Employees:
+        emp = Employees(first_name="Target", last_name="User", email=email)
+        db_session.add(emp)
+        db_session.commit()
+        db_session.refresh(emp)
+        return emp
+
+    @staticmethod
+    def _role(db_session, name: str, module_flags: dict | None = None) -> Roles:
+        role = Roles(role_name=name)
+        db_session.add(role)
+        db_session.commit()
+        db_session.refresh(role)
+        if module_flags:
+            module = Modules(module_name=f"{name} module", module_key=f"{name.lower()}_module")
+            db_session.add(module)
+            db_session.commit()
+            db_session.refresh(module)
+            db_session.add(RoleModules(role_id=role.role_id, module_id=module.module_id, **module_flags))
+            db_session.commit()
+        return role
+
+    def test_cannot_assign_role_to_self(self, client, auth_headers, db_session) -> None:
+        role = self._role(db_session, "Project Manager")
+
+        response = client.post("/employees/1/roles", json={"role_id": role.role_id}, headers=auth_headers)
+
+        assert response.status_code == 403
+        assert db_session.query(EmployeeRoles).filter_by(employee_id=1, role_id=role.role_id).first() is None
+
+    def test_non_admin_cannot_assign_admin_role(self, client, auth_headers, db_session) -> None:
+        target = self._employee(db_session, "target-admin@primefire.com")
+        role = self._role(db_session, "Admin")
+
+        response = client.post(
+            f"/employees/{target.employee_id}/roles", json={"role_id": role.role_id}, headers=auth_headers
+        )
+
+        assert response.status_code == 403
+
+    def test_cannot_assign_role_with_permissions_caller_lacks(self, client, auth_headers, db_session) -> None:
+        target = self._employee(db_session, "target-power@primefire.com")
+        role = self._role(db_session, "Powerful", {"can_view": True, "can_delete": True})
+
+        response = client.post(
+            f"/employees/{target.employee_id}/roles", json={"role_id": role.role_id}, headers=auth_headers
+        )
+
+        assert response.status_code == 403
+
+    def test_admin_can_assign_admin_role(self, client, auth_headers, db_session) -> None:
+        admin_role = self._role(db_session, "Admin")
+        db_session.add(EmployeeRoles(employee_id=1, role_id=admin_role.role_id))
+        db_session.commit()
+        target = self._employee(db_session, "new-admin@primefire.com")
+
+        response = client.post(
+            f"/employees/{target.employee_id}/roles", json={"role_id": admin_role.role_id}, headers=auth_headers
+        )
+
         assert response.status_code == 200

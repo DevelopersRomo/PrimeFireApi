@@ -16,7 +16,7 @@ def disable_notifications(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def inventory_permissions(permission_override):
-    permission_override("inventory", {"can_create"})
+    permission_override("inventory", {"can_view", "can_create"})
 
 
 @pytest.fixture

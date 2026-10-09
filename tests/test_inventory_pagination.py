@@ -8,6 +8,11 @@ from models.products import ProductCategories, ProductFamilies, Products
 from tests.conftest import create_test_record
 
 
+@pytest.fixture(autouse=True)
+def grant_inventory_view(permission_override):
+    permission_override("inventory", {"can_view"})
+
+
 @pytest.fixture
 def inventory_catalog(db_session):
     family = create_test_record(db_session, ProductFamilies, name="Safety")

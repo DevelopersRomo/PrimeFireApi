@@ -9,7 +9,6 @@ from sqlmodel import Session, select
 from api.dependencies import (
     get_current_employee,
     get_request_app_url,
-    require_authentication,
     require_module_permission,
 )
 from bd.dependencies import get_db
@@ -413,7 +412,7 @@ def get_warehouse_locations(
     search: str | None = Query(default=None),
     active_only: bool = True,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     query = select(WarehouseLocations)
 
@@ -487,7 +486,7 @@ def get_warehouses(
     active_only: bool = Query(False),
     sort_direction: str = Query("asc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     filters = []
     if search and search.strip():
@@ -520,7 +519,7 @@ def get_warehouses(
 def get_warehouse(
     warehouse_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     warehouse = db.exec(select(Warehouses).where(Warehouses.warehouse_id == warehouse_id)).first()
 
@@ -640,7 +639,7 @@ def get_inventory_movements(
     sort_field: str = Query("created_at", pattern="^(movement_id|movement_type|quantity|movement_date|created_at)$"),
     sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     filters = inventory_movement_filters(
         search=search,
@@ -673,7 +672,7 @@ def get_inventory_movements(
 def get_inventory_movement(
     movement_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     movement = db.exec(select(InventoryMovements).where(InventoryMovements.movement_id == movement_id)).first()
 
@@ -907,7 +906,7 @@ def get_movement_approvals(
     product_id: int | None = Query(None),
     sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     filters = []
     if status:
@@ -1086,7 +1085,7 @@ def get_inventory_stock(
     sort_field: str = Query("name", pattern="^(product_id|code|name|family|category|stock_on_hand|status)$"),
     sort_direction: str = Query("asc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     result = build_inventory_stock(db, warehouse_id, product_id)
     term = (search or "").strip().casefold()
@@ -1144,7 +1143,7 @@ def get_inventory_stock(
 def get_inventory_stock_metrics(
     warehouse_id: int | None = None,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     stock = build_inventory_stock(db, warehouse_id)
     return InventoryStockMetrics(
@@ -1156,7 +1155,7 @@ def get_inventory_stock_metrics(
 @router.get("/stock-facets", response_model=dict[str, list[str]])
 def get_inventory_stock_facets(
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     families = db.exec(select(ProductFamilies.name).order_by(ProductFamilies.name, ProductFamilies.id)).all()
     categories = db.exec(select(ProductCategories.name).order_by(ProductCategories.name, ProductCategories.id)).all()
@@ -1167,7 +1166,7 @@ def get_inventory_stock_facets(
 def get_product_stock(
     product_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     stock_items = build_inventory_stock(db)
 

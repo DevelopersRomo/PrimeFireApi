@@ -3,7 +3,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def inventory_permissions(permission_override):
-    permission_override("inventory", {"can_create", "can_edit", "can_delete"})
+    permission_override("inventory", {"can_view", "can_create", "can_edit", "can_delete"})
 
 
 def test_inventory_warehouse_location_crud(client, auth_headers):

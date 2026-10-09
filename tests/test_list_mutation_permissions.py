@@ -98,9 +98,11 @@ def test_mutations_require_exact_module_permission(
     assert allowed.status_code != 403
 
 
-def test_job_list_remains_public(client, permission_override) -> None:
+def test_job_list_requires_jobs_can_view(client, permission_override, auth_headers) -> None:
     permission_override("jobs", set())
+    denied = client.get("/jobs", headers=auth_headers)
+    assert denied.status_code == 403
 
-    response = client.get("/jobs")
-
-    assert response.status_code == 200
+    permission_override("jobs", {"can_view"})
+    allowed = client.get("/jobs", headers=auth_headers)
+    assert allowed.status_code == 200

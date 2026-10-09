@@ -345,6 +345,23 @@ def get_request_app_url(request: Request) -> str:
     return origin or getattr(settings, "APP_URL", "")
 
 
+async def get_optional_current_employee_with_permissions(
+    token_data: dict[str, Any] | None = Depends(simple_token_validator),
+    request: FastAPIRequest = None,
+    db: Session = Depends(get_db),
+) -> dict | None:
+    if token_data is None:
+        return None
+    employee = await get_authenticated_employee(token_data=token_data, request=request, db=db)
+    current_employee = await get_current_employee(
+        request=request,
+        real_employee=employee,
+        token_data=token_data,
+        db=db,
+    )
+    return await get_current_employee_with_permissions(current_employee=current_employee, token_data=token_data, db=db)
+
+
 async def require_authentication(
     token_data: dict = Depends(simple_token_validator),
     db: Session = Depends(get_db),

@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
-from api.dependencies import require_module_permission
+from api.dependencies import (
+    get_optional_current_employee_with_permissions,
+    require_module_permission,
+)
 from bd.dependencies import get_db
 from models.countries import Countries
 from models.jobs import Jobs
@@ -88,6 +91,7 @@ def get_jobs(
     search: str | None = Query(None),
     country: str | None = Query(None),
     db: Session = Depends(get_db),
+    _permissions: dict = Depends(require_module_permission("jobs", "can_view")),
 ):
     filters = []
     if search and search.strip():
@@ -197,7 +201,17 @@ def get_job(
 def get_jobs_by_status(
     status: str,
     db: Session = Depends(get_db),
+    user_permissions: dict | None = Depends(get_optional_current_employee_with_permissions),
 ):
+    if status != "active":
+        if user_permissions is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if not any(
+            permission.get("module_key") == "jobs" and permission.get("permissions", {}).get("can_view")
+            for permission in user_permissions.get("permissions", [])
+        ):
+            raise HTTPException(status_code=403, detail="Missing 'can_view' permission for module 'jobs'.")
+
     jobs = db.exec(select(Jobs).filter(Jobs.status == status)).all()
     return [job_to_schema(job, db) for job in jobs]
 

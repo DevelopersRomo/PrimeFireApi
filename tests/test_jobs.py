@@ -16,7 +16,7 @@ from models.jobs import Jobs
 
 @pytest.fixture(autouse=True)
 def _grant_job_mutations(permission_override) -> None:
-    permission_override("jobs", {"can_create", "can_edit", "can_delete"})
+    permission_override("jobs", {"can_view", "can_create", "can_edit", "can_delete"})
 
 
 class TestJobsAPI:

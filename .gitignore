@@ -230,3 +230,9 @@ desktop.ini
 $RECYCLE.BIN/
 # Secrets dumps: never commit these
 azure-appsettings.json
+
+# Never commit data dumps, deploy archives, user uploads or code dumps
+*.zip
+bd/sql/backups/
+uploads/
+repomix-output.xml

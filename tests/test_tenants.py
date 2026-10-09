@@ -2,13 +2,15 @@ import pytest
 from fastapi import status
 
 from api.auth import get_password_hash
+from api.dependencies import get_current_employee_with_permissions
+from main import app
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
 
 
 @pytest.fixture(autouse=True)
 def _grant_tenant_mutations(permission_override) -> None:
-    permission_override("tenants", {"can_create", "can_edit", "can_delete"})
+    permission_override("tenants", {"can_view", "can_create", "can_edit", "can_delete"})
 
 
 def test_list_all_tenants(client, db_session, auth_headers):
@@ -373,3 +375,25 @@ def test_deleted_tenant_member_cannot_refresh(client, db_session, auth_headers):
 
     response = client.post("/auth/refresh", json={"refresh_token": refresh_token})
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.parametrize("path", ["/tenants/list-all", "/tenants/pending-users"])
+def test_tenant_admin_listings_reject_anonymous_callers(client, db_session, path):
+    """Tenant directory (with db_connection_key) and pending registrants are not public."""
+    db_session.add_all([Tenants(name="Secret Tenant", db_connection_key="SECRET"), TenantEmployees(email="p@x.com")])
+    db_session.commit()
+    app.dependency_overrides.pop(get_current_employee_with_permissions, None)
+
+    response = client.get(path)
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "SECRET" not in response.text
+
+
+@pytest.mark.parametrize("path", ["/tenants/list-all", "/tenants/pending-users"])
+def test_tenant_admin_listings_require_tenants_can_view(client, auth_headers, permission_override, path):
+    permission_override("tenants", set())
+
+    response = client.get(path, headers=auth_headers)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN

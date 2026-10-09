@@ -34,6 +34,7 @@ async def list_all_tenants(
     limit: int = Query(1000, ge=1, le=1000),
     with_meta: bool = Query(False),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_view")),
 ):
     """List all tenants from MAIN database (for debugging/admin)."""
     tenants = list(
@@ -91,6 +92,7 @@ async def list_pending_users(
     limit: int = Query(1000, ge=1, le=1000),
     with_meta: bool = Query(False),
     db: Session = Depends(get_main_db),
+    _permissions: dict = Depends(require_module_permission("tenants", "can_view")),
 ):
     """List all external users pending tenant assignment (Admin only)."""
     # Users pending assignment (TenantId is NULL)

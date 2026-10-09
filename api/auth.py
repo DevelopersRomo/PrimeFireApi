@@ -175,6 +175,29 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_main_
     )
 
 
+def _resolve_active_tenant(db: Session, external_user: TenantEmployees) -> Tenants:
+    """Return the external user's tenant, or raise 403 if the account may not sign in yet."""
+    if not external_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is pending approval. Please wait for an administrator to assign you to a tenant.",
+        )
+
+    tenant = db.get(Tenants, external_user.tenant_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your tenant assignment is invalid. Please contact an administrator.",
+        )
+
+    if tenant.db_connection_key == "PENDING" or not tenant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is pending approval. Please wait for an administrator to assign you to an active tenant.",
+        )
+    return tenant
+
+
 @router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_main_db)):
     """
@@ -193,27 +216,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Verificar que tenga tenant asignado
-        if not external_user.tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account is pending approval. Please wait for an administrator to assign you to a tenant.",
-            )
-
-        # Obtener tenant info
-        tenant = db.get(Tenants, external_user.tenant_id)
-        if not tenant:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your tenant assignment is invalid. Please contact an administrator.",
-            )
-
-        # Verificar que el tenant no sea PENDING y esté activo
-        if tenant.db_connection_key == "PENDING" or not tenant.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account is pending approval. Please wait for an administrator to assign you to an active tenant.",
-            )
+        tenant = _resolve_active_tenant(db, external_user)
 
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         token_data = {"sub": external_user.email, "type": "internal"}
@@ -613,6 +616,9 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
+    # Same approval gate as /auth/token
+    tenant = _resolve_active_tenant(db, tenant_user) if tenant_user else None
+
     # Mark token as used
     auth_token.used_at = utcnow()
     db.add(auth_token)
@@ -623,11 +629,10 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
 
     if tenant_user:
         # External user
-        tenant = db.get(Tenants, tenant_user.tenant_id)
         token_data = {"sub": tenant_user.email, "type": "internal"}
-        if tenant and tenant.tenant_id != 1:
+        if tenant.tenant_id != 1:
             token_data["tenant_key"] = tenant.db_connection_key
-        refresh_payload = {"sub": tenant_user.email, "tenant_key": tenant.db_connection_key if tenant else None}
+        refresh_payload = {"sub": tenant_user.email, "tenant_key": tenant.db_connection_key}
         access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
         refresh_token = create_refresh_token(data=refresh_payload)
     else:

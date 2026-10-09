@@ -252,6 +252,29 @@ def test_magic_link_verify_returns_tokens(
     assert _verify_token(data["access_token"])["sub"] == email
 
 
+@pytest.mark.parametrize("state", ["pending", "inactive_tenant"])
+def test_magic_link_verify_applies_login_approval_checks(
+    client: TestClient, db_session: Session, captured_emails: list[dict], state: str
+):
+    """A magic link must not sign in an account that /auth/token would refuse."""
+    tenant_id = None
+    if state == "inactive_tenant":
+        tenant = Tenants(name="Inactive Tenant", db_connection_key="INACTIVE_T", is_active=False)
+        db_session.add(tenant)
+        db_session.commit()
+        db_session.refresh(tenant)
+        tenant_id = tenant.tenant_id
+    email = f"{state}_magic@example.com"
+    db_session.add(TenantEmployees(email=email, password_hash=get_password_hash("pw"), tenant_id=tenant_id))
+    db_session.commit()
+    token = _request_token(client, captured_emails, "/auth/magic-link", email)
+
+    response = client.get("/auth/magic-link/verify", params={"token": token})
+
+    assert response.status_code == 403, response.text
+    assert "access_token" not in response.json()
+
+
 def test_magic_link_verify_rejects_expired_token(
     client: TestClient, db_session: Session, local_auth_user: TenantEmployees, captured_emails: list[dict]
 ):

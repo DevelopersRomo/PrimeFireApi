@@ -397,3 +397,25 @@ def test_tenant_admin_listings_require_tenants_can_view(client, auth_headers, pe
     response = client.get(path, headers=auth_headers)
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/tenants/list-all"),
+        ("post", "/tenants/"),
+        ("put", "/tenants/1"),
+        ("delete", "/tenants/1"),
+        ("post", "/tenants/approve-user"),
+    ],
+)
+def test_tenant_administration_rejects_tenant_routed_callers(client, method, path):
+    """A tenant workspace's own role tables must not authorize changes to the global tenant registry."""
+    from api.auth import create_access_token
+
+    tenant_token = create_access_token({"sub": "tenant-admin@acme.com", "type": "internal", "tenant_key": "ACME"})
+    body = {"name": "Injected", "db_connection_key": "INJECTED"} if method in {"post", "put"} else None
+
+    response = client.request(method.upper(), path, json=body, headers={"Authorization": f"Bearer {tenant_token}"})
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN

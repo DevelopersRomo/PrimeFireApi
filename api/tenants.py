@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_module_permission
-from bd.dependencies import get_main_db
+from bd.dependencies import get_db_route, get_main_db
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
 from schemas.pagination import PaginatedResponse
@@ -24,6 +24,28 @@ from schemas.tenants import (
 
 router = APIRouter()
 
+# Databases whose administrators manage the global tenant registry.
+PLATFORM_DB_ROUTES = {"main", "primefire"}
+
+
+def require_platform_tenant_permission(action: str):
+    """tenants-module permission, accepted only from callers routed to a platform database.
+
+    Tenant routes, users and logos live in the main DB, so a tenant workspace's own role
+    tables must not authorize them.
+    """
+    permission_dependency = require_module_permission("tenants", action)
+
+    async def _require(request: Request, permissions: dict = Depends(permission_dependency)) -> dict:
+        if get_db_route(request) not in PLATFORM_DB_ROUTES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant administration is not available from a tenant workspace.",
+            )
+        return permissions
+
+    return _require
+
 
 # ----------------------------
 # 📌 DEBUG: LIST ALL TENANTS
@@ -34,7 +56,7 @@ async def list_all_tenants(
     limit: int = Query(1000, ge=1, le=1000),
     with_meta: bool = Query(False),
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_view")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_view")),
 ):
     """List all tenants from MAIN database (for debugging/admin)."""
     tenants = list(
@@ -59,7 +81,7 @@ async def list_all_tenants(
 async def create_tenant(
     tenant_data: TenantCreate,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_create")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_create")),
 ):
     """Create a new tenant."""
     tenant = Tenants(**tenant_data.model_dump())
@@ -92,7 +114,7 @@ async def list_pending_users(
     limit: int = Query(1000, ge=1, le=1000),
     with_meta: bool = Query(False),
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_view")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_view")),
 ):
     """List all external users pending tenant assignment (Admin only)."""
     # Users pending assignment (TenantId is NULL)
@@ -136,7 +158,7 @@ async def list_pending_users(
 async def approve_external_user(
     request: ApprovalRequest,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_edit")),
 ):
     """
     (Admin Only) Approve external user and assign tenant.
@@ -202,7 +224,7 @@ async def approve_external_user(
 async def approve_tenant_request(
     request: TenantApprovalRequest,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_edit")),
 ):
     """(Admin Only) Approve a tenant request and assign connection key."""
     tenant = db.get(Tenants, request.tenant_id)
@@ -223,7 +245,7 @@ async def approve_tenant_request(
 async def create_tenant_logo(
     logo_data: TenantLogoCreate,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_create")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_create")),
 ):
     """Create a new logo for a tenant."""
     # Verify tenant exists
@@ -299,7 +321,7 @@ async def update_tenant_logo(
     logo_id: int,
     logo_data: TenantLogoUpdate,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_edit")),
 ):
     """Update a tenant logo."""
     logo = db.get(TenantLogos, logo_id)
@@ -321,7 +343,7 @@ async def update_tenant_logo(
 async def delete_tenant_logo(
     logo_id: int,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_delete")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_delete")),
 ) -> None:
     """Delete a tenant logo."""
     logo = db.get(TenantLogos, logo_id)
@@ -354,7 +376,7 @@ async def update_tenant(
     tenant_id: int,
     tenant_data: TenantUpdate,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_edit")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_edit")),
 ):
     """Update an existing tenant."""
     tenant = db.get(Tenants, tenant_id)
@@ -378,7 +400,7 @@ async def update_tenant(
 async def delete_tenant_request(
     tenant_id: int,
     db: Session = Depends(get_main_db),
-    _permissions: dict = Depends(require_module_permission("tenants", "can_delete")),
+    _permissions: dict = Depends(require_platform_tenant_permission("can_delete")),
 ) -> None:
     """Delete a tenant request. Only allowed if the tenant is in 'PENDING' state."""
     tenant = db.get(Tenants, tenant_id)

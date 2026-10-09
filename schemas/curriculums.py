@@ -17,7 +17,6 @@ class CurriculumUpdate(SQLModel):
     name: str | None = None
     email: str | None = None
     phone: str | None = None
-    curriculum_path: str | None = None
     cover_letter: str | None = None
     status: str | None = None
 

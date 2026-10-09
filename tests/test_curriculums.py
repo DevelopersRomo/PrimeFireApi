@@ -8,10 +8,17 @@ to avoid leaving test artifacts in the uploads/curriculums directory.
 import io
 from pathlib import Path
 
+import pytest
 from sqlmodel import Session
 
+import api.curriculums
 from models.curriculums import Curriculums
 from models.jobs import Jobs
+
+
+@pytest.fixture(autouse=True)
+def _grant_jobs_view(permission_override) -> None:
+    permission_override("jobs", {"can_view"})
 
 
 class TestCurriculumsAPI:
@@ -229,3 +236,80 @@ class TestCurriculumsAPI:
         db_session.commit()
         db_session.refresh(curriculum)
         return curriculum
+
+
+def _job_and_cv(db_session: Session, curriculum_path: str) -> Curriculums:
+    job = Jobs(title="Dev", description="d", status="active")
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+    cv = Curriculums(job_id=job.job_id, name="Ana Test", email="ana@example.com", curriculum_path=curriculum_path)
+    db_session.add(cv)
+    db_session.commit()
+    db_session.refresh(cv)
+    return cv
+
+
+def test_update_cannot_change_curriculum_path(client, db_session: Session, auth_headers: dict) -> None:
+    """curriculum_path is server-owned: a PUT must not repoint it."""
+    original = str(Path(api.curriculums.UPLOAD_DIR) / "cv.pdf")
+    cv = _job_and_cv(db_session, original)
+
+    client.put(f"/curriculums/{cv.curriculum_id}", json={"curriculum_path": "../../main.py"}, headers=auth_headers)
+
+    db_session.refresh(cv)
+    assert cv.curriculum_path == original
+
+
+def test_download_and_delete_never_touch_files_outside_upload_dir(
+    client, db_session: Session, auth_headers: dict, tmp_path
+) -> None:
+    outside = tmp_path / "secret.env"
+    outside.write_text("SECRET=1")
+    cv = _job_and_cv(db_session, str(outside))
+
+    download = client.get(f"/curriculums/{cv.curriculum_id}/download", headers=auth_headers)
+    deleted = client.delete(f"/curriculums/{cv.curriculum_id}", headers=auth_headers)
+
+    assert download.status_code == 404
+    assert "SECRET" not in download.text
+    assert deleted.status_code == 200
+    assert outside.exists()
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("get", "/curriculums"), ("get", "/curriculums/1"), ("get", "/curriculums/1/download"), ("delete", "/curriculums/1")],
+)
+def test_curriculum_admin_routes_require_jobs_can_view(client, auth_headers: dict, permission_override, method, path):
+    permission_override("jobs", set())
+
+    response = client.request(method.upper(), path, headers=auth_headers)
+
+    assert response.status_code == 403
+
+
+def test_upload_then_download_with_relative_upload_dir(client, db_session: Session, auth_headers: dict, monkeypatch):
+    """Locally UPLOAD_DIR is relative (uploads/curriculums), so stored paths are relative to the CWD."""
+    import os
+
+    relative_dir = Path(os.path.relpath(api.curriculums.UPLOAD_DIR))
+    monkeypatch.setattr(api.curriculums, "UPLOAD_DIR", relative_dir)
+    job = Jobs(title="Dev", description="d", status="active")
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    created = client.post(
+        "/curriculums/upload",
+        data={"job_id": str(job.job_id), "name": "Rel Path", "email": "rel@example.com"},
+        files={"resume_file": ("cv.pdf", io.BytesIO(b"%PDF-relative"), "application/pdf")},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    assert not Path(created.json()["curriculum_path"]).is_absolute()
+
+    download = client.get(f"/curriculums/{created.json()['curriculum_id']}/download", headers=auth_headers)
+
+    assert download.status_code == 200
+    assert download.content == b"%PDF-relative"

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import uuid
 from pathlib import Path
@@ -7,9 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from core.config import settings
+from core.file_storage import confine_to
 from models.curriculums import Curriculums
 from models.jobs import Jobs
 from schemas.curriculums import Curriculum, CurriculumCreate, CurriculumUpdate
@@ -33,6 +35,11 @@ else:
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
+
+
+def _confined_cv_path(stored_path: str) -> Path:
+    """Stored paths are relative to the CWD (local) or absolute (prod): resolve, then confine to UPLOAD_DIR."""
+    return confine_to(UPLOAD_DIR, Path(stored_path).resolve())
 
 
 def save_upload_file(upload_file: UploadFile) -> str:
@@ -126,7 +133,7 @@ def create_curriculum(
 # 📌 READ ALL
 # ----------------------------
 @router.get("", response_model=list[Curriculum])
-def get_curriculums(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_curriculums(db: Session = Depends(get_db), _perms=Depends(require_module_permission("jobs", "can_view"))):
     return db.exec(select(Curriculums)).all()
 
 
@@ -134,7 +141,7 @@ def get_curriculums(db: Session = Depends(get_db), _auth=Depends(require_authent
 # 📌 READ ONE
 # ----------------------------
 @router.get("/{curriculum_id}", response_model=Curriculum)
-def get_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_curriculum(curriculum_id: int, db: Session = Depends(get_db), _perms=Depends(require_module_permission("jobs", "can_view"))):
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
@@ -145,7 +152,7 @@ def get_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depe
 # 📌 READ BY JOB
 # ----------------------------
 @router.get("/job/{job_id}", response_model=list[Curriculum])
-def get_curriculums_by_job(job_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_curriculums_by_job(job_id: int, db: Session = Depends(get_db), _perms=Depends(require_module_permission("jobs", "can_view"))):
     return db.exec(select(Curriculums).filter(Curriculums.job_id == job_id)).all()
 
 
@@ -153,7 +160,7 @@ def get_curriculums_by_job(job_id: int, db: Session = Depends(get_db), _auth=Dep
 # 📌 READ BY STATUS
 # ----------------------------
 @router.get("/status/{status}", response_model=list[Curriculum])
-def get_curriculums_by_status(status: str, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_curriculums_by_status(status: str, db: Session = Depends(get_db), _perms=Depends(require_module_permission("jobs", "can_view"))):
     return db.exec(select(Curriculums).filter(Curriculums.status == status)).all()
 
 
@@ -165,7 +172,7 @@ def update_curriculum(
     curriculum_id: int,
     curriculum: CurriculumUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms=Depends(require_module_permission("jobs", "can_view")),
 ):
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
@@ -181,18 +188,21 @@ def update_curriculum(
 # 📌 DOWNLOAD CURRICULUM FILE
 # ----------------------------
 @router.get("/{curriculum_id}/download")
-def download_curriculum_file(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def download_curriculum_file(curriculum_id: int, db: Session = Depends(get_db), _perms=Depends(require_module_permission("jobs", "can_view"))):
     """Download the curriculum file."""
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
 
-    if not db_curriculum.curriculum_path or not Path(db_curriculum.curriculum_path).exists():
+    if not db_curriculum.curriculum_path:
+        raise HTTPException(status_code=404, detail="Curriculum file not found")
+    file_path = _confined_cv_path(db_curriculum.curriculum_path)
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Curriculum file not found")
 
     return FileResponse(
-        path=db_curriculum.curriculum_path,
-        filename=f"{db_curriculum.name.replace(' ', '_')}_Curriculum{Path(db_curriculum.curriculum_path).suffix}",
+        path=file_path,
+        filename=f"{db_curriculum.name.replace(' ', '_')}_Curriculum{file_path.suffix}",
         media_type="application/octet-stream",
     )
 
@@ -201,14 +211,15 @@ def download_curriculum_file(curriculum_id: int, db: Session = Depends(get_db), 
 # 📌 DELETE
 # ----------------------------
 @router.delete("/{curriculum_id}")
-def delete_curriculum(curriculum_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def delete_curriculum(curriculum_id: int, db: Session = Depends(get_db), _perms=Depends(require_module_permission("jobs", "can_view"))):
     db_curriculum = db.exec(select(Curriculums).filter(Curriculums.curriculum_id == curriculum_id)).first()
     if not db_curriculum:
         raise HTTPException(status_code=404, detail="Curriculum not found")
 
-    # Delete physical file if it exists
-    if db_curriculum.curriculum_path and Path(db_curriculum.curriculum_path).exists():
-        Path(db_curriculum.curriculum_path).unlink()
+    # Delete the physical file, never anything outside the upload dir
+    if db_curriculum.curriculum_path:
+        with contextlib.suppress(HTTPException):
+            _confined_cv_path(db_curriculum.curriculum_path).unlink(missing_ok=True)
 
     db.delete(db_curriculum)
     db.commit()

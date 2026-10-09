@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import require_module_permission
 from bd.dependencies import get_db
 from models.quotation_items import QuotationItems
 from models.quotations import Quotations
@@ -42,7 +42,7 @@ def create_quotation_item(
     quotation_id: int,
     payload: QuotationItemCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_create")),
 ):
     ensure_quotation_exists(db, quotation_id)
 
@@ -58,7 +58,7 @@ def create_quotation_item(
 def get_quotation_items(
     quotation_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_view")),
 ):
     ensure_quotation_exists(db, quotation_id)
 
@@ -71,7 +71,7 @@ def get_quotation_item(
     quotation_id: int,
     item_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_view")),
 ):
     ensure_quotation_exists(db, quotation_id)
     return get_quotation_item_or_404(db, quotation_id, item_id)
@@ -83,7 +83,7 @@ def update_quotation_item(
     item_id: int,
     payload: QuotationItemCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_edit")),
 ):
     ensure_quotation_exists(db, quotation_id)
     db_item = get_quotation_item_or_404(db, quotation_id, item_id)
@@ -104,7 +104,7 @@ def patch_quotation_item(
     item_id: int,
     payload: QuotationItemUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_edit")),
 ):
     ensure_quotation_exists(db, quotation_id)
     db_item = get_quotation_item_or_404(db, quotation_id, item_id)
@@ -124,7 +124,7 @@ def delete_quotation_item(
     quotation_id: int,
     item_id: int,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perms: dict = Depends(require_module_permission("quotations", "can_delete")),
 ):
     ensure_quotation_exists(db, quotation_id)
     db_item = get_quotation_item_or_404(db, quotation_id, item_id)

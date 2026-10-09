@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from models.employees import Roles
+from models.employees import EmployeeRoles, Roles
 
 
 @pytest.fixture(autouse=True)
@@ -147,3 +147,52 @@ class TestRolesAPI:
         response = client.delete("/roles/9999", headers=auth_headers)
         assert response.status_code == 404
         assert response.json()["detail"] == "Role not found"
+
+
+class TestReservedRoleNames:
+    """Role names that carry authority (Admin, inventory approvers) are managed by admins only."""
+
+    @staticmethod
+    def _role(db_session: Session, name: str) -> Roles:
+        role = Roles(role_name=name)
+        db_session.add(role)
+        db_session.commit()
+        db_session.refresh(role)
+        return role
+
+    @pytest.mark.parametrize("name", [" Admin", "ADMIN", "Project Manager", "business proposals "])
+    def test_non_admin_cannot_rename_role_to_reserved_name(
+        self, client: TestClient, db_session: Session, auth_headers: dict, name: str
+    ) -> None:
+        role = self._role(db_session, "Helpdesk")
+
+        response = client.put(f"/roles/{role.role_id}", json={"role_name": name}, headers=auth_headers)
+
+        assert response.status_code == 403
+        db_session.refresh(role)
+        assert role.role_name == "Helpdesk"
+
+    def test_non_admin_cannot_create_reserved_role(self, client: TestClient, auth_headers: dict) -> None:
+        response = client.post("/roles", json={"role_name": "Project Manager"}, headers=auth_headers)
+
+        assert response.status_code == 403
+
+    def test_non_admin_cannot_rename_or_delete_admin_role(
+        self, client: TestClient, db_session: Session, auth_headers: dict
+    ) -> None:
+        admin_role = self._role(db_session, "Admin")
+
+        renamed = client.put(f"/roles/{admin_role.role_id}", json={"role_name": "Former"}, headers=auth_headers)
+        deleted = client.delete(f"/roles/{admin_role.role_id}", headers=auth_headers)
+
+        assert renamed.status_code == 403
+        assert deleted.status_code == 403
+
+    def test_admin_can_create_reserved_role(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
+        admin_role = self._role(db_session, "Admin")
+        db_session.add(EmployeeRoles(employee_id=1, role_id=admin_role.role_id))
+        db_session.commit()
+
+        response = client.post("/roles", json={"role_name": "Business Proposals"}, headers=auth_headers)
+
+        assert response.status_code == 200

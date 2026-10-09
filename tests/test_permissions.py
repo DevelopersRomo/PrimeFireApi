@@ -1,5 +1,6 @@
 """Tests for Permissions API endpoints."""
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -23,8 +24,11 @@ class TestPermissionsAPI:
         db_session.refresh(module)
         return role, module
 
-    def test_create_permission(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
+    def test_create_permission(
+        self, client: TestClient, db_session: Session, auth_headers: dict, permission_override
+    ) -> None:
         """Test POST /permissions."""
+        permission_override("permissions", {"can_edit"})
         role, module = self._create_role_and_module(db_session)
 
         data = {
@@ -53,9 +57,10 @@ class TestPermissionsAPI:
         assert resp_data["can_create"] is True
 
     def test_create_permission_already_exists(
-        self, client: TestClient, db_session: Session, auth_headers: dict
+        self, client: TestClient, db_session: Session, auth_headers: dict, permission_override
     ) -> None:
         """Test POST /permissions when it already exists."""
+        permission_override("permissions", {"can_edit"})
         role, module = self._create_role_and_module(db_session)
         rm = RoleModules(role_id=role.role_id, module_id=module.module_id, can_view=True)
         db_session.add(rm)
@@ -126,8 +131,11 @@ class TestPermissionsAPI:
         assert data["role_id"] == role.role_id
         assert data["module_id"] == module.module_id
 
-    def test_update_permission(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
+    def test_update_permission(
+        self, client: TestClient, db_session: Session, auth_headers: dict, permission_override
+    ) -> None:
         """Test PUT /permissions/{role_id}/{module_id}."""
+        permission_override("permissions", {"can_edit"})
         role, module = self._create_role_and_module(db_session)
         rm = RoleModules(role_id=role.role_id, module_id=module.module_id, can_view=True, can_edit=False)
         db_session.add(rm)
@@ -144,8 +152,11 @@ class TestPermissionsAPI:
         db_session.refresh(rm)
         assert rm.can_edit is True
 
-    def test_delete_permission(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
+    def test_delete_permission(
+        self, client: TestClient, db_session: Session, auth_headers: dict, permission_override
+    ) -> None:
         """Test DELETE /permissions/{role_id}/{module_id}."""
+        permission_override("permissions", {"can_edit"})
         role, module = self._create_role_and_module(db_session)
         rm = RoleModules(role_id=role.role_id, module_id=module.module_id, can_view=True)
         db_session.add(rm)
@@ -159,8 +170,11 @@ class TestPermissionsAPI:
         deleted = db_session.get(RoleModules, (role.role_id, module.module_id))
         assert deleted is None
 
-    def test_bulk_update_permissions(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
+    def test_bulk_update_permissions(
+        self, client: TestClient, db_session: Session, auth_headers: dict, permission_override
+    ) -> None:
         """Test POST /permissions/bulk-update."""
+        permission_override("permissions", {"can_edit"})
         role, module_1 = self._create_role_and_module(db_session)
         module_2 = Modules(module_name="Test Module 2", module_key="test_module_key_2")
         db_session.add(module_2)
@@ -187,18 +201,25 @@ class TestPermissionsAPI:
         assert db_perms[0].module_id == module_2.module_id
         assert db_perms[0].can_edit is True
 
-    def test_check_user_permission(self, client: TestClient, db_session: Session, auth_headers: dict) -> None:
-        """Test GET /permissions/check/{module_key}/{action}."""
+    def test_check_user_permission(
+        self, client: TestClient, db_session: Session, auth_headers: dict, permission_override
+    ) -> None:
+        """Test GET /permissions/check/{module_key}/{action} reflects the caller's real permissions."""
         module = Modules(module_name="Check Module", module_key="check_key")
         db_session.add(module)
         db_session.commit()
 
+        permission_override("check_key", {"can_view"})
         response = client.get("/permissions/check/check_key/view", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["module_key"] == "check_key"
         assert data["action"] == "view"
         assert data["allowed"] is True
+
+        denied = client.get("/permissions/check/check_key/edit", headers=auth_headers)
+        assert denied.status_code == 200
+        assert denied.json()["allowed"] is False
 
     def test_get_current_user_permissions(self, client: TestClient, auth_headers: dict) -> None:
         """Test GET /permissions/me."""
@@ -215,3 +236,43 @@ class TestPermissionsAPI:
         finally:
             # Clean up the override
             del app.dependency_overrides[get_current_employee_with_permissions]
+
+
+@pytest.mark.parametrize(
+    ("method", "path_template", "body"),
+    [
+        ("post", "/permissions", {"can_view": True}),
+        ("put", "/permissions/{role_id}/{module_id}", {"can_edit": True}),
+        ("delete", "/permissions/{role_id}/{module_id}", None),
+        ("post", "/permissions/bulk-update", "bulk"),
+    ],
+)
+def test_permission_writes_require_permissions_can_edit(
+    client: TestClient, db_session: Session, auth_headers: dict, permission_override, method, path_template, body
+) -> None:
+    """A valid token alone must not let a caller rewrite the role-permission matrix."""
+    role = Roles(role_name="Escalation Role")
+    module = Modules(module_name="Escalation Module", module_key="escalation_module")
+    db_session.add_all([role, module])
+    db_session.commit()
+    db_session.refresh(role)
+    db_session.refresh(module)
+    existing = RoleModules(role_id=role.role_id, module_id=module.module_id, can_view=True)
+    db_session.add(existing)
+    db_session.commit()
+
+    permission_override("permissions", {"can_view"})
+    if body == "bulk":
+        body = {"role_id": role.role_id, "permissions": [{"role_id": role.role_id, "module_id": module.module_id}]}
+    elif body is not None and method == "post":
+        body = {"role_id": role.role_id, "module_id": module.module_id, **body}
+    path = path_template.format(role_id=role.role_id, module_id=module.module_id)
+    kwargs = {"headers": auth_headers}
+    if body is not None:
+        kwargs["json"] = body
+
+    response = client.request(method.upper(), path, **kwargs)
+
+    assert response.status_code == 403
+    db_session.expire_all()
+    assert db_session.get(RoleModules, (role.role_id, module.module_id)).can_edit in {False, None}

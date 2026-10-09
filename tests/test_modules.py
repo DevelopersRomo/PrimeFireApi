@@ -290,6 +290,10 @@ class TestModules:
 class TestPermissions:
     """Test suite for Permissions endpoints."""
 
+    @pytest.fixture(autouse=True)
+    def _grant_permission_writes(self, permission_override) -> None:
+        permission_override("permissions", {"can_edit"})
+
     def test_create_permission(
         self,
         client: TestClient,

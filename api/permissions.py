@@ -3,7 +3,11 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee_with_permissions, require_authentication
+from api.dependencies import (
+    get_current_employee_with_permissions,
+    require_authentication,
+    require_module_permission,
+)
 from bd.dependencies import get_db
 from models.employees import Roles
 from models.modules import Modules, RoleModules
@@ -24,7 +28,9 @@ router = APIRouter()
 # ----------------------------
 @router.post("", response_model=Permission)
 async def create_permission(
-    permission: PermissionCreate, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
+    permission: PermissionCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_module_permission("permissions", "can_edit")),
 ):
     """Create a new permission (assign a module to a role with specific permissions)."""
     # Validate role exists
@@ -213,7 +219,7 @@ async def update_permission(
     module_id: int,
     permission: PermissionUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_authentication),
+    current_user: dict = Depends(require_module_permission("permissions", "can_edit")),
 ):
     """Update a permission."""
     db_permission = db.exec(
@@ -238,7 +244,10 @@ async def update_permission(
 # ----------------------------
 @router.delete("/{role_id}/{module_id}")
 async def delete_permission(
-    role_id: int, module_id: int, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
+    role_id: int,
+    module_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_module_permission("permissions", "can_edit")),
 ):
     """Delete a permission (revoke module access from a role)."""
     db_permission = db.exec(
@@ -262,7 +271,7 @@ async def delete_permission(
 async def bulk_update_permissions(
     bulk_update: BulkPermissionUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_authentication),
+    current_user: dict = Depends(require_module_permission("permissions", "can_edit")),
 ):
     """
     Bulk update permissions for a role.
@@ -300,7 +309,10 @@ async def bulk_update_permissions(
 # ----------------------------
 @router.get("/check/{module_key}/{action}")
 async def check_user_permission(
-    module_key: str, action: str, db: Session = Depends(get_db), current_user: dict = Depends(require_authentication)
+    module_key: str,
+    action: str,
+    db: Session = Depends(get_db),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
     """
     Check if the current user has permission to perform an action on a module.
@@ -311,16 +323,17 @@ async def check_user_permission(
     if not module:
         raise HTTPException(status_code=404, detail=f"Module with key '{module_key}' not found")
 
-    # Get user's roles (this would need to be implemented based on your auth system)
-    # For now, we'll return a placeholder response
-    # In production, you'd get the user's roles from the JWT token or session
+    flag = action if action in {"admin_actions", "other_actions"} else f"can_{action}"
+    allowed = any(
+        perm.get("module_key") == module_key and bool(perm.get("permissions", {}).get(flag))
+        for perm in user_permissions.get("permissions", [])
+    )
 
     return {
         "module_key": module_key,
         "module_name": module.module_name,
         "action": action,
-        "allowed": True,  # Placeholder - implement actual permission check
-        "message": "Permission check endpoint - implement with actual user roles",
+        "allowed": allowed,
     }
 
 

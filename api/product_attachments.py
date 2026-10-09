@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee_with_permissions, require_authentication
+from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
 from models.products import ProductAttachments, Products
@@ -120,7 +120,7 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
 def create_attachment(
     product_id: int,
     file: UploadFile | None = File(None),
-    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    user_permissions: dict = Depends(require_module_permission("products", "can_edit")),
     db: Session = Depends(get_db),
 ):
     product = db.get(Products, product_id)
@@ -196,7 +196,7 @@ def create_attachment(
 @router.delete("/products/attachments/{attachment_id}")
 def delete_attachment(
     attachment_id: int,
-    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    user_permissions: dict = Depends(require_module_permission("products", "can_delete")),
     db: Session = Depends(get_db),
 ):
     db_att = db.get(ProductAttachments, attachment_id)

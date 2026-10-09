@@ -203,6 +203,43 @@ def test_approve_external_user(client, db_session, auth_headers):
     assert new_employee is not None
 
 
+def test_approve_pending_user_rejects_email_of_existing_employee(client, db_session, auth_headers):
+    """Approving a pending registration must not take over an existing employee account."""
+    ext_user = TenantEmployees(email="collide@example.com", password_hash="registrant-hash", tenant_id=None)
+    t = Tenants(name="Collide Tenant", db_connection_key="key", is_active=True)
+    victim = Employees(email="collide@example.com", password_hash="victim-hash", title="Dev")
+    db_session.add_all([ext_user, t, victim])
+    db_session.commit()
+
+    payload = {"tenant_employee_id": ext_user.id, "tenant_id": t.tenant_id}
+    response = client.post("/tenants/approve-user", json=payload, headers=auth_headers)
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    db_session.expire_all()
+    assert db_session.get(Employees, victim.employee_id).password_hash == "victim-hash"
+    assert db_session.get(TenantEmployees, ext_user.id).tenant_id is None
+
+
+def test_reassigning_approved_user_keeps_existing_employee_hash(client, db_session, auth_headers):
+    """Moving an already-approved user to another tenant must not rewrite their main-DB credential."""
+    old_t = Tenants(name="Old Tenant", db_connection_key="key", is_active=True)
+    new_t = Tenants(name="New Tenant", db_connection_key="key2", is_active=True)
+    db_session.add_all([old_t, new_t])
+    db_session.commit()
+    ext_user = TenantEmployees(email="moved@example.com", password_hash="current-hash", tenant_id=old_t.tenant_id)
+    shadow = Employees(email="moved@example.com", password_hash="shadow-hash", title="External User")
+    db_session.add_all([ext_user, shadow])
+    db_session.commit()
+
+    payload = {"tenant_employee_id": ext_user.id, "tenant_id": new_t.tenant_id}
+    response = client.post("/tenants/approve-user", json=payload, headers=auth_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    db_session.expire_all()
+    assert db_session.get(TenantEmployees, ext_user.id).tenant_id == new_t.tenant_id
+    assert db_session.get(Employees, shadow.employee_id).password_hash == "shadow-hash"
+
+
 def test_approve_tenant_request(client, db_session, auth_headers):
     """Test approve tenant."""
     t = Tenants(name="InActiveTenant", db_connection_key="key", is_active=False)

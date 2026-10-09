@@ -153,16 +153,23 @@ async def approve_external_user(
     if not tenant.is_active:
         raise HTTPException(status_code=400, detail="Tenant is not active")
 
+    # A pending registration has no main-DB account yet; an existing one with the same
+    # email belongs to someone else and must not be linked to this registrant.
+    existing = db.exec(select(Employees).where(Employees.email == external_user.email)).first()
+    if existing and external_user.tenant_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="An employee account with this email already exists. Resolve the conflict before approving.",
+        )
+
     # 3. Update pending user to point to the assigned tenant
     external_user.tenant_id = tenant.tenant_id
     db.add(external_user)
     db.commit()
     db.refresh(external_user)
 
-    # 4. Create/Update user in MAIN database (ignoring tenant DB separation)
-    # Check if user already exists in MAIN DB
-    existing = db.exec(select(Employees).where(Employees.email == external_user.email)).first()
-
+    # 4. Create user in MAIN database (ignoring tenant DB separation); an existing row is
+    # this user's own account from a previous approval and keeps its credential.
     if not existing:
         # Generate unique AzureOid for external users to avoid UNIQUE constraint violation
         external_oid = str(uuid.uuid4())
@@ -176,11 +183,6 @@ async def approve_external_user(
         db.add(new_employee)
         db.commit()
         db.refresh(new_employee)
-    else:
-        # Update password if needed
-        existing.password_hash = external_user.password_hash
-        db.add(existing)
-        db.commit()
 
     return {
         "message": "User approved and assigned to tenant",

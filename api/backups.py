@@ -16,6 +16,7 @@ from sqlmodel import Session
 
 from api.dependencies import employee_has_admin_role, get_current_employee
 from bd.dependencies import PLATFORM_DB_ROUTES, get_db, get_db_route
+from core.backup_paths import resolve_backup_dir
 from models.employees import Employees
 
 logger = logging.getLogger(__name__)
@@ -27,14 +28,8 @@ load_dotenv()
 ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
 
-# Directorio de backups según el entorno
-if IS_PRODUCTION:
-    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home
-    uploads_base = os.getenv("UPLOADS_DIR", "/home/home")
-    BACKUP_DIR = os.path.join(uploads_base, "sql_backups")  # noqa: PTH118
-else:
-    # En local: bd/sql/backups
-    BACKUP_DIR = os.path.join(pathlib.Path(pathlib.Path(__file__).parent).parent, "bd", "sql", "backups")  # noqa: PTH118
+# Directorio de backups: siempre fuera del repo (ver core.backup_paths)
+BACKUP_DIR = str(resolve_backup_dir())
 
 pathlib.Path(BACKUP_DIR).mkdir(exist_ok=True, parents=True)
 

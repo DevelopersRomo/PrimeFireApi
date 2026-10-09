@@ -4,11 +4,7 @@ import pathlib
 import sys
 from datetime import datetime
 
-sys.path.append(pathlib.Path(pathlib.Path(__file__).parent).parent)
-
-# Crear carpeta de backups si no existe
-backup_dir = os.path.join(pathlib.Path(pathlib.Path(__file__).parent).parent, "bd", "sql", "backups")  # noqa: PTH118
-pathlib.Path(backup_dir).mkdir(exist_ok=True, parents=True)
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import pathlib
 
@@ -17,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 
 from bd.connection import create_engine_from_env
+from core.backup_paths import resolve_backup_dir
 
 
 def get_session_local(db_prefix="DB"):
@@ -123,7 +120,7 @@ def generate_partial_backup(tables_with_data=None, target_table=None, db_prefix=
 
     # Usar directorio por defecto si no se especifica
     if backup_dir is None:
-        backup_dir = os.path.join(pathlib.Path(pathlib.Path(__file__).parent).parent, "bd", "sql", "backups")  # noqa: PTH118
+        backup_dir = resolve_backup_dir()
 
     pathlib.Path(backup_dir).mkdir(exist_ok=True, parents=True)
     output_file = os.path.join(  # noqa: PTH118

@@ -8,14 +8,12 @@ project_root = pathlib.Path(pathlib.Path(__file__).parent).parent
 sys.path.insert(0, str(project_root / "bd"))
 sys.path.insert(0, str(project_root))
 
-# Crear carpeta de backups si no existe
-backup_dir = os.path.join(project_root, "bd", "sql", "backups")  # noqa: PTH118
-pathlib.Path(backup_dir).mkdir(exist_ok=True, parents=True)
-
 from connection import create_engine_from_env
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
+
+from core.backup_paths import resolve_backup_dir
 
 
 def get_session_local(db_prefix="DB"):
@@ -158,7 +156,7 @@ def generate_complete_backup(target_table=None, db_prefix="DB", backup_dir=None,
 
     # Usar directorio por defecto si no se especifica
     if backup_dir is None:
-        backup_dir = os.path.join(pathlib.Path(pathlib.Path(__file__).parent).parent, "bd", "sql", "backups")  # noqa: PTH118
+        backup_dir = resolve_backup_dir()
 
     pathlib.Path(backup_dir).mkdir(exist_ok=True, parents=True)
     type_suffix = "_structure" if backup_type == "structure" else ""

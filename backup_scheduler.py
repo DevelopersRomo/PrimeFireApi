@@ -13,20 +13,16 @@ import time
 import schedule
 from dotenv import load_dotenv
 
+from core.backup_paths import resolve_backup_dir
+
 load_dotenv()
 
 # Detectar entorno
 ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
 
-# Ruta de backups según el entorno
-if IS_PRODUCTION:
-    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home
-    uploads_base = os.getenv("UPLOADS_DIR", "/home/home")
-    BACKUP_DIR = pathlib.Path(uploads_base) / "sql_backups"
-else:
-    # En local: bd/sql/backups
-    BACKUP_DIR = pathlib.Path(__file__).parent / "bd" / "sql" / "backups"
+# Ruta de backups: siempre fuera del repo (ver core.backup_paths)
+BACKUP_DIR = resolve_backup_dir()
 
 pathlib.Path(BACKUP_DIR).mkdir(exist_ok=True, parents=True)
 

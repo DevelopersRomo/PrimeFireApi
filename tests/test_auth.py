@@ -156,6 +156,22 @@ def test_refresh_token_success(client: TestClient, db_session: Session):
     assert "access_token" in response.json()
 
 
+def test_internal_user_can_log_in_and_refresh(client: TestClient, db_session: Session):
+    """Internal employees (no tenant link, refresh token without tenant_key) keep their login and refresh."""
+    db_session.add(Employees(email="internal@example.com", password_hash=get_password_hash("pw"), title="Dev"))
+    db_session.commit()
+
+    login = client.post("/auth/token", data={"username": "internal@example.com", "password": "pw"})
+    assert login.status_code == 200, login.text
+    refresh_token = login.json()["refresh_token"]
+    assert "tenant_key" not in jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+
+    response = client.post("/auth/refresh", json={"refresh_token": refresh_token})
+
+    assert response.status_code == 200, response.text
+    assert "access_token" in response.json()
+
+
 def test_refresh_token_invalid(client: TestClient):
     response = client.post("/auth/refresh", json={"refresh_token": "invalid_or_expired_refresh_token"})
     assert response.status_code in {400, 401}

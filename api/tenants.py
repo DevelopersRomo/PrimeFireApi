@@ -393,6 +393,12 @@ async def delete_tenant_request(
     links = db.exec(select(TenantEmployees).where(TenantEmployees.tenant_id == tenant_id)).all()
 
     for link in links:
+        # Clear the main-DB shadow's password so the member cannot fall back to an internal login.
+        # The row itself stays: other tables may reference it.
+        shadow = db.exec(select(Employees).where(Employees.email == link.email)).first()
+        if shadow:
+            shadow.password_hash = None
+            db.add(shadow)
         db.delete(link)
 
     db.delete(tenant)

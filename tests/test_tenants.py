@@ -1,6 +1,7 @@
 import pytest
 from fastapi import status
 
+from api.auth import get_password_hash
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
 
@@ -321,3 +322,54 @@ def test_get_and_update_tenant(client, db_session, auth_headers):
     response = client.put(f"/tenants/{t.tenant_id}", json=update_payload, headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["name"] == "Updated Tenant"
+
+
+def _approved_external_user(db_session, email: str, password: str) -> Tenants:
+    """An active tenant with one approved external user: link plus main-DB shadow, as /approve-user leaves it."""
+    tenant = Tenants(name=f"Tenant of {email}", db_connection_key=f"KEY_{email}", is_active=True)
+    db_session.add(tenant)
+    db_session.commit()
+    hashed = get_password_hash(password)
+    db_session.add_all(
+        [
+            TenantEmployees(email=email, password_hash=hashed, tenant_id=tenant.tenant_id),
+            Employees(email=email, password_hash=hashed, title="External User"),
+        ]
+    )
+    db_session.commit()
+    return tenant
+
+
+def _deactivate_and_delete(client, db_session, tenant: Tenants, auth_headers) -> None:
+    tenant.is_active = False
+    db_session.add(tenant)
+    db_session.commit()
+    response = client.delete(f"/tenants/{tenant.tenant_id}", headers=auth_headers)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+def test_deleted_tenant_member_cannot_log_in(client, db_session, auth_headers):
+    """Deleting a tenant must not leave its members a password login through the main-DB shadow employee."""
+    tenant = _approved_external_user(db_session, "gone@example.com", "pw-gone")
+
+    _deactivate_and_delete(client, db_session, tenant, auth_headers)
+
+    response = client.post("/auth/token", data={"username": "gone@example.com", "password": "pw-gone"})
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    db_session.expire_all()
+    shadow = db_session.query(Employees).filter_by(email="gone@example.com").first()
+    assert shadow is not None
+    assert shadow.password_hash is None
+
+
+def test_deleted_tenant_member_cannot_refresh(client, db_session, auth_headers):
+    """A refresh token issued while the tenant existed must stop working once the tenant is deleted."""
+    tenant = _approved_external_user(db_session, "stale@example.com", "pw-stale")
+    login = client.post("/auth/token", data={"username": "stale@example.com", "password": "pw-stale"})
+    assert login.status_code == status.HTTP_200_OK
+    refresh_token = login.json()["refresh_token"]
+
+    _deactivate_and_delete(client, db_session, tenant, auth_headers)
+
+    response = client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED

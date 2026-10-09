@@ -243,6 +243,13 @@ async def refresh_access_token(refresh_data: RefreshTokenRequest, db: Session = 
         if tenant.tenant_id != 1:
             token_data["tenant_key"] = tenant.db_connection_key
         refresh_payload = {"sub": external_user.email, "tenant_key": tenant.db_connection_key}
+    elif payload.get("tenant_key"):
+        # Issued to a tenant member whose link is gone (tenant deleted): never fall back to an internal session.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     else:
         user = db.exec(select(Employees).where(Employees.email == email)).first()
         if not user:

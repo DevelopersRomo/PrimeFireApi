@@ -104,7 +104,8 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_main_
     """
     # Check existing external user in TenantEmployees (main DB)
     existing_external = db.exec(select(TenantEmployees).where(TenantEmployees.email == user_data.email)).first()
-    if existing_external:
+    existing_employee = db.exec(select(Employees).where(Employees.email == user_data.email)).first()
+    if existing_external or existing_employee:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
     hashed_password = get_password_hash(user_data.password)
@@ -130,28 +131,20 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_main_
         db.refresh(external_user)
 
         # Save full user in main DB as well (ignoring tenant DB separation)
-        existing_user = db.exec(select(Employees).where(Employees.email == user_data.email)).first()
-
-        if not existing_user:
-            # Generate unique AzureOid for external users to avoid UNIQUE constraint violation
-            external_oid = str(uuid.uuid4())
-            new_employee = Employees(
-                email=user_data.email,
-                first_name=user_data.first_name,
-                last_name=user_data.last_name,
-                display_name=f"{user_data.first_name} {user_data.last_name}",
-                password_hash=hashed_password,
-                title="External User",
-                azure_oid=external_oid,  # Unique identifier for external users
-            )
-            db.add(new_employee)
-            db.commit()
-            db.refresh(new_employee)
-        else:
-            # Update password if needed
-            existing_user.password_hash = hashed_password
-            db.add(existing_user)
-            db.commit()
+        # Generate unique AzureOid for external users to avoid UNIQUE constraint violation
+        external_oid = str(uuid.uuid4())
+        new_employee = Employees(
+            email=user_data.email,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name,
+            display_name=f"{user_data.first_name} {user_data.last_name}",
+            password_hash=hashed_password,
+            title="External User",
+            azure_oid=external_oid,  # Unique identifier for external users
+        )
+        db.add(new_employee)
+        db.commit()
+        db.refresh(new_employee)
 
         # Automatic login
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

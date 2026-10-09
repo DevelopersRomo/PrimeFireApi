@@ -9,6 +9,7 @@ import api.auth
 from api.auth import ALGORITHM, SECRET_KEY, get_password_hash
 from core.datetime_utils import utcnow
 from models.auth_tokens import AuthToken
+from models.employees import Employees
 from models.tenants import TenantEmployees, Tenants
 
 
@@ -63,6 +64,33 @@ def test_register_user_with_tenant(client: TestClient, db_session: Session):
     payload = _verify_token(data["access_token"])
     assert payload["sub"] == "tenantuser@example.com"
     assert payload["tenant_key"] == "TEST_TENANT"
+
+
+@pytest.mark.parametrize("tenant_key", ["COLLIDE_TENANT", None])
+def test_register_rejects_email_of_existing_employee(client: TestClient, db_session: Session, tenant_key):
+    """Registration must never take over an existing local account (with or without tenant_key)."""
+    tenant = Tenants(name="Collide Tenant", db_connection_key="COLLIDE_TENANT", is_active=True)
+    db_session.add(tenant)
+    original_hash = get_password_hash("victim-password")
+    victim = Employees(email="victim@example.com", password_hash=original_hash, azure_oid="victim-oid")
+    db_session.add(victim)
+    db_session.commit()
+
+    payload = {
+        "email": "victim@example.com",
+        "password": "attacker-password",
+        "first_name": "Attacker",
+        "last_name": "User",
+    }
+    if tenant_key:
+        payload["tenant_key"] = tenant_key
+    response = client.post("/auth/register", json=payload)
+
+    assert response.status_code == 400
+    db_session.expire_all()
+    stored = db_session.exec(select(Employees).where(Employees.email == "victim@example.com")).one()
+    assert stored.password_hash == original_hash
+    assert db_session.exec(select(TenantEmployees).where(TenantEmployees.email == "victim@example.com")).first() is None
 
 
 def test_register_with_invalid_tenant(client: TestClient, db_session: Session):

@@ -37,13 +37,12 @@ def test_register_pending_user(client: TestClient, db_session: Session):
     assert user.tenant_id is None
 
 
-def test_register_user_with_tenant(client: TestClient, db_session: Session):
-    """Test registering a user with a valid tenant."""
-    # Setup Tenant
+@pytest.mark.parametrize("tenant_key", ["TEST_TENANT", "NON_EXISTENT"])
+def test_register_ignores_tenant_key_and_stays_pending(client: TestClient, db_session: Session, tenant_key: str):
+    """A client-supplied tenant_key must not join a tenant; only /tenants/approve-user assigns one."""
     tenant = Tenants(name="Test Tenant", db_connection_key="TEST_TENANT", is_active=True)
     db_session.add(tenant)
     db_session.commit()
-    db_session.refresh(tenant)
 
     response = client.post(
         "/auth/register",
@@ -52,25 +51,21 @@ def test_register_user_with_tenant(client: TestClient, db_session: Session):
             "password": "securepassword123",
             "first_name": "Tenant",
             "last_name": "User",
-            "tenant_key": "TEST_TENANT",
+            "tenant_key": tenant_key,
         },
     )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert "access_token" in data
-    assert "refresh_token" in data
-
-    payload = _verify_token(data["access_token"])
-    assert payload["sub"] == "tenantuser@example.com"
-    assert payload["tenant_key"] == "TEST_TENANT"
+    assert response.status_code == 202
+    assert "access_token" not in response.json()
+    user = db_session.exec(select(TenantEmployees).where(TenantEmployees.email == "tenantuser@example.com")).first()
+    assert user is not None
+    assert user.tenant_id is None
+    assert db_session.exec(select(Employees).where(Employees.email == "tenantuser@example.com")).first() is None
 
 
 @pytest.mark.parametrize("tenant_key", ["COLLIDE_TENANT", None])
 def test_register_rejects_email_of_existing_employee(client: TestClient, db_session: Session, tenant_key):
     """Registration must never take over an existing local account (with or without tenant_key)."""
-    tenant = Tenants(name="Collide Tenant", db_connection_key="COLLIDE_TENANT", is_active=True)
-    db_session.add(tenant)
     original_hash = get_password_hash("victim-password")
     victim = Employees(email="victim@example.com", password_hash=original_hash, azure_oid="victim-oid")
     db_session.add(victim)
@@ -91,20 +86,6 @@ def test_register_rejects_email_of_existing_employee(client: TestClient, db_sess
     stored = db_session.exec(select(Employees).where(Employees.email == "victim@example.com")).one()
     assert stored.password_hash == original_hash
     assert db_session.exec(select(TenantEmployees).where(TenantEmployees.email == "victim@example.com")).first() is None
-
-
-def test_register_with_invalid_tenant(client: TestClient, db_session: Session):
-    response = client.post(
-        "/auth/register",
-        json={
-            "email": "badtenant@example.com",
-            "password": "securepassword123",
-            "first_name": "Bad",
-            "last_name": "Tenant",
-            "tenant_key": "NON_EXISTENT",
-        },
-    )
-    assert response.status_code == 404
 
 
 def test_token_login_success(client: TestClient, db_session: Session):
@@ -154,21 +135,19 @@ def test_token_login_invalid_password(client: TestClient, db_session: Session):
 
 
 def test_refresh_token_success(client: TestClient, db_session: Session):
-    # Setup Tenant and directly generate token to test refresh
+    # An approved tenant user signs in to obtain a refresh token
     tenant = Tenants(name="Refresh Tenant", db_connection_key="REFRESH_T", is_active=True)
     db_session.add(tenant)
     db_session.commit()
-
-    response = client.post(
-        "/auth/register",
-        json={
-            "email": "refresh_user@example.com",
-            "password": "my_password",
-            "first_name": "Refresh",
-            "last_name": "User",
-            "tenant_key": "REFRESH_T",
-        },
+    db_session.refresh(tenant)
+    db_session.add(
+        TenantEmployees(
+            email="refresh_user@example.com", password_hash=get_password_hash("my_password"), tenant_id=tenant.tenant_id
+        )
     )
+    db_session.commit()
+
+    response = client.post("/auth/token", data={"username": "refresh_user@example.com", "password": "my_password"})
     refresh_token = response.json()["refresh_token"]
 
     response = client.post("/auth/refresh", json={"refresh_token": refresh_token})

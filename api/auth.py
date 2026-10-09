@@ -1,6 +1,5 @@
 import logging
 import secrets
-import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -49,7 +48,6 @@ class UserRegister(BaseModel):
     password: str
     first_name: str
     last_name: str
-    tenant_key: str | None = None  # Opcional - admin lo asignará después
 
 
 class RefreshTokenRequest(BaseModel):
@@ -99,8 +97,8 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
 @router.post("/register", response_model=Token)
 async def register_user(user_data: UserRegister, db: Session = Depends(get_main_db)):
     """
-    Registrar un nuevo usuario externo.
-    Si tenant_key está presente, guarda en esa BD. Si no, solo guarda referencia en BD Principal (pendiente de aprobación).
+    Registrar un nuevo usuario externo como pendiente de aprobación.
+    Solo /tenants/approve-user le asigna un tenant; el registro nunca emite tokens.
     """
     # Check existing external user in TenantEmployees (main DB)
     existing_external = db.exec(select(TenantEmployees).where(TenantEmployees.email == user_data.email)).first()
@@ -110,59 +108,7 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_main_
 
     hashed_password = get_password_hash(user_data.password)
 
-    # 2. Si tiene tenant_key, verificar que existe y está activo
-    if user_data.tenant_key:
-        tenant = db.exec(select(Tenants).where(Tenants.db_connection_key == user_data.tenant_key)).first()
-        if not tenant:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"Tenant '{user_data.tenant_key}' not found"
-            )
-        if not tenant.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=f"Tenant '{user_data.tenant_key}' is not active"
-            )
-
-        # Save external user in main DB
-        external_user = TenantEmployees(
-            email=user_data.email, password_hash=hashed_password, tenant_id=tenant.tenant_id
-        )
-        db.add(external_user)
-        db.commit()
-        db.refresh(external_user)
-
-        # Save full user in main DB as well (ignoring tenant DB separation)
-        # Generate unique AzureOid for external users to avoid UNIQUE constraint violation
-        external_oid = str(uuid.uuid4())
-        new_employee = Employees(
-            email=user_data.email,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
-            display_name=f"{user_data.first_name} {user_data.last_name}",
-            password_hash=hashed_password,
-            title="External User",
-            azure_oid=external_oid,  # Unique identifier for external users
-        )
-        db.add(new_employee)
-        db.commit()
-        db.refresh(new_employee)
-
-        # Automatic login
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        token_data = {"sub": user_data.email, "type": "internal"}
-        # We don't need tenant_key in token anymore since everything is on main DB
-        # But we keep it if needed for other logic, though user said EVERYTHING on main DB
-        if user_data.tenant_key:
-            token_data["tenant_key"] = user_data.tenant_key
-
-        access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
-        refresh_token = create_refresh_token(data={"sub": user_data.email, "tenant_key": user_data.tenant_key})
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "refresh_token": refresh_token,
-        }
-
-    # No tenant_key: keep TenantId as NULL (pending approval)
+    # Keep TenantId as NULL (pending approval)
     external_user = TenantEmployees(email=user_data.email, password_hash=hashed_password, tenant_id=None)
     db.add(external_user)
     db.commit()

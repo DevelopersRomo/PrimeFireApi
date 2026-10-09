@@ -1,3 +1,4 @@
+import contextlib
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -11,6 +12,7 @@ from sqlmodel import Session, select
 from api.dependencies import get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
+from core.file_storage import confine_to
 from models.customers import CustomerAttachments, Customers
 from schemas.customers import CustomerAttachment, CustomerEmployee
 
@@ -91,15 +93,14 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     if db_att.file_path:
-        storage_path = Path(db_att.file_path)
-        if not storage_path.is_absolute():
-            storage_path = BASE_DIR / storage_path
-        if storage_path.exists():
-            return FileResponse(
-                path=str(storage_path),
-                filename=db_att.file_name or storage_path.name,
-                media_type=db_att.file_type or "application/octet-stream",
-            )
+        storage_path = confine_to(resolve_upload_root(), db_att.file_path)
+        if not storage_path.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+        return FileResponse(
+            path=str(storage_path),
+            filename=db_att.file_name or storage_path.name,
+            media_type=db_att.file_type or "application/octet-stream",
+        )
 
     return attachment_to_schema(db_att)
 
@@ -110,7 +111,6 @@ def create_attachment(
     file: UploadFile | None = File(None),
     file_name: str | None = Form(None),
     file_type: str | None = Form(None),
-    file_path: str | None = Form(None),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
@@ -119,9 +119,11 @@ def create_attachment(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    if file is None:
+        raise HTTPException(status_code=400, detail="File is required")
+
     current_employee_id = user_permissions["employee"]["employee_id"]
 
-    rel_path = None
     final_file_name = file_name
     final_file_type = file_type
 
@@ -139,9 +141,6 @@ def create_attachment(
         rel_path = str(storage_path).replace("\\", "/")
         final_file_name = file.filename
         final_file_type = file.content_type
-
-    if rel_path is None and file_path:
-        rel_path = file_path
 
     if not final_file_name:
         raise HTTPException(status_code=400, detail="File name is required")
@@ -179,6 +178,11 @@ def delete_attachment(
     if not db_att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
+    file_path = db_att.file_path
     db.delete(db_att)
     db.commit()
+    if file_path:
+        # A stored path that escapes the upload root raises 404 in confine_to: never touch it
+        with contextlib.suppress(HTTPException):
+            confine_to(resolve_upload_root(), file_path).unlink(missing_ok=True)
     return {"success": True, "message": "Attachment deleted successfully"}

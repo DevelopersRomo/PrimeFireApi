@@ -1,3 +1,4 @@
+import contextlib
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -10,6 +11,7 @@ from sqlmodel import Session, select
 from api.dependencies import get_current_employee_with_permissions, require_authentication
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
+from core.file_storage import confine_to
 from models.ticket_messages import TicketAttachments
 from schemas.ticket_messages import TicketAttachment
 
@@ -34,6 +36,11 @@ else:
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
+
+
+def _confined_path(file_path: str) -> Path:
+    """Resolve a stored file_path (written relative to CWD, or absolute) and confine it to UPLOAD_DIR."""
+    return confine_to(UPLOAD_DIR, Path(file_path).resolve())
 
 
 def attachment_to_schema(db_att: TicketAttachments) -> TicketAttachment:
@@ -62,29 +69,16 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
     if not db_att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    # If file exists on disk (file_path set), return the file directly
     if db_att.file_path:
-        # Check if path in DB is absolute or relative
-        saved_path = Path(db_att.file_path)
-
-        # If path starts with uploads/ but UPLOAD_DIR is different, we might fail to find it if we just join.
-        # But if we assume db_att.file_path is the full relative path from app root as stored previously:
-        storage_path = saved_path
-
-        # If not absolute, try joining with current working directory or check if it exists as is
-        if not storage_path.is_absolute() and not storage_path.exists():
-            # Fallback: maybe it's relative to UPLOAD_DIR but stored as relative string?
-            # For now, rely on file_path being what was returned by create_attachment
-            pass
-
-        if storage_path.exists():
-            # Use original filename for Content-Disposition
-            return FileResponse(
-                path=str(storage_path),
-                filename=db_att.file_name or storage_path.name,
-                media_type=db_att.file_type or "application/octet-stream",
-            )
-        # if file missing, fall back to metadata
+        storage_path = _confined_path(db_att.file_path)
+        if not storage_path.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+        # Use original filename for Content-Disposition
+        return FileResponse(
+            path=str(storage_path),
+            filename=db_att.file_name or storage_path.name,
+            media_type=db_att.file_type or "application/octet-stream",
+        )
     return attachment_to_schema(db_att)
 
 
@@ -95,12 +89,13 @@ def create_attachment(
     file: UploadFile | None = File(None),
     file_name: str | None = Form(None),
     file_type: str | None = Form(None),
-    file_path: str | None = Form(None),
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
-    # If an UploadFile is provided, save it to UPLOAD_DIR/{ticket_id}/ and set file_path
-    rel_path = None
+    if file is None:
+        raise HTTPException(status_code=400, detail="File is required")
+
+    # Save the upload to UPLOAD_DIR/{ticket_id}/ and set file_path
     final_file_name = file_name
     final_file_type = file_type
     if file is not None:
@@ -119,10 +114,6 @@ def create_attachment(
         rel_path = str(storage_path).replace("\\", "/")
         final_file_name = file.filename
         final_file_type = file.content_type
-
-    # If no upload, allow provided file_path (for metadata-only clients)
-    if rel_path is None and file_path:
-        rel_path = file_path
 
     db_att = TicketAttachments(
         ticket_id=ticket_id,
@@ -156,6 +147,11 @@ def delete_attachment(
     if not has_admin:
         raise HTTPException(status_code=403, detail="Not allowed to delete attachment")
 
+    file_path = db_att.file_path
     db.delete(db_att)
     db.commit()
+    if file_path:
+        # A stored path that escapes the upload root raises 404 in confine_to: never touch it
+        with contextlib.suppress(HTTPException):
+            _confined_path(file_path).unlink(missing_ok=True)
     return {"success": True, "message": "Attachment deleted"}

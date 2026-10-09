@@ -1,3 +1,4 @@
+import contextlib
 import os
 import uuid
 from pathlib import Path
@@ -11,6 +12,7 @@ from api.dependencies import require_module_permission
 from api.it.dependencies import get_tenant_id
 from bd.dependencies import get_db
 from core.config import settings
+from core.file_storage import confine_to
 from models.it.templates import ITPdfTemplates
 from schemas.it.templates import ItPdfTemplateCreate, ItPdfTemplateRead, ItPdfTemplateUpdate
 from schemas.pagination import PaginatedResponse
@@ -34,6 +36,16 @@ LOGO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".webp"}
 
 router = APIRouter()
+
+
+def _check_logo_url(value: str | None, current: str | None = None) -> None:
+    """Clients may set an external http(s) logo; local file paths are only set by the upload endpoint."""
+    if not value or value == current or value.startswith(("http://", "https://")):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="logo_url must be an http(s) URL; upload logo files through the /logo endpoint.",
+    )
 
 
 def _clear_default(db: Session, tenant_id: int) -> None:
@@ -102,6 +114,7 @@ def create_template(
     tenant_id: int = Depends(get_tenant_id),
     _perm=Depends(require_module_permission("it_templates", "can_create")),
 ):
+    _check_logo_url(payload.logo_url)
     if payload.is_default:
         _clear_default(db, tenant_id)
     template = ITPdfTemplates(tenant_id=tenant_id, **payload.model_dump())
@@ -137,8 +150,10 @@ def upload_template_logo(
 
     # Remove the previously uploaded file if the template had one.
     previous = template.logo_url
-    if previous and not previous.startswith("http") and Path(previous).exists():
-        Path(previous).unlink(missing_ok=True)
+    if previous and not previous.startswith("http"):
+        # Never unlink anything outside the logo folder
+        with contextlib.suppress(HTTPException):
+            confine_to(LOGO_UPLOAD_DIR, previous).unlink(missing_ok=True)
 
     template.logo_url = str(file_path).replace("\\", "/")
     db.add(template)
@@ -160,10 +175,13 @@ def get_template_logo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
 
     logo = template.logo_url
-    if not logo or logo.startswith("http") or not Path(logo).exists():
+    if not logo or logo.startswith("http"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No uploaded logo file")
+    logo_path = confine_to(LOGO_UPLOAD_DIR, logo)
+    if not logo_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No uploaded logo file")
 
-    return FileResponse(path=logo, filename=Path(logo).name)
+    return FileResponse(path=logo_path, filename=logo_path.name)
 
 
 @router.patch("/{template_id}", response_model=ItPdfTemplateRead)
@@ -179,6 +197,8 @@ def update_template(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
 
     data = payload.model_dump(exclude_unset=True)
+    if "logo_url" in data:
+        _check_logo_url(data["logo_url"], template.logo_url)
     if data.get("is_default"):
         _clear_default(db, tenant_id)
     for key, value in data.items():

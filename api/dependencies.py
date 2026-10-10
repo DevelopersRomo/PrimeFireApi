@@ -522,3 +522,18 @@ def require_module_permission(module_key: str, action: str):
         )
 
     return _require
+
+
+def require_any_module_permission(*permissions: tuple[str, str]):
+    """Build a dependency that accepts any of the specified module permissions."""
+
+    async def _require(
+        user_permissions: dict = Depends(get_current_employee_with_permissions),
+    ) -> dict:
+        for module_key, action in permissions:
+            for perm in user_permissions.get("permissions", []):
+                if perm.get("module_key") == module_key and perm.get("permissions", {}).get(action):
+                    return user_permissions
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing required module permission.")
+
+    return _require

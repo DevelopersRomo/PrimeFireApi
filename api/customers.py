@@ -3,7 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, and_, or_, select
 
-from api.dependencies import get_current_employee, require_authentication
+from api.dependencies import get_current_employee, require_any_module_permission, require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
 from models.addresses import Addresses
@@ -87,7 +87,9 @@ def get_customers(
     limit: int = Query(1000, ge=1, le=1000, description="Maximum number of records to return"),
     with_meta: bool = Query(False, description="Return pagination metadata"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions=Depends(
+        require_any_module_permission(("customers", "can_view"), ("quotations", "can_view"), ("timesheet", "can_view"))
+    ),
 ):
     """Get customers with optional filters and pagination."""
     query = select(Customers).options(selectinload(Customers.primary_address), selectinload(Customers.creator))
@@ -137,7 +139,7 @@ def get_customers(
 
 
 @router.get("/{customer_id}", response_model=Customer)
-def get_customer(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_customer(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_module_permission("customers", "can_view"))):
     """Get a single customer by ID."""
     db_customer = db.exec(
         select(Customers)
@@ -152,7 +154,7 @@ def get_customer(customer_id: int, db: Session = Depends(get_db), _auth=Depends(
 
 
 @router.get("/{customer_id}/merged", response_model=CustomerMerged)
-def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_module_permission("customers", "can_view"))):
     """Get a customer with notes, contacts, and attachments."""
     db_customer = db.exec(
         select(Customers)
@@ -230,7 +232,10 @@ def get_customer_merged(customer_id: int, db: Session = Depends(get_db), _auth=D
 
 @router.post("", response_model=Customer)
 def create_customer(
-    customer: CustomerCreate, current_employee: Employees = Depends(get_current_employee), db: Session = Depends(get_db)
+    customer: CustomerCreate,
+    current_employee: Employees = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("customers", "can_create")),
 ):
     """Create a new customer."""
     primary_address_id = None
@@ -287,7 +292,7 @@ def update_customer(
     customer_id: int,
     customer_update: CustomerUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perm=Depends(require_module_permission("customers", "can_edit")),
 ):
     """Update a customer."""
     db_customer = db.exec(
@@ -338,7 +343,9 @@ def update_customer(
 
 
 @router.delete("/{customer_id}")
-def delete_customer(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def delete_customer(
+    customer_id: int, db: Session = Depends(get_db), _perm=Depends(require_module_permission("customers", "can_delete"))
+):
     """Delete a customer."""
     db_customer = db.get(Customers, customer_id)
     if not db_customer:

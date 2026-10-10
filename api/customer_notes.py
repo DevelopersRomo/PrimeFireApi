@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee, require_authentication
+from api.dependencies import get_current_employee, require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
 from models.customers import CustomerNotes, Customers
@@ -33,7 +33,11 @@ def note_to_schema(db_note: CustomerNotes) -> CustomerNote:
 
 
 @router.get("/customers/{customer_id}/notes", response_model=list[CustomerNote])
-def get_customer_notes(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_customer_notes(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("customers", "can_view")),
+):
     """Get all notes for a customer."""
     customer = db.get(Customers, customer_id)
     if not customer:
@@ -55,6 +59,7 @@ def create_customer_note(
     note: CustomerNoteCreate,
     current_employee: Employees = Depends(get_current_employee),
     db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("customers", "can_create")),
 ):
     """Create a new note for a customer."""
     customer = db.get(Customers, customer_id)
@@ -87,7 +92,7 @@ def update_customer_note(
     note_id: int,
     note_update: CustomerNoteUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perm=Depends(require_module_permission("customers", "can_edit")),
 ):
     """Update a customer note."""
     db_note = db.exec(
@@ -118,7 +123,10 @@ def update_customer_note(
 
 @router.delete("/customers/{customer_id}/notes/{note_id}")
 def delete_customer_note(
-    customer_id: int, note_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    customer_id: int,
+    note_id: int,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("customers", "can_delete")),
 ):
     """Delete a customer note."""
     db_note = db.exec(

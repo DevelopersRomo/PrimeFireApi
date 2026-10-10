@@ -3,10 +3,17 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from models.customers import CustomerTypeEnum, Customers
+from models.customers import (
+    CustomerAlternateContacts,
+    CustomerNotes,
+    CustomerTypeEnum,
+    Customers,
+)
+from tests.conftest import create_test_record
 
 
-def test_customers_crud(client: TestClient, auth_headers: dict):
+def test_customers_crud(client: TestClient, auth_headers: dict, permission_override):
+    permission_override("customers", {"can_view"})
     response = client.get("/customers/")
     assert response.status_code in {401, 200}
 
@@ -14,9 +21,75 @@ def test_customers_crud(client: TestClient, auth_headers: dict):
     assert response.status_code == 200
 
 
-def test_customer_pagination_uses_customer_id_tiebreaker(
-    client: TestClient, auth_headers: dict, db_session: Session
+def test_customer_routes_require_module_permissions(
+    client: TestClient, auth_headers: dict, db_session: Session, other_employee
 ) -> None:
+    customer = create_test_record(
+        db_session,
+        Customers,
+        CustomerType="commercial",
+        CompanyName="Permission test customer",
+        CreatedBy=other_employee.employee_id,
+    )
+    note = create_test_record(
+        db_session,
+        CustomerNotes,
+        customer_id=customer.customer_id,
+        note_text="Original note",
+        created_by=other_employee.employee_id,
+    )
+    contact = create_test_record(
+        db_session,
+        CustomerAlternateContacts,
+        customer_id=customer.customer_id,
+        name="Other employee",
+        email="other@example.test",
+    )
+    db_session.commit()
+
+    responses = [
+        client.get("/customers", headers=auth_headers),
+        client.patch(f"/customers/{customer.customer_id}", json={"company_name": "Changed"}, headers=auth_headers),
+        client.patch(
+            f"/customers/{customer.customer_id}/notes/{note.customer_note_id}",
+            json={"note_text": "Changed"},
+            headers=auth_headers,
+        ),
+        client.patch(
+            f"/customers/{customer.customer_id}/contacts/{contact.customer_alternate_contact_id}",
+            json={"email": "changed@example.test"},
+            headers=auth_headers,
+        ),
+        client.delete(f"/customers/{customer.customer_id}", headers=auth_headers),
+    ]
+
+    assert [response.status_code for response in responses] == [403] * len(responses)
+
+
+def test_quotation_permission_can_read_customers_without_write_access(
+    client: TestClient, auth_headers: dict, db_session: Session, permission_override
+) -> None:
+    permission_override("quotations", {"can_view"})
+    customer = create_test_record(
+        db_session,
+        Customers,
+        CustomerType="commercial",
+        CompanyName="Quotation customer",
+        CreatedBy=1,
+    )
+    db_session.commit()
+
+    listed = client.get("/customers", headers=auth_headers)
+    updated = client.patch(f"/customers/{customer.customer_id}", json={"company_name": "Changed"}, headers=auth_headers)
+
+    assert listed.status_code == 200
+    assert updated.status_code == 403
+
+
+def test_customer_pagination_uses_customer_id_tiebreaker(
+    client: TestClient, auth_headers: dict, db_session: Session, permission_override
+) -> None:
+    permission_override("customers", {"can_view"})
     created_at = datetime(2026, 7, 29, 12, tzinfo=UTC)
     customers = [
         Customers(

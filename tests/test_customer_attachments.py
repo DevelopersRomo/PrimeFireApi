@@ -1,10 +1,16 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from models.customers import CustomerAttachments, Customers
 from tests.conftest import create_test_record
+
+
+@pytest.fixture(autouse=True)
+def _grant_customer_permissions(permission_override) -> None:
+    permission_override("customers", {"can_view", "can_create", "can_edit", "can_delete"})
 
 
 def test_create_customer_attachment(client: TestClient, db_session: Session, auth_headers: dict):

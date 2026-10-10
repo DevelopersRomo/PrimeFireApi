@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee_with_permissions, require_authentication
+from api.dependencies import require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
 from core.file_storage import confine_to
@@ -68,7 +68,7 @@ def attachment_to_schema(db_att: CustomerAttachments) -> CustomerAttachment:
 
 @router.get("/customers/{customer_id}/attachments", response_model=list[CustomerAttachment])
 def list_attachments_for_customer(
-    customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_module_permission("customers", "can_view"))
 ):
     """List all attachments for a customer."""
     customer = db.get(Customers, customer_id)
@@ -86,7 +86,7 @@ def list_attachments_for_customer(
 
 
 @router.get("/customers/attachments/{attachment_id}")
-def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depends(require_module_permission("customers", "can_view"))):
     """Get attachment metadata or download file."""
     db_att = db.get(CustomerAttachments, attachment_id)
     if not db_att:
@@ -111,7 +111,7 @@ def create_attachment(
     file: UploadFile | None = File(None),
     file_name: str | None = Form(None),
     file_type: str | None = Form(None),
-    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    user_permissions: dict = Depends(require_module_permission("customers", "can_create")),
     db: Session = Depends(get_db),
 ):
     """Create a new attachment for a customer."""
@@ -170,7 +170,7 @@ def create_attachment(
 @router.delete("/customers/attachments/{attachment_id}")
 def delete_attachment(
     attachment_id: int,
-    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    user_permissions: dict = Depends(require_module_permission("customers", "can_delete")),
     db: Session = Depends(get_db),
 ):
     """Delete a customer attachment."""

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication
+from api.dependencies import require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
 from models.customers import CustomerAlternateContacts, Customers
@@ -24,7 +24,11 @@ def contact_to_schema(db_contact: CustomerAlternateContacts) -> CustomerAlternat
 
 
 @router.get("/customers/{customer_id}/contacts", response_model=list[CustomerAlternateContact])
-def get_customer_contacts(customer_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_customer_contacts(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("customers", "can_view")),
+):
     """Get all alternate contacts for a customer."""
     customer = db.get(Customers, customer_id)
     if not customer:
@@ -44,7 +48,7 @@ def create_customer_contact(
     customer_id: int,
     contact: CustomerAlternateContactCreate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perm=Depends(require_module_permission("customers", "can_create")),
 ):
     """Create a new alternate contact for a customer."""
     customer = db.get(Customers, customer_id)
@@ -72,7 +76,7 @@ def update_customer_contact(
     contact_id: int,
     contact_update: CustomerAlternateContactUpdate,
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _perm=Depends(require_module_permission("customers", "can_edit")),
 ):
     """Update a customer alternate contact."""
     db_contact = db.exec(
@@ -98,7 +102,10 @@ def update_customer_contact(
 
 @router.delete("/customers/{customer_id}/contacts/{contact_id}")
 def delete_customer_contact(
-    customer_id: int, contact_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)
+    customer_id: int,
+    contact_id: int,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("customers", "can_delete")),
 ):
     """Delete a customer alternate contact."""
     db_contact = db.exec(

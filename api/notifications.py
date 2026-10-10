@@ -111,9 +111,17 @@ async def _enforce_contact_spam_protections(request: ContactPrimeFireRequest, cl
     fingerprint = _build_contact_fingerprint(request)
 
     async with _CONTACT_SPAM_GUARD_LOCK:
+        rate_cutoff = now - rate_window_seconds
+        # Drop buckets whose timestamps all expired; they act the same as no bucket.
+        # ponytail: O(buckets) sweep per request, fine for a contact form's volume.
+        stale_ips = [
+            ip for ip, stamps in _CONTACT_RATE_LIMIT_BUCKETS.items() if not stamps or stamps[-1] <= rate_cutoff
+        ]
+        for stale_ip in stale_ips:
+            del _CONTACT_RATE_LIMIT_BUCKETS[stale_ip]
+
         bucket = _CONTACT_RATE_LIMIT_BUCKETS.setdefault(client_ip, deque())
 
-        rate_cutoff = now - rate_window_seconds
         while bucket and bucket[0] <= rate_cutoff:
             bucket.popleft()
 

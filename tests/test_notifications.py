@@ -250,3 +250,36 @@ def test_send_contact_primefire_rate_limit_per_ip(client):
                 assert responses[1].status_code == 200
                 assert responses[2].status_code == 200
                 assert responses[3].status_code == 429
+
+
+def test_contact_spam_guard_evicts_expired_ip_buckets(client):
+    import time
+    from collections import deque
+    from unittest.mock import MagicMock
+
+    notifications_api._CONTACT_RATE_LIMIT_BUCKETS["198.51.100.1"] = deque([time.monotonic() - 3600])
+    payload = {
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "phone": "1234567890",
+        "cf_turnstile_response": "valid-turnstile-token",
+        "website": "",
+        "subject": "Inquiry",
+        "note": "fresh",
+    }
+
+    with (
+        patch("api.notifications.settings.CONTACT_PRIMEFIRE_API_TOKEN", "valid-token"),
+        patch("api.notifications._verify_turnstile_token", new_callable=AsyncMock),
+        patch("api.notifications.send_contact_primefire_notification", new_callable=AsyncMock) as mock_contact,
+    ):
+        mock_contact.return_value = MagicMock(success=True, message_id="msg_123")
+        response = client.post(
+            "/notifications/send/contact-primefire",
+            json=payload,
+            headers={"Authorization": "Bearer valid-token", "X-Forwarded-For": "198.51.100.2"},
+        )
+
+    assert response.status_code == 200
+    assert "198.51.100.1" not in notifications_api._CONTACT_RATE_LIMIT_BUCKETS
+    assert "198.51.100.2" in notifications_api._CONTACT_RATE_LIMIT_BUCKETS

@@ -111,6 +111,46 @@ def normalize_country(value: str | None) -> str:
     return COUNTRY_CODE_MAP.get(lower, lower)
 
 
+NO_MATCHING_WAREHOUSE = object()
+
+
+def get_inventory_warehouse_scope(db: Session, employee: Employees) -> int | object | None:
+    """Return None for approvers, a warehouse id for scoped employees, or the no-match sentinel."""
+    if employee_is_movement_approver(db, employee):
+        return None
+
+    db_employee = db.exec(
+        select(Employees).options(selectinload(Employees.country)).where(Employees.employee_id == employee.employee_id)
+    ).first()
+    if not db_employee or not db_employee.city or not db_employee.country or not db_employee.country.name:
+        return NO_MATCHING_WAREHOUSE
+
+    city = db_employee.city.strip().lower()
+    country = normalize_country(db_employee.country.name)
+    if not city or not country:
+        return NO_MATCHING_WAREHOUSE
+    warehouses = db.exec(select(Warehouses)).all()
+    return next(
+        (
+            warehouse.warehouse_id
+            for warehouse in warehouses
+            if (warehouse.name or "").strip().lower() == city
+            and normalize_country(warehouse.location) == country
+        ),
+        NO_MATCHING_WAREHOUSE,
+    )
+
+
+def apply_warehouse_scope(scope: int | None, warehouse_id: int | None) -> int | None:
+    if scope is NO_MATCHING_WAREHOUSE:
+        return -1
+    if scope is not None:
+        if warehouse_id is not None and warehouse_id != scope:
+            raise HTTPException(status_code=403, detail="You are not allowed to access this warehouse")
+        return scope
+    return warehouse_id
+
+
 def get_movement_notification_emails(db: Session, warehouse: Warehouses) -> list[str]:
     """Admins always receive; Project Manager + Business Proposals only when city/country match the warehouse."""
     warehouse_city = (warehouse.name or "").strip().lower()
@@ -639,8 +679,11 @@ def get_inventory_movements(
     sort_field: str = Query("created_at", pattern="^(movement_id|movement_type|quantity|movement_date|created_at)$"),
     sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
+    current_employee: Employees = Depends(get_current_employee),
     _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
+    scope = get_inventory_warehouse_scope(db, current_employee)
+    warehouse_id = apply_warehouse_scope(scope, warehouse_id)
     filters = inventory_movement_filters(
         search=search,
         movement_type=movement_type,
@@ -672,6 +715,7 @@ def get_inventory_movements(
 def get_inventory_movement(
     movement_id: int,
     db: Session = Depends(get_db),
+    current_employee: Employees = Depends(get_current_employee),
     _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
     movement = db.exec(select(InventoryMovements).where(InventoryMovements.movement_id == movement_id)).first()
@@ -679,12 +723,21 @@ def get_inventory_movement(
     if not movement:
         raise HTTPException(status_code=404, detail="Inventory movement not found")
 
+    scope = get_inventory_warehouse_scope(db, current_employee)
+    if scope is NO_MATCHING_WAREHOUSE or (scope is not None and movement.warehouse_id != scope):
+        raise HTTPException(status_code=404, detail="Inventory movement not found")
+
     return movement_to_schema(db, movement)
 
 
 def validate_movement_and_load(
-    db: Session, movement: InventoryMovementCreate, movement_type: str
+    db: Session, movement: InventoryMovementCreate, movement_type: str, current_employee: Employees | None = None
 ) -> tuple[Products, Warehouses | None]:
+    if current_employee is not None:
+        scope = get_inventory_warehouse_scope(db, current_employee)
+        if scope is NO_MATCHING_WAREHOUSE or (scope is not None and movement.warehouse_id != scope):
+            raise HTTPException(status_code=403, detail="You are not allowed to access this warehouse")
+
     if movement_type not in VALID_MOVEMENT_TYPES:
         raise HTTPException(status_code=400, detail="movement_type must be IN, OUT, or ADJUSTMENT")
 
@@ -810,7 +863,7 @@ def create_movement_or_approval(
     current_employee: Employees,
     app_url: str | None = None,
 ) -> InventoryMovementResult:
-    product, warehouse = validate_movement_and_load(db, movement, movement_type)
+    product, warehouse = validate_movement_and_load(db, movement, movement_type, current_employee)
 
     # OUT and ADJUSTMENT always require approval, regardless of the requester's roles
     requires_approval = movement_type in {"OUT", "ADJUSTMENT"}
@@ -855,7 +908,7 @@ def create_inventory_entry(
     _perms: dict = Depends(require_module_permission("inventory", "can_create")),
     app_url: str = Depends(get_request_app_url),
 ):
-    product, warehouse = validate_movement_and_load(db, movement, "IN")
+    product, warehouse = validate_movement_and_load(db, movement, "IN", current_employee)
     db_movement = execute_inventory_movement(
         movement, "IN", current_employee.display_name, background_tasks, db, product, warehouse, app_url
     )
@@ -906,8 +959,11 @@ def get_movement_approvals(
     product_id: int | None = Query(None),
     sort_direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
+    current_employee: Employees = Depends(get_current_employee),
     _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
+    scope = get_inventory_warehouse_scope(db, current_employee)
+    warehouse_id = apply_warehouse_scope(scope, warehouse_id)
     filters = []
     if status:
         filters.append(InventoryMovementApprovals.status == status.upper().strip())
@@ -1003,7 +1059,7 @@ def approve_movement_approval(
         notes=approval.notes,
     )
 
-    product, warehouse = validate_movement_and_load(db, movement, approval.movement_type)
+    product, warehouse = validate_movement_and_load(db, movement, approval.movement_type, current_employee)
 
     db_movement = execute_inventory_movement(
         movement, approval.movement_type, approval.requested_by, background_tasks, db, product, warehouse, app_url
@@ -1085,9 +1141,12 @@ def get_inventory_stock(
     sort_field: str = Query("name", pattern="^(product_id|code|name|family|category|stock_on_hand|status)$"),
     sort_direction: str = Query("asc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
+    current_employee: Employees = Depends(get_current_employee),
     _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
-    result = build_inventory_stock(db, warehouse_id, product_id)
+    scope = get_inventory_warehouse_scope(db, current_employee)
+    warehouse_id = apply_warehouse_scope(scope, warehouse_id)
+    result = [] if scope is NO_MATCHING_WAREHOUSE else build_inventory_stock(db, warehouse_id, product_id)
     term = (search or "").strip().casefold()
     filtered = [
         item
@@ -1143,9 +1202,12 @@ def get_inventory_stock(
 def get_inventory_stock_metrics(
     warehouse_id: int | None = None,
     db: Session = Depends(get_db),
+    current_employee: Employees = Depends(get_current_employee),
     _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
-    stock = build_inventory_stock(db, warehouse_id)
+    scope = get_inventory_warehouse_scope(db, current_employee)
+    warehouse_id = apply_warehouse_scope(scope, warehouse_id)
+    stock = [] if scope is NO_MATCHING_WAREHOUSE else build_inventory_stock(db, warehouse_id)
     return InventoryStockMetrics(
         total_on_hand=sum((item.stock_on_hand for item in stock), Decimal(0)),
         low_stock_count=sum(1 for item in stock if item.status == "Low Stock"),
@@ -1166,9 +1228,12 @@ def get_inventory_stock_facets(
 def get_product_stock(
     product_id: int,
     db: Session = Depends(get_db),
+    current_employee: Employees = Depends(get_current_employee),
     _perms: dict = Depends(require_module_permission("inventory", "can_view")),
 ):
-    stock_items = build_inventory_stock(db)
+    scope = get_inventory_warehouse_scope(db, current_employee)
+    warehouse_id = apply_warehouse_scope(scope, None)
+    stock_items = [] if scope is NO_MATCHING_WAREHOUSE else build_inventory_stock(db, warehouse_id)
 
     for item in stock_items:
         if item.product_id == product_id:

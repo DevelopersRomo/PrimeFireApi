@@ -1,6 +1,7 @@
 import pytest
 from sqlmodel import select
 
+from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
 from models.inventory import Warehouses
 from models.products import Products
@@ -15,8 +16,13 @@ def disable_notifications(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def inventory_permissions(permission_override):
+def inventory_permissions(permission_override, current_employee, db_session):
     permission_override("inventory", {"can_view", "can_create"})
+    country = create_test_record(db_session, Countries, name="United States")
+    current_employee.city = "Main Warehouse"
+    current_employee.country_id = country.country_id
+    db_session.add(current_employee)
+    db_session.commit()
 
 
 @pytest.fixture
@@ -32,7 +38,7 @@ def product(db_session):
 
 @pytest.fixture
 def warehouse(db_session):
-    return create_test_record(db_session, Warehouses, name="Main Warehouse")
+    return create_test_record(db_session, Warehouses, name="Main Warehouse", location="United States")
 
 
 def assign_roles(db_session, email: str, role_names: list[str]) -> None:

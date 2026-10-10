@@ -2,15 +2,23 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from sqlmodel import select
 
+from models.employees import EmployeeRoles, Roles
 from models.inventory import InventoryMovementApprovals, InventoryMovements, Warehouses
 from models.products import ProductCategories, ProductFamilies, Products
 from tests.conftest import create_test_record
 
 
 @pytest.fixture(autouse=True)
-def grant_inventory_view(permission_override):
+def grant_inventory_view(permission_override, current_employee, db_session):
     permission_override("inventory", {"can_view"})
+    for role_name in ("Admin",):
+        role = db_session.exec(select(Roles).where(Roles.role_name == role_name)).first()
+        if not role:
+            role = create_test_record(db_session, Roles, role_name=role_name)
+        db_session.add(EmployeeRoles(employee_id=current_employee.employee_id, role_id=role.role_id))
+    db_session.commit()
 
 
 @pytest.fixture

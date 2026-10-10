@@ -10,7 +10,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _grant_license_mutations(permission_override) -> None:
-    permission_override("licenses", {"can_create", "can_edit", "can_delete"})
+    permission_override("licenses", {"can_view", "can_create", "can_edit", "can_delete"})
 
 
 class TestLicensesAPI:
@@ -74,7 +74,35 @@ class TestLicensesAPI:
         assert "license_id" in data
         assert "created_at" in data
 
-    def test_get_license_by_id(self, client, auth_headers) -> None:
+    def test_license_reads_require_view_permission(self, client, auth_headers, db_session, permission_override) -> None:
+        from models.licenses import Licenses
+
+        db_license = Licenses(
+            software="Test license",
+            version="1.0",
+            key="dummy-key",
+            account="dummy-account",
+            password="dummy-secret",
+            employee_id=1,
+        )
+        db_session.add(db_license)
+        db_session.commit()
+        db_session.refresh(db_license)
+
+        permission_override("unrelated", {"can_view"})
+        assert client.get("/licenses", headers=auth_headers).status_code == 403
+        assert client.get(f"/licenses/{db_license.license_id}", headers=auth_headers).status_code == 403
+
+        permission_override("licenses", {"can_view"})
+        listed = client.get("/licenses", headers=auth_headers)
+        detailed = client.get(f"/licenses/{db_license.license_id}", headers=auth_headers)
+        assert listed.status_code == 200
+        assert listed.json()[0]["password"] == "dummy-secret"
+        assert detailed.status_code == 200
+        assert detailed.json()["key"] == "dummy-key"
+
+    def test_get_license_by_id(self, client, auth_headers, permission_override) -> None:
+        permission_override("licenses", {"can_view", "can_create"})
         """Test GET /licenses/{license_id} returns specific license."""
         # Create test data using the API
         license_data = {

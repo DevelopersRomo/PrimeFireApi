@@ -5,7 +5,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import require_authentication, require_module_permission
+from api.dependencies import require_module_permission
 from bd.dependencies import get_db
 from models.employees import Employees
 from models.licenses import Licenses
@@ -49,7 +49,7 @@ def get_licenses(
     ),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
-    _auth=Depends(require_authentication),
+    _permissions: dict = Depends(require_module_permission("licenses", "can_view")),
 ):
     filters = []
     if search and search.strip():
@@ -121,7 +121,11 @@ def get_licenses(
 # 📌 READ ONE
 # ----------------------------
 @router.get("/{license_id}", response_model=License)
-def get_license(license_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_license(
+    license_id: int,
+    db: Session = Depends(get_db),
+    _permissions: dict = Depends(require_module_permission("licenses", "can_view")),
+):
     db_license = db.exec(select(Licenses).filter(Licenses.license_id == license_id)).first()
     if not db_license:
         raise HTTPException(status_code=404, detail="License not found")

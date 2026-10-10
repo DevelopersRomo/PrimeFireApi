@@ -4,6 +4,7 @@ Thin wrappers over `send_custom_notification`, one per state transition, so the
 API layer only ever passes primitives into `background_tasks.add_task`.
 """
 
+import html
 import logging
 
 from services.notifications.notifications import send_custom_notification
@@ -87,7 +88,7 @@ async def notify_expense_approved(
         NotificationField(label="Approved amount", value=_money(total_approved, currency)),
     ]
     if note:
-        fields.append(NotificationField(label="Note", value=note))
+        fields.append(NotificationField(label="Note", value=html.escape(note)))
 
     return await send_custom_notification(
         title="Your expense report was approved",
@@ -129,7 +130,7 @@ async def notify_expense_partially_approved(
     if rejected_lines:
         fields.append(NotificationField(label="Lines not approved", value=str(rejected_lines)))
     if note:
-        fields.append(NotificationField(label="Reason", value=note))
+        fields.append(NotificationField(label="Reason", value=html.escape(note)))
 
     return await send_custom_notification(
         title="Your expense report was partially approved",
@@ -164,7 +165,7 @@ async def notify_expense_rejected(
     fields = [
         NotificationField(label="Folio", value=folio),
         NotificationField(label="Amount", value=_money(total, currency)),
-        NotificationField(label="Reason", value=note or "No reason provided"),
+        NotificationField(label="Reason", value=html.escape(note) if note else "No reason provided"),
     ]
 
     return await send_custom_notification(
@@ -228,7 +229,7 @@ async def notify_expense_message(
     message_txt: str,
     app_url: str | None = None,
 ) -> NotificationResponse:
-    preview = message_txt if len(message_txt) <= 400 else f"{message_txt[:400]}..."
+    preview = html.escape(message_txt if len(message_txt) <= 400 else f"{message_txt[:400]}...")
 
     return await send_custom_notification(
         title=f"New message on expense report {folio}",

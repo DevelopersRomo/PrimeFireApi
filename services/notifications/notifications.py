@@ -9,6 +9,7 @@ This ensures consistent email delivery and proper authentication with Microsoft 
 To disable notifications, set SEND_NOTIFICATIONS=false in environment variables.
 """
 
+import html
 import logging
 
 from sqlmodel import select
@@ -96,7 +97,7 @@ def _resolve_email_branding(tenant_key: str | None) -> dict:
         return branding
 
     db = SessionLocal()
-    try:  # noqa: PLW0717
+    try:
         tenant = db.exec(select(Tenants).where(Tenants.db_connection_key == tenant_key)).first()
         if not tenant:
             return branding
@@ -338,10 +339,10 @@ async def send_time_off_notification(
             fields.append(NotificationField(label="Total Hours", value=notification_data.total_hours))
 
         if notification_data.reason:
-            fields.append(NotificationField(label="Reason", value=notification_data.reason))
+            fields.append(NotificationField(label="Reason", value=html.escape(notification_data.reason)))
 
         if notification_data.review_notes:
-            fields.append(NotificationField(label="Review Notes", value=notification_data.review_notes))
+            fields.append(NotificationField(label="Review Notes", value=html.escape(notification_data.review_notes)))
 
         branding = _resolve_email_branding(tenant_key)
 
@@ -408,11 +409,11 @@ async def send_ticket_assigned_notification(
     try:  # noqa: PLW0717
         logger.info(f"[SEND_TICKET_ASSIGNED] Building notification HTML for ticket_id={notification_data.ticket_id}")
         title = "Ticket Assigned to You"
-        message_body = f"A ticket has been assigned to you: {notification_data.title}"
+        message_body = f"A ticket has been assigned to you: {html.escape(notification_data.title)}"
 
         fields = [
             NotificationField(label="Ticket ID", value=f"#{notification_data.ticket_id}"),
-            NotificationField(label="Title", value=notification_data.title),
+            NotificationField(label="Title", value=html.escape(notification_data.title)),
             NotificationField(label="Status", value=notification_data.status.title()),
             NotificationField(label="Priority", value=notification_data.priority.title()),
             NotificationField(label="Created By", value=notification_data.created_by_name),
@@ -422,8 +423,10 @@ async def send_ticket_assigned_notification(
             fields.append(
                 NotificationField(
                     label="Description",
-                    value=notification_data.description[:200]
-                    + ("..." if len(notification_data.description) > 200 else ""),
+                    value=html.escape(
+                        notification_data.description[:200]
+                        + ("..." if len(notification_data.description) > 200 else "")
+                    ),
                 )
             )
 
@@ -504,11 +507,11 @@ async def send_ticket_created_notification(
     try:  # noqa: PLW0717
         logger.info(f"[SEND_TICKET_CREATED] Building notification HTML for ticket_id={notification_data.ticket_id}")
         title = "New Ticket Created"
-        message_body = f"A new ticket has been created: {notification_data.title}"
+        message_body = f"A new ticket has been created: {html.escape(notification_data.title)}"
 
         fields = [
             NotificationField(label="Ticket ID", value=f"#{notification_data.ticket_id}"),
-            NotificationField(label="Title", value=notification_data.title),
+            NotificationField(label="Title", value=html.escape(notification_data.title)),
             NotificationField(label="Status", value=notification_data.status.title()),
             NotificationField(label="Priority", value=notification_data.priority.title()),
             NotificationField(label="Created By", value=notification_data.created_by_name),
@@ -518,8 +521,10 @@ async def send_ticket_created_notification(
             fields.append(
                 NotificationField(
                     label="Description",
-                    value=notification_data.description[:200]
-                    + ("..." if len(notification_data.description) > 200 else ""),
+                    value=html.escape(
+                        notification_data.description[:200]
+                        + ("..." if len(notification_data.description) > 200 else "")
+                    ),
                 )
             )
 
@@ -596,15 +601,17 @@ async def send_ticket_message_notification(
 
     try:  # noqa: PLW0717
         title = "New Comment on Ticket"
-        message_body = f"{notification_data.commenter_name} commented on ticket: {notification_data.ticket_title}"
+        message_body = (
+            f"{notification_data.commenter_name} commented on ticket: {html.escape(notification_data.ticket_title)}"
+        )
 
-        message_preview = notification_data.message_text[:200] + (
-            "..." if len(notification_data.message_text) > 200 else ""
+        message_preview = html.escape(
+            notification_data.message_text[:200] + ("..." if len(notification_data.message_text) > 200 else "")
         )
 
         fields = [
             NotificationField(label="Ticket ID", value=f"#{notification_data.ticket_id}"),
-            NotificationField(label="Ticket Title", value=notification_data.ticket_title),
+            NotificationField(label="Ticket Title", value=html.escape(notification_data.ticket_title)),
             NotificationField(label="Comment", value=message_preview),
         ]
 
@@ -1188,13 +1195,15 @@ def _inventory_movement_fields(notification_data: InventoryMovementNotificationD
     if notification_data.movement_date:
         fields.append(NotificationField(label="Date", value=notification_data.movement_date))
     if notification_data.project:
-        fields.append(NotificationField(label="Project", value=notification_data.project))
+        fields.append(NotificationField(label="Project", value=html.escape(notification_data.project)))
     if notification_data.po_number:
-        fields.append(NotificationField(label="PO Number", value=notification_data.po_number))
+        fields.append(NotificationField(label="PO Number", value=html.escape(notification_data.po_number)))
     if notification_data.reference_type:
         fields.append(NotificationField(label="Reference Type", value=notification_data.reference_type))
     if notification_data.notes:
-        notes_preview = notification_data.notes[:200] + ("..." if len(notification_data.notes) > 200 else "")
+        notes_preview = html.escape(
+            notification_data.notes[:200] + ("..." if len(notification_data.notes) > 200 else "")
+        )
         fields.append(NotificationField(label="Notes", value=notes_preview))
 
     return fields
@@ -1209,12 +1218,11 @@ async def send_inventory_movement_notification(
         logger.info("Notifications disabled - skipping inventory movement notification")
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
-    try:
+    try:  # noqa: PLW0717
         title, message_body, action_type = _INVENTORY_MOVEMENT_CONTENT.get(
             notification_data.movement_type,
             ("Inventory Movement", "An inventory movement has been registered in your warehouse.", "info"),
         )
-
         html_body = generate_notification_html(
             title=title,
             sub_title=f"Movement #{notification_data.movement_id}",
@@ -1317,14 +1325,16 @@ def _inventory_approval_fields(notification_data: InventoryApprovalNotificationD
     if notification_data.movement_date:
         fields.append(NotificationField(label="Date", value=notification_data.movement_date))
     if notification_data.project:
-        fields.append(NotificationField(label="Project", value=notification_data.project))
+        fields.append(NotificationField(label="Project", value=html.escape(notification_data.project)))
     if notification_data.po_number:
-        fields.append(NotificationField(label="PO Number", value=notification_data.po_number))
+        fields.append(NotificationField(label="PO Number", value=html.escape(notification_data.po_number)))
     if notification_data.notes:
-        notes_preview = notification_data.notes[:200] + ("..." if len(notification_data.notes) > 200 else "")
+        notes_preview = html.escape(
+            notification_data.notes[:200] + ("..." if len(notification_data.notes) > 200 else "")
+        )
         fields.append(NotificationField(label="Notes", value=notes_preview))
     if notification_data.review_note:
-        fields.append(NotificationField(label="Review Note", value=notification_data.review_note))
+        fields.append(NotificationField(label="Review Note", value=html.escape(notification_data.review_note)))
 
     return fields
 
@@ -1341,7 +1351,7 @@ async def _send_inventory_approval_notification(
         logger.info("Notifications disabled - skipping inventory approval notification")
         return NotificationResponse(success=True, message_id="notifications_disabled")
 
-    try:
+    try:  # noqa: PLW0717
         html_body = generate_notification_html(
             title=title,
             sub_title=f"Request #{notification_data.approval_id}",

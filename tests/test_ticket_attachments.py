@@ -59,7 +59,9 @@ def test_create_attachment(client: TestClient, auth_headers: dict, test_ticket: 
     assert data["ticket_id"] == test_ticket.ticket_id
 
 
-def test_get_attachments_for_ticket(client: TestClient, auth_headers: dict, test_ticket: Tickets, db_session: Session):
+def test_get_attachments_for_ticket(
+    client: TestClient, auth_headers: dict, test_ticket: Tickets, db_session: Session, auth_overrides
+):
     create_test_record(db_session, TicketAttachments, ticket_id=test_ticket.ticket_id, file_name="test1.txt")
     create_test_record(db_session, TicketAttachments, ticket_id=test_ticket.ticket_id, file_name="test2.txt")
     db_session.commit()
@@ -73,7 +75,9 @@ def test_get_attachments_for_ticket(client: TestClient, auth_headers: dict, test
     assert "test2.txt" in filenames
 
 
-def test_get_attachment(client: TestClient, auth_headers: dict, test_ticket: Tickets, db_session: Session):
+def test_get_attachment(
+    client: TestClient, auth_headers: dict, test_ticket: Tickets, db_session: Session, auth_overrides
+):
     att = create_test_record(db_session, TicketAttachments, ticket_id=test_ticket.ticket_id, file_name="single.txt")
     db_session.commit()
 

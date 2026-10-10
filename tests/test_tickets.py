@@ -108,6 +108,25 @@ def test_ticket_scopes_and_search_use_filtered_total(
     assert response.json()["items"][0]["title"] == "Needle open"
 
 
+def test_ticket_detail_enforces_visibility_scope(
+    client: TestClient, auth_headers: dict, db_session: Session, other_employee, permission_override
+):
+    permission_override("tickets", {"can_view"})
+    ticket = create_test_record(
+        db_session,
+        Tickets,
+        title="Out of scope ticket",
+        status=TicketStatus.TODO,
+        created_by=other_employee.employee_id,
+        assigned_to=other_employee.employee_id,
+    )
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.ticket_id}", headers=auth_headers)
+
+    assert response.status_code == 404
+
+
 def test_get_ticket(
     client: TestClient, auth_headers: dict, current_employee: Employees, db_session: Session, auth_overrides
 ):

@@ -12,7 +12,7 @@ from core.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
-from api.dependencies import get_current_employee_with_permissions, get_request_app_url, require_authentication
+from api.dependencies import get_current_employee_with_permissions, get_request_app_url
 from bd.dependencies import get_db, get_db_route
 from models.employees import Employees
 from models.tickets import (
@@ -134,6 +134,15 @@ def get_ticket_visibility_scope(user_permissions: dict, db: Session) -> dict:
         return {"scope": "manager", "allowed_ids": allowed_ids}
 
     return {"scope": "user", "allowed_ids": allowed_ids}
+
+
+def ensure_ticket_visible(ticket: Tickets, user_permissions: dict, db: Session) -> None:
+    """Raise when the caller's existing ticket visibility scope excludes this ticket."""
+    scope = get_ticket_visibility_scope(user_permissions, db)
+    if scope["scope"] != "admin" and not (
+        ticket.created_by in scope["allowed_ids"] or ticket.assigned_to in scope["allowed_ids"]
+    ):
+        raise HTTPException(status_code=404, detail="Ticket not found")
 
 
 def get_assignable_employee_ids(user_permissions: dict, db: Session) -> set[int]:
@@ -509,7 +518,11 @@ def get_tickets(
 # 📌 GET /tickets/{id} (GET SINGLE TICKET)
 # ----------------------------
 @router.get("/{ticket_id}", response_model=Ticket)
-def get_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_ticket(
+    ticket_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
     """Get a single ticket by ID."""
     db_ticket = db.exec(
         select(Tickets)
@@ -523,6 +536,8 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(requ
 
     if not db_ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+
+    ensure_ticket_visible(db_ticket, user_permissions, db)
 
     return ticket_to_schema(db_ticket)
 
@@ -733,6 +748,7 @@ async def update_ticket(
 
     if not db_ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(db_ticket, user_permissions, db)
 
     # Check permissions: creator, assignee, or AdminActions
     is_creator = db_ticket.created_by == current_employee_id
@@ -940,6 +956,7 @@ async def stop_ticket_recurrence(
 
     if not db_ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(db_ticket, user_permissions, db)
 
     is_creator = db_ticket.created_by == current_employee_id
     is_assignee = db_ticket.assigned_to == current_employee_id
@@ -989,6 +1006,7 @@ async def delete_ticket(
 
     if not db_ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(db_ticket, user_permissions, db)
 
     # Check permissions: creator or AdminActions
     is_creator = db_ticket.created_by == current_employee_id

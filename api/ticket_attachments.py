@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
-from api.dependencies import get_current_employee_with_permissions, require_authentication
+from api.dependencies import get_current_employee_with_permissions
+from api.tickets import ensure_ticket_visible
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
 from core.file_storage import confine_to
 from models.ticket_messages import TicketAttachments
+from models.tickets import Tickets
 from schemas.ticket_messages import TicketAttachment
 
 # Load .env
@@ -56,7 +58,16 @@ def attachment_to_schema(db_att: TicketAttachments) -> TicketAttachment:
 
 
 @router.get("/tickets/{ticket_id}/attachments", response_model=list[TicketAttachment])
-def list_attachments_for_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def list_attachments_for_ticket(
+    ticket_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(Tickets, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
+
     atts = db.exec(
         select(TicketAttachments).where(TicketAttachments.ticket_id == ticket_id).order_by(TicketAttachments.created_at)
     ).all()
@@ -64,10 +75,18 @@ def list_attachments_for_ticket(ticket_id: int, db: Session = Depends(get_db), _
 
 
 @router.get("/attachments/{attachment_id}")
-def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_attachment(
+    attachment_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
     db_att = db.get(TicketAttachments, attachment_id)
     if not db_att:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    ticket = db.get(Tickets, db_att.ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
 
     if db_att.file_path:
         storage_path = _confined_path(db_att.file_path)
@@ -92,6 +111,11 @@ def create_attachment(
     user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
 ):
+    ticket = db.get(Tickets, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
+
     if file is None:
         raise HTTPException(status_code=400, detail="File is required")
 
@@ -138,6 +162,10 @@ def delete_attachment(
     db_att = db.get(TicketAttachments, attachment_id)
     if not db_att:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    ticket = db.get(Tickets, db_att.ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
 
     # Require admin permission or leave deletion to admins/authorized users
     has_admin = False

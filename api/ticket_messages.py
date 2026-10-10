@@ -2,12 +2,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from api.dependencies import (
-    get_current_employee,
-    get_current_employee_with_permissions,
-    get_request_app_url,
-    require_authentication,
-)
+from api.dependencies import get_current_employee, get_current_employee_with_permissions, get_request_app_url
+from api.tickets import ensure_ticket_visible
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
 from models.employees import Employees
@@ -48,7 +44,16 @@ def message_to_schema(db_msg: TicketMessages, db: Session) -> TicketMessage:
 
 
 @router.get("/tickets/{ticket_id}/messages", response_model=list[TicketMessage])
-def list_messages_for_ticket(ticket_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def list_messages_for_ticket(
+    ticket_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(Tickets, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
+
     msgs = db.exec(
         select(TicketMessages).where(TicketMessages.ticket_id == ticket_id).order_by(TicketMessages.created_at)
     ).all()
@@ -56,10 +61,18 @@ def list_messages_for_ticket(ticket_id: int, db: Session = Depends(get_db), _aut
 
 
 @router.get("/messages/{message_id}", response_model=TicketMessage)
-def get_message(message_id: int, db: Session = Depends(get_db), _auth=Depends(require_authentication)):
+def get_message(
+    message_id: int,
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
+    db: Session = Depends(get_db),
+):
     db_msg = db.get(TicketMessages, message_id)
     if not db_msg:
         raise HTTPException(status_code=404, detail="Message not found")
+    ticket = db.get(Tickets, db_msg.ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
     return message_to_schema(db_msg, db)
 
 
@@ -69,6 +82,7 @@ def create_message(
     payload: TicketMessageCreate,
     background_tasks: BackgroundTasks,
     current_employee: Employees = Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
     db: Session = Depends(get_db),
     app_url: str = Depends(get_request_app_url),
 ):
@@ -81,6 +95,7 @@ def create_message(
 
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
 
     db_msg = TicketMessages(
         ticket_id=ticket_id,
@@ -125,6 +140,10 @@ def update_message(
     db_msg = db.get(TicketMessages, message_id)
     if not db_msg:
         raise HTTPException(status_code=404, detail="Message not found")
+    ticket = db.get(Tickets, db_msg.ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
 
     # Only creator or admin can edit
     is_creator = db_msg.user_id == current_employee_id
@@ -156,6 +175,10 @@ def delete_message(
     db_msg = db.get(TicketMessages, message_id)
     if not db_msg:
         raise HTTPException(status_code=404, detail="Message not found")
+    ticket = db.get(Tickets, db_msg.ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_ticket_visible(ticket, user_permissions, db)
     is_creator = db_msg.user_id == current_employee_id
     has_admin = False
     for perm in user_permissions.get("permissions", []):

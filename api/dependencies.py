@@ -12,6 +12,7 @@ from jose import JWTError  # type: ignore[import-untyped]
 from jose import jwt as jose_jwt  # type: ignore[import-untyped]
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
+from starlette.middleware.cors import CORSMiddleware
 
 from bd.dependencies import get_db, get_primefire_session, is_primefire_email
 from bd.multitenancy import ConnectionManager
@@ -333,7 +334,8 @@ def get_request_app_url(request: Request) -> str:
     """Resolve the frontend base URL for email action links.
 
     Each tenant frontend runs on its own domain (see tenant logos config), so the
-    request Origin/Referer is the tenant-correct base. Falls back to APP_URL.
+    request Origin/Referer is the tenant-correct base. Only origins already allowed
+    by the app's CORS middleware are trusted; anything else falls back to APP_URL.
     """
     origin = (request.headers.get("origin") or "").strip().rstrip("/")
     if not origin:
@@ -342,7 +344,13 @@ def get_request_app_url(request: Request) -> str:
             parsed = urlparse(referer)
             if parsed.scheme and parsed.netloc:
                 origin = f"{parsed.scheme}://{parsed.netloc}"
-    return origin or getattr(settings, "APP_URL", "")
+    allowed = {
+        allowed_origin.rstrip("/")
+        for middleware in request.app.user_middleware
+        if middleware.cls is CORSMiddleware
+        for allowed_origin in middleware.kwargs.get("allow_origins", ())
+    }
+    return origin if origin in allowed else getattr(settings, "APP_URL", "")
 
 
 async def get_optional_current_employee_with_permissions(

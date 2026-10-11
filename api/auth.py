@@ -10,6 +10,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from starlette.concurrency import run_in_threadpool
 
 from bd.dependencies import get_main_db
 from core.config import settings
@@ -106,7 +107,7 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_main_
     if existing_external or existing_employee:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
-    hashed_password = get_password_hash(user_data.password)
+    hashed_password = await run_in_threadpool(get_password_hash, user_data.password)
 
     # Keep TenantId as NULL (pending approval)
     external_user = TenantEmployees(email=user_data.email, password_hash=hashed_password, tenant_id=None)
@@ -155,7 +156,9 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
     if external_user:
         # Usuario externo - validar password
-        if not external_user.password_hash or not verify_password(form_data.password, external_user.password_hash):
+        if not external_user.password_hash or not await run_in_threadpool(
+            verify_password, form_data.password, external_user.password_hash
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password",
@@ -179,7 +182,11 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     # 2. Si no es externo, buscar en Employees de BD Principal (usuarios internos de PrimeFire)
     user = db.exec(select(Employees).where(Employees.email == form_data.username)).first()
 
-    if not user or not user.password_hash or not verify_password(form_data.password, user.password_hash):
+    if (
+        not user
+        or not user.password_hash
+        or not await run_in_threadpool(verify_password, form_data.password, user.password_hash)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -477,7 +484,7 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
         )
 
     # Update password
-    user.password_hash = get_password_hash(request.new_password)
+    user.password_hash = await run_in_threadpool(get_password_hash, request.new_password)
     db.add(user)
 
     # Mark token as used

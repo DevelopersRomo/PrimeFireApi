@@ -369,3 +369,52 @@ def test_password_recovery_for_unknown_email_sends_nothing(client: TestClient, c
 
     assert response.status_code == 200
     assert captured_emails == []
+
+
+def _record_event_loop_use(monkeypatch: pytest.MonkeyPatch, name: str) -> list[bool]:
+    """Wrap a bcrypt call so the test can see whether it ran on the event loop thread."""
+    import asyncio
+
+    import bcrypt
+
+    original = getattr(bcrypt, name)
+    on_loop: list[bool] = []
+
+    def wrapper(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(bcrypt, name, wrapper)
+    return on_loop
+
+
+def test_register_hashes_the_password_off_the_event_loop(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    on_loop = _record_event_loop_use(monkeypatch, "hashpw")
+
+    response = client.post(
+        "/auth/register",
+        json={"email": "offloop@example.com", "password": "securepassword123", "first_name": "A", "last_name": "B"},
+    )
+
+    assert response.status_code == 202
+    assert on_loop == [False]
+
+
+def test_login_verifies_the_password_off_the_event_loop(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+):
+    db_session.add(Employees(email="offloop-login@example.com", password_hash=get_password_hash("pw"), title="Dev"))
+    db_session.add(
+        TenantEmployees(email="offloop-ext@example.com", password_hash=get_password_hash("pw"), tenant_id=None)
+    )
+    db_session.commit()
+    on_loop = _record_event_loop_use(monkeypatch, "checkpw")
+
+    for email in ("offloop-login@example.com", "offloop-ext@example.com"):
+        client.post("/auth/token", data={"username": email, "password": "pw"})
+
+    assert on_loop == [False, False]

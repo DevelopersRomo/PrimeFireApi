@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
-from sqlalchemy import or_
+from sqlalchemy import or_, update
 from sqlmodel import Session, func, select
 
 from api.dependencies import (
@@ -172,12 +172,9 @@ def _assert_can_review(
     employee: Employees,
     user_permissions: dict,
     action: str,
-) -> None:
-    """Reject a review attempt with the reason, not a bare 403.
-
-    Separation of duty is invisible to the person it blocks, so each rule says
-    exactly why it fired.
-    """
+) -> ExpenseReportApprovals:
+    """Return the pending step this employee is authorised to review."""
+    pending_step = approvals.current_step(db, report)
     if report.employee_id == employee.employee_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -188,11 +185,12 @@ def _assert_can_review(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You already decided one level of this report; the remaining level needs a different approver",
         )
-    if not approvals.can_review(db, report, employee, user_permissions):
+    if not approvals.can_review(db, report, employee, user_permissions, pending_step):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"This report is not waiting on your role, so you cannot {action} it",
         )
+    return pending_step
 
 
 def _touch(report: ExpenseReports) -> None:
@@ -863,7 +861,7 @@ def approve_report(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"A report in status '{report.status}' cannot be approved",
         )
-    _assert_can_review(db, report, current_employee, user_permissions, "approve")
+    step = _assert_can_review(db, report, current_employee, user_permissions, "approve")
 
     items = {item.item_id: item for item in db.exec(
         select(ExpenseReportItems).where(ExpenseReportItems.report_id == report_id)
@@ -918,18 +916,23 @@ def approve_report(
         item.approved_amount = item.amount_base
         db.add(item)
 
-    step = approvals.current_step(db, report)
-    if step is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This report has no pending approval step")
-
     approvals.recalculate_totals(db, report)
 
-    step.decision = "partially_approved" if reduced_or_rejected else "approved"
-    step.approver_id = current_employee.employee_id
-    step.amount_approved = report.total_approved
-    step.note = review.note
-    step.decided_at = utcnow()
-    db.add(step)
+    result = db.execute(
+        update(ExpenseReportApprovals)
+        .where(ExpenseReportApprovals.approval_id == step.approval_id)
+        .where(ExpenseReportApprovals.decision == "pending")
+        .values(
+            decision="partially_approved" if reduced_or_rejected else "approved",
+            approver_id=current_employee.employee_id,
+            amount_approved=report.total_approved,
+            note=review.note,
+            decided_at=utcnow(),
+        )
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This approval step was already decided")
     db.commit()
 
     upcoming = approvals.next_level(db, report, step.level)
@@ -1017,19 +1020,24 @@ def reject_report(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"A report in status '{report.status}' cannot be rejected",
         )
-    _assert_can_review(db, report, current_employee, user_permissions, "reject")
+    step = _assert_can_review(db, report, current_employee, user_permissions, "reject")
     if not (review.note or "").strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A reason is required to reject a report")
 
-    step = approvals.current_step(db, report)
-    if step is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This report has no pending approval step")
-
-    step.decision = "rejected"
-    step.approver_id = current_employee.employee_id
-    step.note = review.note
-    step.decided_at = utcnow()
-    db.add(step)
+    result = db.execute(
+        update(ExpenseReportApprovals)
+        .where(ExpenseReportApprovals.approval_id == step.approval_id)
+        .where(ExpenseReportApprovals.decision == "pending")
+        .values(
+            decision="rejected",
+            approver_id=current_employee.employee_id,
+            note=review.note,
+            decided_at=utcnow(),
+        )
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This approval step was already decided")
 
     # A rejection terminates the chain; later levels never get a turn.
     for pending in db.exec(

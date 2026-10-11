@@ -8,10 +8,13 @@ enforce that — including against administrators.
 from decimal import Decimal
 
 import pytest
-from sqlmodel import Session
+from fastapi import BackgroundTasks, HTTPException, Request
+from sqlmodel import Session, select
 
+from api import expenses as expense_api
 from models.employees import EmployeeRoles, Employees, Roles
 from models.expenses import ExpenseApprovalRules, ExpenseReportApprovals, ExpenseReportItems, ExpenseReports
+from schemas.expenses import ExpenseReview
 from services.expenses import approvals
 
 ADMIN_PERMISSIONS = {"permissions": [{"module_key": "expenses", "permissions": {"admin_actions": True}}]}
@@ -259,6 +262,50 @@ def test_accountant_does_not_see_the_report_while_level_one_is_pending(chain_set
     visible = approvals.reviewable_report_ids(db, chain_setup["accountant"])
 
     assert chain_setup["report"].report_id not in visible
+
+
+def test_approval_write_rejects_a_step_that_changed_after_authorization(chain_setup, monkeypatch):
+    db = chain_setup["db"]
+    report = chain_setup["report"]
+    manager = chain_setup["manager"]
+    original_assert = expense_api._assert_can_review  # noqa: SLF001
+
+    def authorize_then_stale_the_step(db, report, employee, permissions, action):
+        original_assert(db, report, employee, permissions, action)
+        authorised = approvals.current_step(db, report)
+        assert authorised is not None
+        db.exec(
+            select(ExpenseReportApprovals)
+            .where(ExpenseReportApprovals.approval_id == authorised.approval_id)
+        ).one().decision = "approved"
+        db.commit()
+        return authorised
+
+    monkeypatch.setattr(expense_api, "_assert_can_review", authorize_then_stale_the_step)
+    monkeypatch.setattr(expense_api, "get_request_app_url", lambda _request: "https://example.test")
+    monkeypatch.setattr(expense_api, "get_report", lambda *_args: None)
+    request = Request({"type": "http", "method": "POST", "path": "/"})
+
+    with pytest.raises(HTTPException) as raised:
+        expense_api.approve_report(
+            report.report_id,
+            ExpenseReview(),
+            request,
+            BackgroundTasks(),
+            db,
+            manager,
+            PLAIN_PERMISSIONS,
+        )
+
+    assert raised.value.status_code == 409
+    rows = db.exec(
+        select(ExpenseReportApprovals)
+        .where(ExpenseReportApprovals.report_id == report.report_id)
+        .order_by(ExpenseReportApprovals.level)
+    ).all()
+    assert rows[0].decision == "approved"
+    assert rows[1].decision == "pending"
+    assert rows[1].approver_id is None
 
 
 def test_employee_without_roles_sees_no_queue(chain_setup):

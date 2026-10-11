@@ -85,7 +85,13 @@ def employee_role_ids(db: Session, employee_id: int) -> list[int]:
     return db.exec(select(EmployeeRoles.role_id).where(EmployeeRoles.employee_id == employee_id)).all()
 
 
-def can_review(db: Session, report: ExpenseReports, employee: Employees, user_permissions: dict) -> bool:
+def can_review(
+    db: Session,
+    report: ExpenseReports,
+    employee: Employees,
+    user_permissions: dict,
+    pending_step: ExpenseReportApprovals | None = None,
+) -> bool:
     """True when this employee may act on the report's current level.
 
     The two separation-of-duty rules below are checked before the admin
@@ -96,7 +102,7 @@ def can_review(db: Session, report: ExpenseReports, employee: Employees, user_pe
     if report.employee_id == employee.employee_id:
         return False
 
-    pending = current_step(db, report)
+    pending = pending_step or current_step(db, report)
     if pending is None:
         return False
 

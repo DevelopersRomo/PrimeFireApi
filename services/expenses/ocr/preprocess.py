@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 # Tesseract degrades sharply below roughly 300 DPI equivalent.
 MIN_SHORT_SIDE = 1200
 MAX_LONG_SIDE = 3500
+# Refuse images that would decode to more than this many pixels (a phone photo is ~12-50 MP).
+MAX_IMAGE_PIXELS = 100_000_000
 
 try:  # Registers HEIC/HEIF support for iPhone photos.
     import pillow_heif
@@ -40,12 +42,19 @@ def is_available() -> bool:
     return True
 
 
+def check_pixel_budget(size: tuple[int, int]) -> None:
+    """Raise before decoding an image whose header declares more pixels than we will process."""
+    if size[0] * size[1] > MAX_IMAGE_PIXELS:
+        raise ValueError(f"Image is {size[0]}x{size[1]} pixels; the limit is {MAX_IMAGE_PIXELS}")
+
+
 def load_image(path: Path) -> "np.ndarray":
     """Read any supported image into BGR, honouring the EXIF orientation tag."""
     import cv2
     import numpy as np
 
     with Image.open(path) as handle:
+        check_pixel_budget(handle.size)
         oriented = ImageOps.exif_transpose(handle)
         rgb = oriented.convert("RGB")
         array = np.array(rgb)

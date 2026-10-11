@@ -23,6 +23,9 @@ TESSERACT_LANGS = "spa+eng"
 
 MIN_WORD_CONFIDENCE = 30.0
 
+# One page of a receipt reads in seconds; a page that takes this long is hostile or broken.
+OCR_TIMEOUT_SECONDS = 60
+
 # Where the binary lives. Empty means "whatever is on PATH", which is the normal
 # case; the setting exists because a portable or per-user install (scoop, a
 # plain unzip, a container layer) is often reachable without being on PATH, and
@@ -57,6 +60,7 @@ def recognise(image: "np.ndarray", page: int = 1) -> list[TextLine]:
         image,
         lang=TESSERACT_LANGS,
         config=TESSERACT_CONFIG,
+        timeout=OCR_TIMEOUT_SECONDS,
         output_type=pytesseract.Output.DICT,
     )
 

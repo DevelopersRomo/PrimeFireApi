@@ -49,7 +49,10 @@ def perceptual_hash(path: Path) -> str | None:
         import imagehash
         from PIL import Image, ImageOps
 
+        from services.expenses.ocr.preprocess import check_pixel_budget
+
         with Image.open(path) as handle:
+            check_pixel_budget(handle.size)
             oriented = ImageOps.exif_transpose(handle).convert("RGB")
             return str(imagehash.phash(oriented))
     except Exception as exc:

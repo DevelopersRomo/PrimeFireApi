@@ -6,6 +6,7 @@ pdf2image plus a poppler system dependency.
 """
 
 import logging
+import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RENDER_DPI = 300
+# A page declares its own size, so the render is capped by pixels: a letter page at 300 dpi is ~8.4 MP.
+MAX_RENDER_PIXELS = 30_000_000
 
 # Below this, a "text layer" is just stray metadata and the page is really a scan.
 MIN_TEXT_LAYER_CHARS = 60
@@ -60,12 +63,13 @@ def render_pages(path, dpi: int = RENDER_DPI, max_pages: int = 5) -> list["np.nd
 
     images: list[np.ndarray] = []
     zoom = dpi / 72
-    matrix = _pymupdf().Matrix(zoom, zoom)
 
     try:
         with _open(path) as document:
             for page in list(document)[:max_pages]:
-                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+                area = page.rect.width * page.rect.height
+                page_zoom = min(zoom, math.sqrt(MAX_RENDER_PIXELS / area)) if area > 0 else zoom
+                pixmap = page.get_pixmap(matrix=_pymupdf().Matrix(page_zoom, page_zoom), alpha=False)
                 buffer = np.frombuffer(pixmap.samples, dtype=np.uint8)
                 array = buffer.reshape(pixmap.height, pixmap.width, pixmap.n)
                 if pixmap.n == 1:

@@ -54,6 +54,7 @@ from api.timesheet import router as timesheet_router
 
 # DB
 from bd.connection import create_db_and_tables
+from core.body_limit import BodyLimitMiddleware
 from core.config import AZURE_AUTH_SCHEME, settings
 from models.employees import Employees
 
@@ -254,6 +255,8 @@ origins = [
     "http://localhost:4201",
 ]
 
+# Added before CORS so a 413 still leaves through the CORS layer and the browser can read it.
+app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

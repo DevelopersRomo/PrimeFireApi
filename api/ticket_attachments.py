@@ -5,14 +5,13 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee_with_permissions
 from api.tickets import ensure_ticket_visible
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
-from core.file_storage import confine_to
+from core.file_storage import attachment_response, confine_to
 from models.ticket_messages import TicketAttachments
 from models.tickets import Tickets
 from schemas.ticket_messages import TicketAttachment
@@ -93,10 +92,10 @@ def get_attachment(
         if not storage_path.is_file():
             raise HTTPException(status_code=404, detail="File not found")
         # Use original filename for Content-Disposition
-        return FileResponse(
-            path=str(storage_path),
-            filename=db_att.file_name or storage_path.name,
-            media_type=db_att.file_type or "application/octet-stream",
+        return attachment_response(
+            storage_path,
+            db_att.file_name or storage_path.name,
+            db_att.file_type,
         )
     return attachment_to_schema(db_att)
 

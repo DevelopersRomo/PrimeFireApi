@@ -12,6 +12,7 @@ from api.it.dependencies import get_tenant_id
 from bd.dependencies import get_db
 from core.config import settings
 from core.datetime_utils import utcnow
+from core.file_storage import attachment_response
 from models.customers import Customers
 from models.it.email_templates import ITEmailCustomerTemplate, ITEmailDefault
 from schemas.it.email_templates import (
@@ -59,7 +60,7 @@ def _logo_response(logo_path: str | None) -> FileResponse:
     if not logo_path or not Path(logo_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No uploaded logo file")
 
-    return FileResponse(path=logo_path, filename=Path(logo_path).name)
+    return attachment_response(logo_path, Path(logo_path).name)
 
 
 # ---------------------------------------------------------------------------

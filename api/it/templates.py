@@ -4,7 +4,6 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlmodel import Session, select
 
@@ -12,7 +11,7 @@ from api.dependencies import require_module_permission
 from api.it.dependencies import get_tenant_id
 from bd.dependencies import get_db
 from core.config import settings
-from core.file_storage import confine_to
+from core.file_storage import attachment_response, confine_to
 from models.it.templates import ITPdfTemplates
 from schemas.it.templates import ItPdfTemplateCreate, ItPdfTemplateRead, ItPdfTemplateUpdate
 from schemas.pagination import PaginatedResponse
@@ -181,7 +180,7 @@ def get_template_logo(
     if not logo_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No uploaded logo file")
 
-    return FileResponse(path=logo_path, filename=logo_path.name)
+    return attachment_response(logo_path, logo_path.name)
 
 
 @router.patch("/{template_id}", response_model=ItPdfTemplateRead)

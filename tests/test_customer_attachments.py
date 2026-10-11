@@ -195,3 +195,23 @@ def test_delete_customer_attachment_never_unlinks_outside_upload_root(
     del_res = client.delete(f"/customers/attachments/{att.customer_attachment_id}", headers=auth_headers)
     assert del_res.status_code == 200
     assert outside.exists()
+
+
+def test_customer_attachment_download_does_not_trust_declared_pdf_type(
+    client: TestClient, db_session: Session, auth_headers: dict
+):
+    """HTML uploaded as a PDF must come back as an inert download, not as a PDF a browser would render."""
+    customer = _customer(db_session)
+    upload = client.post(
+        f"/customers/{customer.customer_id}/attachments",
+        files={"file": ("invoice.pdf", b"<html><script>alert(1)</script></html>", "application/pdf")},
+        headers=auth_headers,
+    )
+    att_id = upload.json()["customer_attachment_id"]
+
+    response = client.get(f"/customers/attachments/{att_id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"].startswith("attachment;")

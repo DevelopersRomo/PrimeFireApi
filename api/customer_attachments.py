@@ -5,14 +5,13 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from api.dependencies import require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
-from core.file_storage import confine_to
+from core.file_storage import attachment_response, confine_to
 from models.customers import CustomerAttachments, Customers
 from schemas.customers import CustomerAttachment, CustomerEmployee
 
@@ -96,10 +95,10 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
         storage_path = confine_to(resolve_upload_root(), db_att.file_path)
         if not storage_path.is_file():
             raise HTTPException(status_code=404, detail="File not found")
-        return FileResponse(
-            path=str(storage_path),
-            filename=db_att.file_name or storage_path.name,
-            media_type=db_att.file_type or "application/octet-stream",
+        return attachment_response(
+            storage_path,
+            db_att.file_name or storage_path.name,
+            db_att.file_type,
         )
 
     return attachment_to_schema(db_att)

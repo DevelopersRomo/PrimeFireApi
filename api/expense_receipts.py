@@ -13,12 +13,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_module_permission
 from bd.dependencies import get_db, get_session_factory
 from core.datetime_utils import utcnow
+from core.file_storage import attachment_response
 from models.employees import Employees
 from models.expenses import (
     ExpenseReceiptExtractions,
@@ -340,11 +340,7 @@ def download_receipt(
     if receipt.file_path:
         stored = Path(receipt.file_path)
         if stored.exists():
-            return FileResponse(
-                path=str(stored),
-                filename=receipt.file_name or stored.name,
-                media_type=receipt.file_type or "application/octet-stream",
-            )
+            return attachment_response(stored, receipt.file_name or stored.name, receipt.file_type)
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt file is missing from storage")
 

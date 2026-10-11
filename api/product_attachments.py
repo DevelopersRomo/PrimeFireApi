@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -13,6 +12,7 @@ from sqlmodel import Session, select
 from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
+from core.file_storage import attachment_response
 from models.products import ProductAttachments, Products
 from schemas.products import ProductAttachment, ProductEmployee
 
@@ -107,11 +107,7 @@ def get_attachment(attachment_id: int, db: Session = Depends(get_db), _auth=Depe
         if not storage_path.is_absolute():
             storage_path = BASE_DIR / storage_path
         if storage_path.exists():
-            return FileResponse(
-                path=str(storage_path),
-                filename=db_att.file_name or storage_path.name,
-                media_type=db_att.file_type or "application/octet-stream",
-            )
+            return attachment_response(storage_path, db_att.file_name or storage_path.name, db_att.file_type)
 
     return attachment_to_schema(db_att)
 

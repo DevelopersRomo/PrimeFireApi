@@ -64,3 +64,34 @@ def test_symlink_escaping_the_root_is_rejected(root, tmp_path) -> None:
 
     with pytest.raises(HTTPException):
         confine_to(root, "customers/link.env")
+
+
+@pytest.mark.parametrize(
+    ("content", "declared", "expected"),
+    [
+        (b"%PDF-1.7 body", "text/html", "application/pdf"),
+        (b"\x89PNG\r\n\x1a\n....", "application/pdf", "image/png"),
+        (b"\xff\xd8\xff\xe0....", None, "image/jpeg"),
+        (b"RIFF\x00\x00\x00\x00WEBPVP8 ", "text/html", "image/webp"),
+        (b"<html><script>alert(1)</script>", "application/pdf", "application/octet-stream"),
+        (b"<html><script>alert(1)</script>", "image/png", "application/octet-stream"),
+        (b"<html><script>alert(1)</script>", "text/html; charset=utf-8", "application/octet-stream"),
+        (b"<svg/>", "image/svg+xml", "image/svg+xml"),
+        (b"PK\x03\x04docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        (b"hello", "text/plain", "text/plain"),
+        (b"hello", None, "application/octet-stream"),
+    ],
+)
+def test_attachment_response_uses_detected_content_type(tmp_path, content, declared, expected) -> None:
+    """The type comes from the bytes; a client-declared active type is never echoed back."""
+    from core.file_storage import attachment_response
+
+    stored = tmp_path / "file.bin"
+    stored.write_bytes(content)
+
+    response = attachment_response(stored, "file.bin", declared)
+
+    assert response.media_type == expected
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"].startswith("attachment;")

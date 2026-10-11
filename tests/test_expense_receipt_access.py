@@ -6,13 +6,16 @@ so these endpoints have to answer the same question the report itself does:
 owner, administrator, or the approver whose level the report is sitting at.
 """
 
-import pytest
-from fastapi import HTTPException
-from sqlmodel import Session
+from io import BytesIO
 
+import pytest
+from fastapi import BackgroundTasks, HTTPException, UploadFile
+from sqlmodel import Session, select
+
+from api import expense_receipts as receipts_api
 from api.expense_receipts import download_receipt, get_extraction, list_receipts, upload_receipt
 from models.employees import Employees
-from models.expenses import ExpenseReceipts, ExpenseReports
+from models.expenses import ExpenseReceipts, ExpenseReportItems, ExpenseReports
 
 ADMIN_PERMISSIONS = {"permissions": [{"module_key": "expenses", "permissions": {"admin_actions": True}}]}
 PLAIN_PERMISSIONS = {"permissions": [{"module_key": "expenses", "permissions": {"admin_actions": False}}]}
@@ -109,6 +112,36 @@ def test_a_colleague_cannot_attach_a_receipt_to_another_employees_report(db_sess
         upload_receipt(report.report_id, None, None, None, db_session, outsider, PLAIN_PERMISSIONS)
 
     assert raised.value.status_code == 403
+
+
+def test_upload_rejects_a_line_from_another_report(db_session: Session, monkeypatch, tmp_path):
+    attacker = _employee(db_session, "crossreportuploader")
+    victim = _employee(db_session, "crossreportowner")
+    own_report = _report(db_session, attacker, 28)
+    victim_report = _report(db_session, victim, 29, status="submitted")
+    victim_item = ExpenseReportItems(report_id=victim_report.report_id, amount_base=100)
+    db_session.add(victim_item)
+    db_session.commit()
+    monkeypatch.setattr(receipts_api, "UPLOAD_DIR", tmp_path / "expenses")
+    monkeypatch.setattr(receipts_api.dedupe, "file_sha256", lambda _path: "test-hash")
+    monkeypatch.setattr(receipts_api.dedupe, "perceptual_hash", lambda _path: "test-phash")
+
+    with pytest.raises(HTTPException) as raised:
+        upload_receipt(
+            own_report.report_id,
+            BackgroundTasks(),
+            UploadFile(filename="receipt.png", file=BytesIO(b"test image")),
+            victim_item.item_id,
+            db_session,
+            attacker,
+            PLAIN_PERMISSIONS,
+        )
+
+    assert raised.value.status_code == 404
+    assert db_session.exec(
+        select(ExpenseReceipts).where(ExpenseReceipts.report_id == own_report.report_id)
+    ).first() is None
+    assert db_session.get(ExpenseReportItems, victim_item.item_id) is not None
 
 
 def test_no_receipt_can_be_attached_to_a_submitted_report(db_session: Session):

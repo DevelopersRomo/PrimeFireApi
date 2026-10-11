@@ -241,6 +241,12 @@ def upload_receipt(
     # Uploading is an edit of somebody's claim: same gate as every other edit.
     _assert_owner_or_admin(report, current_employee, user_permissions)
     _assert_editable(report)
+    if item_id is not None and not db.exec(
+        select(ExpenseReportItems)
+        .where(ExpenseReportItems.item_id == item_id)
+        .where(ExpenseReportItems.report_id == report_id)
+    ).first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense line not found on this report")
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:

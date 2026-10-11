@@ -878,6 +878,9 @@ def approve_report(
                 detail=f"Expense line {decision.item_id} does not belong to this report",
             )
 
+        if step.level > 1 and item.status == "rejected":
+            continue
+
         if decision.decision == "rejected":
             if not (decision.note or review.note):
                 raise HTTPException(
@@ -886,36 +889,41 @@ def approve_report(
                 )
             item.status = "rejected"
             item.approved_amount = Decimal(0)
-            reduced_or_rejected = True
         else:
-            item.status = "approved"
             approved = decision.approved_amount if decision.approved_amount is not None else item.amount_base
             if approved > item.amount_base:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Approved amount cannot exceed the claimed amount on line {decision.item_id}",
                 )
-            if approved < item.amount_base:
-                if not (decision.note or review.note):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"A reason is required to reduce expense line {decision.item_id}",
-                    )
-                reduced_or_rejected = True
+            cap = item.approved_amount if step.level > 1 and item.approved_amount is not None else item.amount_base
+            approved = min(approved, cap)
+            if approved < cap and not (decision.note or review.note):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"A reason is required to reduce expense line {decision.item_id}",
+                )
+            item.status = "approved"
             item.approved_amount = approved
 
         item.review_note = decision.note or item.review_note
         item.updated_at = utcnow()
         db.add(item)
 
-    # Lines the approver did not touch are approved in full.
-    for item_id, item in items.items():
-        if item_id in decided_ids:
-            continue
-        item.status = "approved"
-        item.approved_amount = item.amount_base
-        db.add(item)
+    # Level one retains the full-approval default; later levels preserve prior decisions.
+    if step.level == 1:
+        for item_id, item in items.items():
+            if item_id in decided_ids:
+                continue
+            item.status = "approved"
+            item.approved_amount = item.amount_base
+            db.add(item)
 
+    reduced_or_rejected = any(
+        item.status == "rejected"
+        or (item.status == "approved" and item.approved_amount is not None and item.approved_amount < item.amount_base)
+        for item in items.values()
+    )
     approvals.recalculate_totals(db, report)
 
     result = db.execute(

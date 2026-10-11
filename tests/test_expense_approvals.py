@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from api import expenses as expense_api
 from models.employees import EmployeeRoles, Employees, Roles
 from models.expenses import ExpenseApprovalRules, ExpenseReportApprovals, ExpenseReportItems, ExpenseReports
-from schemas.expenses import ExpenseReview
+from schemas.expenses import ExpenseItemDecision, ExpenseReview
 from services.expenses import approvals
 
 ADMIN_PERMISSIONS = {"permissions": [{"module_key": "expenses", "permissions": {"admin_actions": True}}]}
@@ -306,6 +306,121 @@ def test_approval_write_rejects_a_step_that_changed_after_authorization(chain_se
     assert rows[0].decision == "approved"
     assert rows[1].decision == "pending"
     assert rows[1].approver_id is None
+
+
+def test_level_two_default_payload_cannot_restore_rejected_or_reduced_lines(chain_setup, monkeypatch):
+    db = chain_setup["db"]
+    report = chain_setup["report"]
+    manager = chain_setup["manager"]
+    accountant = chain_setup["accountant"]
+    rejected = ExpenseReportItems(
+        report_id=report.report_id, amount_base=Decimal("100.00"), status="pending"
+    )
+    reduced = ExpenseReportItems(
+        report_id=report.report_id, amount_base=Decimal("100.00"), status="pending"
+    )
+    untouched = ExpenseReportItems(
+        report_id=report.report_id, amount_base=Decimal("100.00"), status="pending"
+    )
+    db.add_all([rejected, reduced, untouched])
+    db.commit()
+    monkeypatch.setattr(expense_api, "get_request_app_url", lambda _request: "https://example.test")
+    monkeypatch.setattr(expense_api, "get_report", lambda *_args: None)
+    request = Request({"type": "http", "method": "POST", "path": "/"})
+
+    expense_api.approve_report(
+        report.report_id,
+        ExpenseReview(
+            item_decisions=[
+                ExpenseItemDecision(item_id=rejected.item_id, decision="rejected", note="Not eligible"),
+                ExpenseItemDecision(
+                    item_id=reduced.item_id,
+                    decision="approved",
+                    approved_amount=Decimal("60.00"),
+                    note="Partial only",
+                ),
+            ]
+        ),
+        request,
+        BackgroundTasks(),
+        db,
+        manager,
+        PLAIN_PERMISSIONS,
+    )
+
+    expense_api.approve_report(
+        report.report_id,
+        ExpenseReview(
+            item_decisions=[
+                ExpenseItemDecision(item_id=rejected.item_id, decision="approved", approved_amount=Decimal("100.00")),
+                ExpenseItemDecision(item_id=reduced.item_id, decision="approved", approved_amount=Decimal("100.00")),
+                ExpenseItemDecision(item_id=untouched.item_id, decision="approved", approved_amount=Decimal("100.00")),
+            ]
+        ),
+        request,
+        BackgroundTasks(),
+        db,
+        accountant,
+        PLAIN_PERMISSIONS,
+    )
+
+    db.refresh(rejected)
+    db.refresh(reduced)
+    db.refresh(untouched)
+    db.refresh(report)
+    assert rejected.status == "rejected"
+    assert rejected.approved_amount == Decimal(0)
+    assert reduced.status == "approved"
+    assert reduced.approved_amount == Decimal("60.00")
+    assert untouched.status == "approved"
+    assert untouched.approved_amount == Decimal("100.00")
+    assert report.total_approved == Decimal("160.00")
+    assert report.status == "partially_approved"
+
+
+def test_untouched_level_two_lines_keep_the_prior_level_decision(chain_setup, monkeypatch):
+    db = chain_setup["db"]
+    report = chain_setup["report"]
+    manager = chain_setup["manager"]
+    accountant = chain_setup["accountant"]
+    item = ExpenseReportItems(report_id=report.report_id, amount_base=Decimal("100.00"), status="pending")
+    db.add(item)
+    db.commit()
+    monkeypatch.setattr(expense_api, "get_request_app_url", lambda _request: "https://example.test")
+    monkeypatch.setattr(expense_api, "get_report", lambda *_args: None)
+    request = Request({"type": "http", "method": "POST", "path": "/"})
+
+    expense_api.approve_report(
+        report.report_id,
+        ExpenseReview(
+            item_decisions=[
+                ExpenseItemDecision(
+                    item_id=item.item_id,
+                    decision="approved",
+                    approved_amount=Decimal("60.00"),
+                    note="Partial only",
+                )
+            ]
+        ),
+        request,
+        BackgroundTasks(),
+        db,
+        manager,
+        PLAIN_PERMISSIONS,
+    )
+    expense_api.approve_report(
+        report.report_id,
+        ExpenseReview(),
+        request,
+        BackgroundTasks(),
+        db,
+        accountant,
+        PLAIN_PERMISSIONS,
+    )
+
+    db.refresh(item)
+    assert item.status == "approved"
+    assert item.approved_amount == Decimal("60.00")
 
 
 def test_employee_without_roles_sees_no_queue(chain_setup):

@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 import bd.dependencies as db_dependencies
+from core.azure_token import validate_azure_token
 
 
 class DummySession:
@@ -16,9 +17,20 @@ class DummySession:
         self.closed = True
 
 
+@pytest.fixture(autouse=True)
+def _trust_azure_signature(monkeypatch):
+    """Stand in for the JWKS check; routing is what these tests cover."""
+    monkeypatch.setattr(
+        db_dependencies,
+        "validate_azure_token",
+        lambda token: jwt.decode(token, options={"verify_signature": False}),
+    )
+
+
 def _azure_headers(email: str) -> dict[str, str]:
     token = jwt.encode(
         {
+            "tid": "azure-tenant-id",
             "oid": "azure-user-id",
             "preferred_username": email,
         },
@@ -77,3 +89,16 @@ def test_get_db_does_not_fallback_when_primefire_db_is_missing(monkeypatch):
 
     assert exc.value.status_code == 500
     assert "PRIMEFIRE_DB_SERVER" in exc.value.detail
+
+
+def test_get_db_rejects_forged_azure_token(monkeypatch):
+    monkeypatch.setattr(db_dependencies, "validate_azure_token", validate_azure_token)
+    monkeypatch.setattr(db_dependencies, "SessionPrimeFire", lambda: DummySession("primefire"))
+    monkeypatch.setattr(db_dependencies, "SessionLocal", lambda: DummySession("main"))
+
+    request = SimpleNamespace(headers=_azure_headers("user@primefire.us"))
+
+    with pytest.raises(HTTPException) as exc:
+        next(db_dependencies.get_db(request))
+
+    assert exc.value.status_code == 401

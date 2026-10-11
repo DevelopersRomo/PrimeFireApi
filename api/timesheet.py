@@ -1096,6 +1096,11 @@ def update_punch(
     punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.punch_id == punch_id)).first()
     if not punch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
+    if punch.employee_id == user_permissions["employee"]["employee_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot edit or approve/reject your own punch",
+        )
 
     tzinfo, _ = _get_request_timezone(request)
 
@@ -1142,6 +1147,11 @@ def approve_punch(
     punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.punch_id == punch_id)).first()
     if not punch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
+    if punch.employee_id == user_permissions["employee"]["employee_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot edit or approve/reject your own punch",
+        )
 
     punch.status = TimeSheetPunchStatusEnum.APPROVED.value
     punch.approved_by = user_permissions["employee"]["employee_id"]
@@ -1165,6 +1175,11 @@ def reject_punch(
     punch = db.exec(select(TimeSheetPunch).where(TimeSheetPunch.punch_id == punch_id)).first()
     if not punch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Punch not found")
+    if punch.employee_id == user_permissions["employee"]["employee_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot edit or approve/reject your own punch",
+        )
 
     punch.status = TimeSheetPunchStatusEnum.REJECTED.value
     punch.approved_by = user_permissions["employee"]["employee_id"]

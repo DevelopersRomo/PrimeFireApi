@@ -331,7 +331,7 @@ def test_admin_export_punches(client, db_session: Session):
 def test_update_punch(client, db_session: Session, test_customer):
     punch = create_punch(
         db_session,
-        1,
+        2,
         test_customer.customer_id,
         TimeSheetPunchStatusEnum.CLOSED.value,
         "2023-01-01 08:00:00",
@@ -349,7 +349,7 @@ def test_update_punch(client, db_session: Session, test_customer):
 def test_update_punch_converts_timezone_to_utc(client, db_session: Session, test_customer):
     punch = create_punch(
         db_session,
-        1,
+        2,
         test_customer.customer_id,
         TimeSheetPunchStatusEnum.CLOSED.value,
         "2023-01-01 08:00:00",
@@ -392,6 +392,29 @@ def test_approve_reject_punch(client, db_session: Session, test_customer):
     response = client.post(f"/api/v1/timesheet/{punch.punch_id}/reject")
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["status"] == TimeSheetPunchStatusEnum.REJECTED.value
+
+
+def test_punch_owner_cannot_edit_approve_or_reject_own_punch(client, db_session: Session, test_customer):
+    punch = create_punch(
+        db_session,
+        1,
+        test_customer.customer_id,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2023-01-01 08:00:00",
+        "2023-01-01 16:00:00",
+        480,
+    )
+
+    updated = client.patch(f"/api/v1/timesheet/{punch.punch_id}", json={"note": "Self edit"})
+    approved = client.post(f"/api/v1/timesheet/{punch.punch_id}/approve")
+    rejected = client.post(f"/api/v1/timesheet/{punch.punch_id}/reject")
+
+    assert updated.status_code == status.HTTP_403_FORBIDDEN
+    assert approved.status_code == status.HTTP_403_FORBIDDEN
+    assert rejected.status_code == status.HTTP_403_FORBIDDEN
+    db_session.refresh(punch)
+    assert punch.status == TimeSheetPunchStatusEnum.CLOSED.value
+    assert punch.note is None
 
 
 def test_check_notifications(client, db_session: Session, test_customer):

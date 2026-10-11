@@ -419,3 +419,27 @@ def test_tenant_administration_rejects_tenant_routed_callers(client, method, pat
     response = client.request(method.upper(), path, json=body, headers={"Authorization": f"Bearer {tenant_token}"})
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_moving_a_user_to_another_tenant_revokes_their_sessions(client, db_session, auth_headers):
+    """A token minted for the old tenant must not keep working after approve-user reassigns the user."""
+    _approved_external_user(db_session, "mover@example.com", "pw-mover")
+    new_tenant = Tenants(name="Destination", db_connection_key="DESTINATION", is_active=True)
+    db_session.add(new_tenant)
+    db_session.commit()
+    login = client.post("/auth/token", data={"username": "mover@example.com", "password": "pw-mover"})
+    assert login.status_code == status.HTTP_200_OK
+    access, refresh = login.json()["access_token"], login.json()["refresh_token"]
+    bearer = {"Authorization": f"Bearer {access}"}
+    assert client.get("/countries/", headers=bearer).status_code == status.HTTP_200_OK
+    member = db_session.query(TenantEmployees).filter_by(email="mover@example.com").first()
+
+    moved = client.post(
+        "/tenants/approve-user",
+        json={"tenant_employee_id": member.id, "tenant_id": new_tenant.tenant_id},
+        headers=auth_headers,
+    )
+
+    assert moved.status_code == status.HTTP_200_OK, moved.text
+    assert client.get("/countries/", headers=bearer).status_code == status.HTTP_401_UNAUTHORIZED
+    assert client.post("/auth/refresh", json={"refresh_token": refresh}).status_code == status.HTTP_401_UNAUTHORIZED

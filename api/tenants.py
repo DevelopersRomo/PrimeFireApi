@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_module_permission
 from bd.dependencies import PLATFORM_DB_ROUTES, get_db_route, get_main_db
+from core.session_version import bump_version
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
 from schemas.pagination import PaginatedResponse
@@ -186,6 +187,8 @@ async def approve_external_user(
     # 3. Update pending user to point to the assigned tenant
     external_user.tenant_id = tenant.tenant_id
     db.add(external_user)
+    # Tokens minted for the previous assignment must not outlive it.
+    bump_version(db, external_user.email)
     db.commit()
     db.refresh(external_user)
 

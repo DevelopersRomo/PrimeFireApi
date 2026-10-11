@@ -5,6 +5,16 @@ from sqlmodel import Field, SQLModel
 from core.datetime_utils import utcnow
 
 
+class UserSessionVersion(SQLModel, table=True):
+    """Revocation counter per account; tokens carry the value they were issued under (claim `tv`)."""
+
+    __tablename__ = "user_session_versions"
+    __table_args__ = {"schema": "dbo"}
+
+    email: str = Field(max_length=255, primary_key=True)
+    token_version: int = Field(default=0)
+
+
 class AuthToken(SQLModel, table=True):
     """Tokens para password recovery y magic link."""
 

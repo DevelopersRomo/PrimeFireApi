@@ -14,10 +14,11 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 from starlette.middleware.cors import CORSMiddleware
 
-from bd.dependencies import get_db, get_primefire_session, is_primefire_email
+from bd.dependencies import get_db, get_main_db, get_primefire_session, is_primefire_email
 from bd.multitenancy import ConnectionManager
 from core.azure_token import looks_like_azure_token, validate_azure_token
 from core.config import settings
+from core.session_version import current_version
 from models.employees import Employees
 from models.tenants import TenantEmployees, Tenants
 
@@ -64,6 +65,7 @@ async def extract_token_from_azure_scheme(request: Request) -> str:
 
 async def simple_token_validator(
     request: Request,
+    main_db: Session = Depends(get_main_db),
 ) -> dict[str, Any] | None:
     """Validate token (Azure AD OR Internal JWT)."""
     authorization = request.headers.get("Authorization")
@@ -81,6 +83,13 @@ async def simple_token_validator(
     try:
         payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") == "internal":
+            # A bump of the account's session version (logout, password reset, tenant move) revokes older tokens.
+            if payload.get("tv", 0) != current_version(main_db, payload.get("sub", "")):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Session expired. Please sign in again.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             return payload  # It's our custom token
     except JWTError:
         pass  # Not our token, try Azure

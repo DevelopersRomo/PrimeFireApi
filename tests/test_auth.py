@@ -476,3 +476,77 @@ def test_magic_link_answers_the_same_for_every_kind_of_account(
     ]
 
     assert bodies[0] == bodies[1] == bodies[2]
+
+
+def _internal_session(client: TestClient, db_session: Session, email: str = "session@example.com") -> tuple[str, str]:
+    """Log an internal employee in and return (access_token, refresh_token)."""
+    db_session.add(Employees(email=email, password_hash=get_password_hash("pw"), title="Dev"))
+    db_session.commit()
+    login = client.post("/auth/token", data={"username": email, "password": "pw"})
+    assert login.status_code == 200, login.text
+    return login.json()["access_token"], login.json()["refresh_token"]
+
+
+def _countries_status(client: TestClient, access: str) -> int:
+    """Status of a token-only route, to tell a live access token from a revoked one."""
+    return client.get("/countries/", headers={"Authorization": f"Bearer {access}"}).status_code
+
+
+def _assert_session_is_dead(client: TestClient, access: str, refresh: str) -> None:
+    assert client.post("/auth/refresh", json={"refresh_token": refresh}).status_code == 401
+    assert _countries_status(client, access) == 401
+
+
+def test_a_live_session_works_until_it_is_revoked(client: TestClient, db_session: Session):
+    access, refresh = _internal_session(client, db_session)
+
+    assert _countries_status(client, access) == 200
+    rotated = client.post("/auth/refresh", json={"refresh_token": refresh})
+    assert rotated.status_code == 200
+    assert _countries_status(client, rotated.json()["access_token"]) == 200
+
+
+def test_logout_revokes_the_access_and_refresh_tokens(client: TestClient, db_session: Session):
+    access, refresh = _internal_session(client, db_session)
+
+    response = client.post("/auth/logout", headers={"Authorization": f"Bearer {access}"})
+
+    assert response.status_code == 200
+    _assert_session_is_dead(client, access, refresh)
+
+
+def test_logout_without_a_token_is_rejected(client: TestClient):
+    assert client.post("/auth/logout").status_code == 401
+
+
+def test_password_reset_revokes_sessions_issued_before_it(
+    client: TestClient, db_session: Session, captured_emails: list[dict]
+):
+    email = "session@example.com"
+    access, refresh = _internal_session(client, db_session, email)
+    token = _request_token(client, captured_emails, "/auth/password-recovery", email)
+
+    reset = client.post("/auth/reset-password", json={"token": token, "new_password": "brand_new_password"})
+
+    assert reset.status_code == 200, reset.text
+    _assert_session_is_dead(client, access, refresh)
+    fresh = client.post("/auth/token", data={"username": email, "password": "brand_new_password"})
+    assert _countries_status(client, fresh.json()["access_token"]) == 200
+
+
+def test_logging_in_again_after_logout_gives_a_working_session(client: TestClient, db_session: Session):
+    access, _ = _internal_session(client, db_session)
+    client.post("/auth/logout", headers={"Authorization": f"Bearer {access}"})
+
+    login = client.post("/auth/token", data={"username": "session@example.com", "password": "pw"})
+
+    assert _countries_status(client, login.json()["access_token"]) == 200
+
+
+def test_external_user_logout_revokes_their_session_too(client: TestClient, local_auth_user: TenantEmployees):
+    login = client.post("/auth/token", data={"username": local_auth_user.email, "password": "original_password"})
+    access, refresh = login.json()["access_token"], login.json()["refresh_token"]
+
+    assert client.post("/auth/logout", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+
+    assert client.post("/auth/refresh", json={"refresh_token": refresh}).status_code == 401

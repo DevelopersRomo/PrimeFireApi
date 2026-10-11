@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
+from starlette.concurrency import run_in_threadpool
 
 from core.config import settings
 from models.it.documents import ITQuotationDocuments
@@ -184,11 +185,11 @@ async def send_quotation_email(
         )
         db.add(quotation)
         db.flush()
-        document = generate_quotation_pdf(db, quotation, generated_by=sent_by)
+        document = await run_in_threadpool(generate_quotation_pdf, db, quotation, generated_by=sent_by)
     else:
         document = _latest_document(db, quotation.quotation_id)
         if not document or not Path(document.storage_path).exists():
-            document = generate_quotation_pdf(db, quotation, generated_by=sent_by)
+            document = await run_in_threadpool(generate_quotation_pdf, db, quotation, generated_by=sent_by)
 
     pdf_bytes = Path(document.storage_path).read_bytes()
     attachments = [

@@ -113,8 +113,9 @@ def test_template_logo_over_the_size_limit_is_refused_and_not_stored(
 
 
 def test_email_template_logo_over_the_size_limit_is_refused_and_not_stored(tmp_path, monkeypatch) -> None:
-    import api.it.email_templates as email_api
     from fastapi import HTTPException, UploadFile
+
+    import api.it.email_templates as email_api
 
     monkeypatch.setattr(email_api, "MAX_LOGO_BYTES", 10)
     monkeypatch.setattr(email_api, "LOGO_UPLOAD_DIR", tmp_path)
@@ -124,3 +125,16 @@ def test_email_template_logo_over_the_size_limit_is_refused_and_not_stored(tmp_p
 
     assert caught.value.status_code == 413
     assert list(tmp_path.iterdir()) == []
+
+
+def test_template_logo_rejects_svg_and_stores_nothing(client, auth_headers, template, logo_dir) -> None:
+    """WeasyPrint expands <use> in an uploaded SVG without bound, so only raster logos are accepted."""
+    response = client.post(
+        f"/it/templates/{template.template_id}/logo",
+        files={"logo_file": ("logo.svg", io.BytesIO(b"<svg xmlns='http://www.w3.org/2000/svg'/>"), "image/svg+xml")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "SVG" in response.json()["detail"]
+    assert list(logo_dir.iterdir()) == []

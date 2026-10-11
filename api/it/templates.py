@@ -32,7 +32,8 @@ else:
 
 LOGO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".webp"}
+# SVG is refused: WeasyPrint expands <use> references in it without bound when rendering the quotation PDF.
+ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 router = APIRouter()
 
@@ -140,7 +141,7 @@ def upload_template_logo(
     if file_extension not in ALLOWED_LOGO_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file type. Only PNG, JPG, JPEG, SVG and WEBP files are allowed.",
+            detail="Invalid file type. Only PNG, JPG, JPEG and WEBP files are allowed; SVG logos are not supported.",
         )
 
     content = read_upload(logo_file, MAX_LOGO_BYTES)

@@ -1,5 +1,5 @@
 import csv
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from io import StringIO
 from unittest.mock import patch
@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from api import time_off
 from api.dependencies import (
     get_current_employee,
     get_current_employee_with_permissions,
@@ -24,6 +25,7 @@ from models.time_off import (
     TimeOffRequest,
     TimeUnitEnum,
 )
+from schemas.time_off import TimeOffRequestCreate
 
 
 def _workday(n: int) -> str:
@@ -35,6 +37,54 @@ def _workday(n: int) -> str:
         if day.weekday() < 5:
             remaining -= 1
     return day.strftime("%Y-%m-%d")
+
+
+def test_calculate_totals_charges_hours_for_each_working_day():
+    payload = TimeOffRequestCreate(
+        absence_type=AbsenceTypeEnum.VACATION,
+        time_unit=TimeUnitEnum.HOURS,
+        start_date=date(2030, 1, 7),
+        end_date=date(2030, 1, 18),
+        start_time=time(9),
+        end_time=time(17),
+    )
+
+    total_days, total_hours = time_off._calculate_totals(payload, allow_weekends=False)  # noqa: SLF001
+
+    assert total_days == Decimal("10.00")
+    assert total_hours == Decimal("80.00")
+
+
+def test_calculate_totals_single_day_hours_unchanged():
+    payload = TimeOffRequestCreate(
+        absence_type=AbsenceTypeEnum.PERSONAL,
+        time_unit=TimeUnitEnum.HOURS,
+        start_date=date(2030, 1, 7),
+        end_date=date(2030, 1, 7),
+        start_time=time(10),
+        end_time=time(14),
+    )
+
+    total_days, total_hours = time_off._calculate_totals(payload, allow_weekends=False)  # noqa: SLF001
+
+    assert total_days == Decimal("0.50")
+    assert total_hours == Decimal("4.00")
+
+
+def test_calculate_totals_hourly_span_counts_weekends_when_allowed():
+    payload = TimeOffRequestCreate(
+        absence_type=AbsenceTypeEnum.VACATION,
+        time_unit=TimeUnitEnum.HOURS,
+        start_date=date(2030, 1, 7),
+        end_date=date(2030, 1, 13),
+        start_time=time(9),
+        end_time=time(17),
+    )
+
+    total_days, total_hours = time_off._calculate_totals(payload, allow_weekends=True)  # noqa: SLF001
+
+    assert total_days == Decimal("7.00")
+    assert total_hours == Decimal("56.00")
 
 
 @pytest.fixture

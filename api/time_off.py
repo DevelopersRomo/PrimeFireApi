@@ -135,8 +135,9 @@ def _calculate_totals(payload: TimeOffRequestCreate, allow_weekends: bool) -> tu
         )
 
     hours = Decimal(total_seconds / 3600).quantize(DECIMAL_PLACES)
-    days = (hours / Decimal(8)).quantize(DECIMAL_PLACES)
-    return days, hours
+    total_hours = (hours * days_span).quantize(DECIMAL_PLACES)
+    days = (total_hours / Decimal(8)).quantize(DECIMAL_PLACES)
+    return days, total_hours
 
 
 def _parse_time_value(value: str | None) -> time | None:

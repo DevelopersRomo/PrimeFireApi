@@ -8,6 +8,7 @@ task because Tesseract costs one to four seconds per page. The frontend polls
 import json
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from api.dependencies import get_current_employee, require_module_permission
-from bd.dependencies import get_db
+from bd.dependencies import get_db, get_session_factory
 from core.datetime_utils import utcnow
 from models.employees import Employees
 from models.expenses import (
@@ -169,16 +170,17 @@ def _extraction_to_schema(row: ExpenseReceiptExtractions) -> ExpenseReceiptExtra
     )
 
 
-def _run_extraction(receipt_id: int, currency_default: str | None) -> None:
+def _run_extraction(
+    receipt_id: int, currency_default: str | None, session_factory: Callable[[], Session]
+) -> None:
     """Background worker: extract, persist, then re-run the policy engine.
 
     Opens its own session because the request session is already closed by the
     time a background task runs.
     """
-    from bd.connection import SessionLocal
     from services.expenses import policies
 
-    db = SessionLocal()
+    db = session_factory()
     try:
         receipt = db.get(ExpenseReceipts, receipt_id)
         if not receipt or not receipt.file_path:
@@ -236,6 +238,7 @@ def upload_receipt(
     db: Session = Depends(get_db),
     current_employee: Employees = Depends(get_current_employee),
     user_permissions: dict = Depends(require_module_permission(MODULE_KEY, "can_create")),
+    session_factory: Callable[[], Session] = Depends(get_session_factory),
 ):
     report = _get_report_or_404(db, report_id)
     # Uploading is an edit of somebody's claim: same gate as every other edit.
@@ -286,7 +289,7 @@ def upload_receipt(
     db.add(ExpenseReceiptExtractions(receipt_id=receipt.receipt_id, status="pending"))
     db.commit()
 
-    background_tasks.add_task(_run_extraction, receipt.receipt_id, report.currency)
+    background_tasks.add_task(_run_extraction, receipt.receipt_id, report.currency, session_factory)
 
     return ExpenseReceipt(**receipt.model_dump(), extraction_status="pending")
 
@@ -373,6 +376,7 @@ def reprocess_receipt(
     db: Session = Depends(get_db),
     current_employee: Employees = Depends(get_current_employee),
     user_permissions: dict = Depends(require_module_permission(MODULE_KEY, "can_edit")),
+    session_factory: Callable[[], Session] = Depends(get_session_factory),
 ):
     receipt = db.get(ExpenseReceipts, receipt_id)
     if not receipt:
@@ -394,7 +398,7 @@ def reprocess_receipt(
     db.commit()
     db.refresh(row)
 
-    background_tasks.add_task(_run_extraction, receipt_id, report.currency if report else None)
+    background_tasks.add_task(_run_extraction, receipt_id, report.currency if report else None, session_factory)
     return _extraction_to_schema(row)
 
 

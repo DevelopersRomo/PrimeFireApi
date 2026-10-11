@@ -10,12 +10,13 @@ from io import BytesIO
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException, UploadFile
-from sqlmodel import Session, select
+from sqlmodel import SQLModel, Session, create_engine, select
 
 from api import expense_receipts as receipts_api
-from api.expense_receipts import download_receipt, get_extraction, list_receipts, upload_receipt
+from api.expense_receipts import download_receipt, get_extraction, list_receipts, reprocess_receipt, upload_receipt
 from models.employees import Employees
-from models.expenses import ExpenseReceipts, ExpenseReportItems, ExpenseReports
+from models.expenses import ExpenseReceiptExtractions, ExpenseReceipts, ExpenseReportItems, ExpenseReports
+from services.expenses.ocr.result import ExtractionResult
 
 ADMIN_PERMISSIONS = {"permissions": [{"module_key": "expenses", "permissions": {"admin_actions": True}}]}
 PLAIN_PERMISSIONS = {"permissions": [{"module_key": "expenses", "permissions": {"admin_actions": False}}]}
@@ -142,6 +143,105 @@ def test_upload_rejects_a_line_from_another_report(db_session: Session, monkeypa
         select(ExpenseReceipts).where(ExpenseReceipts.report_id == own_report.report_id)
     ).first() is None
     assert db_session.get(ExpenseReportItems, victim_item.item_id) is not None
+
+
+def test_extraction_worker_uses_the_callers_session_factory(monkeypatch):
+    from bd import connection
+
+    main_engine = create_engine("sqlite://")
+    route_engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(main_engine)
+    SQLModel.metadata.create_all(route_engine)
+
+    def seed(engine, employee_id: int, report_id: int, file_path: str):
+        with Session(engine) as db:
+            db.add(Employees(employee_id=employee_id, first_name="Test", last_name="User", email=f"{employee_id}@test"))
+            db.add(
+                ExpenseReports(
+                    report_id=report_id,
+                    folio=f"ROUTE-{report_id}",
+                    employee_id=employee_id,
+                    title="Trip",
+                    status="draft",
+                )
+            )
+            db.add(
+                ExpenseReceipts(
+                    receipt_id=1,
+                    report_id=report_id,
+                    file_name="receipt.png",
+                    file_path=file_path,
+                    uploaded_by=employee_id,
+                )
+            )
+            db.add(ExpenseReceiptExtractions(receipt_id=1, status="pending"))
+            db.commit()
+
+    seed(main_engine, 901, 101, "main-receipt.png")
+    seed(route_engine, 902, 102, "routed-receipt.png")
+    monkeypatch.setattr(connection, "SessionLocal", lambda: Session(bind=main_engine))
+    used_paths = []
+
+    def fake_extract(path, currency_default=None):
+        used_paths.append(str(path))
+        return ExtractionResult(engine="test", status="done", confidence=0.9, raw_text="done")
+
+    monkeypatch.setattr(receipts_api, "extract_receipt", fake_extract)
+
+    try:
+        receipts_api._run_extraction(1, "USD", lambda: Session(bind=route_engine))  # noqa: SLF001
+
+        with Session(route_engine) as routed:
+            routed_extraction = routed.exec(
+                select(ExpenseReceiptExtractions).where(ExpenseReceiptExtractions.receipt_id == 1)
+            ).one()
+            assert routed_extraction.status == "done"
+        with Session(main_engine) as main:
+            main_extraction = main.exec(
+                select(ExpenseReceiptExtractions).where(ExpenseReceiptExtractions.receipt_id == 1)
+            ).one()
+            assert main_extraction.status == "pending"
+            assert main_extraction.processed_at is None
+        assert used_paths == ["routed-receipt.png"]
+    finally:
+        main_engine.dispose()
+        route_engine.dispose()
+
+
+def test_receipt_handlers_pass_the_session_factory_to_extraction(db_session: Session, monkeypatch, tmp_path):
+    owner = _employee(db_session, "routedextract")
+    report = _report(db_session, owner, 30)
+
+    def session_factory():
+        return db_session
+
+    monkeypatch.setattr(receipts_api, "UPLOAD_DIR", tmp_path / "expenses")
+    monkeypatch.setattr(receipts_api.dedupe, "file_sha256", lambda _path: "test-hash")
+    monkeypatch.setattr(receipts_api.dedupe, "perceptual_hash", lambda _path: "test-phash")
+
+    upload_tasks = BackgroundTasks()
+    receipt = upload_receipt(
+        report.report_id,
+        upload_tasks,
+        UploadFile(filename="receipt.png", file=BytesIO(b"test image")),
+        None,
+        db_session,
+        owner,
+        PLAIN_PERMISSIONS,
+        session_factory,
+    )
+    assert upload_tasks.tasks[0].args[2] is session_factory
+
+    reprocess_tasks = BackgroundTasks()
+    reprocess_receipt(
+        receipt.receipt_id,
+        reprocess_tasks,
+        db_session,
+        owner,
+        PLAIN_PERMISSIONS,
+        session_factory,
+    )
+    assert reprocess_tasks.tasks[0].args[2] is session_factory
 
 
 def test_no_receipt_can_be_attached_to_a_submitted_report(db_session: Session):

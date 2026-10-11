@@ -1,6 +1,7 @@
 import logging
 import secrets
 import time
+import uuid
 from collections import deque
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -17,7 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from bd.dependencies import get_main_db
 from core.config import settings
 from core.datetime_utils import utcnow
-from core.session_version import bump_version, current_version
+from core.session_version import bump_version, current_version, is_session_revoked, revoke_session
 from models.auth_tokens import AuthToken
 from models.employees import Employees
 from models.tenants import TenantEmployees, TenantLogos, Tenants
@@ -95,9 +96,12 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def _versioned(db: Session, claims: dict) -> dict:
-    """Stamp the account's current session version into the claims, so a later bump revokes this token."""
-    return {**claims, "tv": current_version(db, claims["sub"])}
+def _versioned(db: Session, claims: dict, sid: str) -> dict:
+    """Stamp the session id and the account's session version into the claims.
+
+    A bump of the version revokes every session of the account; revoking the sid signs out just this one.
+    """
+    return {**claims, "tv": current_version(db, claims["sub"]), "sid": sid}
 
 
 # --- ENDPOINTS ---
@@ -179,9 +183,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         token_data = {"sub": external_user.email, "type": "internal"}
         if tenant.tenant_id != 1:
             token_data["tenant_key"] = tenant.db_connection_key
-        access_token = create_access_token(data=_versioned(db, token_data), expires_delta=access_token_expires)
+        sid = uuid.uuid4().hex
+        access_token = create_access_token(data=_versioned(db, token_data, sid), expires_delta=access_token_expires)
         refresh_token = create_refresh_token(
-            data=_versioned(db, {"sub": external_user.email, "tenant_key": tenant.db_connection_key})
+            data=_versioned(db, {"sub": external_user.email, "tenant_key": tenant.db_connection_key}, sid)
         )
         return {
             "access_token": access_token,
@@ -204,10 +209,11 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    sid = uuid.uuid4().hex
     access_token = create_access_token(
-        data=_versioned(db, {"sub": user.email, "type": "internal"}), expires_delta=access_token_expires
+        data=_versioned(db, {"sub": user.email, "type": "internal"}, sid), expires_delta=access_token_expires
     )
-    refresh_token = create_refresh_token(data=_versioned(db, {"sub": user.email}))
+    refresh_token = create_refresh_token(data=_versioned(db, {"sub": user.email}, sid))
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -235,7 +241,7 @@ async def refresh_access_token(refresh_data: RefreshTokenRequest, db: Session = 
         )
 
     email = payload.get("sub")
-    if not email or payload.get("tv", 0) != current_version(db, email):
+    if not email or payload.get("tv", 0) != current_version(db, email) or is_session_revoked(db, payload.get("sid")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
@@ -280,8 +286,10 @@ async def refresh_access_token(refresh_data: RefreshTokenRequest, db: Session = 
         refresh_payload = {"sub": user.email}
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(data=_versioned(db, token_data), expires_delta=access_token_expires)
-    refresh_token = create_refresh_token(data=_versioned(db, refresh_payload))
+    # The rotated tokens stay in the same session, so signing that session out ends them too.
+    sid = payload.get("sid") or uuid.uuid4().hex
+    access_token = create_access_token(data=_versioned(db, token_data, sid), expires_delta=access_token_expires)
+    refresh_token = create_refresh_token(data=_versioned(db, refresh_payload, sid))
 
     return {
         "access_token": access_token,
@@ -292,19 +300,29 @@ async def refresh_access_token(refresh_data: RefreshTokenRequest, db: Session = 
 
 @router.post("/logout")
 async def logout(token: str = Depends(oauth2_scheme), db: Session = Depends(get_main_db)):
-    """Revoke every session of the caller's account: their access and refresh tokens stop working."""
+    """Sign out the caller's session: its access and refresh tokens stop working, other devices keep theirs."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         payload = {}
     email = payload.get("sub")
-    if payload.get("type") != "internal" or not email or payload.get("tv", 0) != current_version(db, email):
+    sid = payload.get("sid")
+    if (
+        payload.get("type") != "internal"
+        or not email
+        or payload.get("tv", 0) != current_version(db, email)
+        or is_session_revoked(db, sid)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    bump_version(db, email)
+    if sid:
+        revoke_session(db, sid)
+    else:
+        # A token from before sessions had ids cannot be singled out: end every session of the account.
+        bump_version(db, email)
     db.commit()
     return {"message": "Signed out."}
 
@@ -637,6 +655,7 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
 
     # Generate tokens (same as normal login)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    sid = uuid.uuid4().hex
 
     if tenant_user:
         # External user
@@ -644,13 +663,13 @@ async def verify_magic_link(token: str = Query(...), db: Session = Depends(get_m
         if tenant.tenant_id != 1:
             token_data["tenant_key"] = tenant.db_connection_key
         refresh_payload = {"sub": tenant_user.email, "tenant_key": tenant.db_connection_key}
-        access_token = create_access_token(data=_versioned(db, token_data), expires_delta=access_token_expires)
-        refresh_token = create_refresh_token(data=_versioned(db, refresh_payload))
+        access_token = create_access_token(data=_versioned(db, token_data, sid), expires_delta=access_token_expires)
+        refresh_token = create_refresh_token(data=_versioned(db, refresh_payload, sid))
     else:
         # Internal user
         token_data = {"sub": internal_user.email, "type": "internal"}
-        access_token = create_access_token(data=_versioned(db, token_data), expires_delta=access_token_expires)
-        refresh_token = create_refresh_token(data=_versioned(db, {"sub": internal_user.email}))
+        access_token = create_access_token(data=_versioned(db, token_data, sid), expires_delta=access_token_expires)
+        refresh_token = create_refresh_token(data=_versioned(db, {"sub": internal_user.email}, sid))
 
     return {
         "access_token": access_token,

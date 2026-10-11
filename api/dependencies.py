@@ -18,7 +18,7 @@ from bd.dependencies import get_db, get_main_db, get_primefire_session, is_prime
 from bd.multitenancy import ConnectionManager
 from core.azure_token import looks_like_azure_token, validate_azure_token
 from core.config import settings
-from core.session_version import current_version
+from core.session_version import current_version, is_session_revoked
 from models.employees import Employees
 from models.tenants import TenantEmployees, Tenants
 
@@ -83,8 +83,10 @@ async def simple_token_validator(
     try:
         payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") == "internal":
-            # A bump of the account's session version (logout, password reset, tenant move) revokes older tokens.
-            if payload.get("tv", 0) != current_version(main_db, payload.get("sub", "")):
+            # Revoked by a bump of the account's session version (password reset, tenant move) or signed out.
+            if payload.get("tv", 0) != current_version(main_db, payload.get("sub", "")) or is_session_revoked(
+                main_db, payload.get("sid")
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Session expired. Please sign in again.",

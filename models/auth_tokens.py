@@ -15,6 +15,16 @@ class UserSessionVersion(SQLModel, table=True):
     token_version: int = Field(default=0)
 
 
+class RevokedSession(SQLModel, table=True):
+    """A single signed-out session (claim `sid`); its access and refresh tokens stop working."""
+
+    __tablename__ = "revoked_sessions"
+    __table_args__ = {"schema": "dbo"}
+
+    sid: str = Field(max_length=64, primary_key=True)
+    revoked_at: datetime = Field(default_factory=utcnow)
+
+
 class AuthToken(SQLModel, table=True):
     """Tokens para password recovery y magic link."""
 

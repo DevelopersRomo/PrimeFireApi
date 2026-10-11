@@ -550,3 +550,39 @@ def test_external_user_logout_revokes_their_session_too(client: TestClient, loca
     assert client.post("/auth/logout", headers={"Authorization": f"Bearer {access}"}).status_code == 200
 
     assert client.post("/auth/refresh", json={"refresh_token": refresh}).status_code == 401
+
+
+def test_logout_signs_out_only_that_session(client: TestClient, db_session: Session):
+    """Signing out on one device must not log the user out of their other devices."""
+    laptop_access, laptop_refresh = _internal_session(client, db_session)
+    phone = client.post("/auth/token", data={"username": "session@example.com", "password": "pw"})
+    phone_access, phone_refresh = phone.json()["access_token"], phone.json()["refresh_token"]
+
+    assert client.post("/auth/logout", headers={"Authorization": f"Bearer {laptop_access}"}).status_code == 200
+
+    _assert_session_is_dead(client, laptop_access, laptop_refresh)
+    assert _countries_status(client, phone_access) == 200
+    assert client.post("/auth/refresh", json={"refresh_token": phone_refresh}).status_code == 200
+
+
+def test_a_refreshed_session_is_still_the_same_session_for_logout(client: TestClient, db_session: Session):
+    access, refresh = _internal_session(client, db_session)
+    rotated = client.post("/auth/refresh", json={"refresh_token": refresh}).json()
+
+    client.post("/auth/logout", headers={"Authorization": f"Bearer {rotated['access_token']}"})
+
+    _assert_session_is_dead(client, rotated["access_token"], rotated["refresh_token"])
+    # the pre-refresh tokens belong to the same session
+    _assert_session_is_dead(client, access, refresh)
+
+
+def test_logout_with_a_token_that_has_no_session_id_ends_every_session(client: TestClient, db_session: Session):
+    """Tokens issued before session ids existed cannot be singled out, so they fall back to revoking all."""
+    from api.auth import create_access_token
+
+    _, other_refresh = _internal_session(client, db_session)
+    legacy = create_access_token({"sub": "session@example.com", "type": "internal"})
+
+    assert client.post("/auth/logout", headers={"Authorization": f"Bearer {legacy}"}).status_code == 200
+
+    assert client.post("/auth/refresh", json={"refresh_token": other_refresh}).status_code == 401

@@ -1,9 +1,10 @@
 import pytest
+from sqlalchemy import update
 from sqlmodel import select
 
 from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
-from models.inventory import Warehouses
+from models.inventory import InventoryMovementApprovals, InventoryMovements, Warehouses
 from models.products import Products
 from tests.conftest import create_test_record
 
@@ -159,6 +160,54 @@ def test_approve_executes_movement(client, auth_headers, db_session, product, wa
         json={"note": None},
     )
     assert again.status_code == 400, again.text
+
+
+def test_stale_approval_does_not_execute_a_second_movement(
+    client, auth_headers, db_session, product, warehouse, monkeypatch
+):
+    from api import inventory
+
+    seed_stock(client, auth_headers, product, warehouse)
+    approval_data = request_output(client, auth_headers, product, warehouse).json()["approval"]
+    assign_roles(db_session, "test@example.com", ["Project Manager", "Business Proposals"])
+
+    get_pending = inventory.get_pending_approval_for_review
+
+    def return_stale_approval(db, approval_id, current_employee):
+        approval = get_pending(db, approval_id, current_employee)
+        db.execute(
+            update(InventoryMovementApprovals)
+            .where(InventoryMovementApprovals.approval_id == approval_id)
+            .values(status="APPROVED")
+        )
+        db.add(
+            InventoryMovements(
+                product_id=approval.product_id,
+                warehouse_id=approval.warehouse_id,
+                movement_type=approval.movement_type,
+                quantity=approval.quantity,
+                movement_date=approval.movement_date,
+                created_by=approval.requested_by,
+            )
+        )
+        db.commit()
+        return approval
+
+    monkeypatch.setattr(inventory, "get_pending_approval_for_review", return_stale_approval)
+    response = client.post(
+        f"/inventory/movement-approvals/{approval_data['approval_id']}/approve",
+        headers=auth_headers,
+        json={"note": None},
+    )
+
+    assert response.status_code == 409, response.text
+    out_movements = db_session.exec(
+        select(InventoryMovements).where(
+            InventoryMovements.product_id == product.id,
+            InventoryMovements.movement_type == "OUT",
+        )
+    ).all()
+    assert len(out_movements) == 1
 
 
 def test_reject_does_not_execute_movement(client, auth_headers, db_session, product, warehouse):

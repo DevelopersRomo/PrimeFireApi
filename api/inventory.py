@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import String, cast, func, or_
+from sqlalchemy import String, cast, func, or_, update
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -779,6 +779,7 @@ def execute_inventory_movement(
     product: Products,
     warehouse: Warehouses | None,
     app_url: str | None = None,
+    commit: bool = True,
 ) -> InventoryMovements:
     data = movement.model_dump(exclude={"min_stock"})
     data["movement_type"] = movement_type
@@ -787,13 +788,19 @@ def execute_inventory_movement(
     db_movement = InventoryMovements(**data)
 
     db.add(db_movement)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(db_movement)
 
     if movement_type == "IN" and movement.min_stock is not None:
         product.min_stock = movement.min_stock
         db.add(product)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(product)
 
     if warehouse:
@@ -1061,14 +1068,44 @@ def approve_movement_approval(
 
     product, warehouse = validate_movement_and_load(db, movement, approval.movement_type, current_employee)
 
-    db_movement = execute_inventory_movement(
-        movement, approval.movement_type, approval.requested_by, background_tasks, db, product, warehouse, app_url
+    reviewed_at = datetime.now()  # noqa: DTZ005
+    claim = db.execute(
+        update(InventoryMovementApprovals)
+        .where(
+            InventoryMovementApprovals.approval_id == approval_id,
+            InventoryMovementApprovals.status == "PENDING",
+        )
+        .values(
+            status="APPROVED",
+            review_note=(review.note or "").strip() or None,
+            reviewed_by=current_employee.display_name,
+            reviewed_at=reviewed_at,
+        )
     )
+    if claim.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Movement approval is no longer pending")
+
+    try:
+        db_movement = execute_inventory_movement(
+            movement,
+            approval.movement_type,
+            approval.requested_by,
+            background_tasks,
+            db,
+            product,
+            warehouse,
+            app_url,
+            commit=False,
+        )
+    except Exception:
+        db.rollback()
+        raise
 
     approval.status = "APPROVED"
     approval.review_note = (review.note or "").strip() or None
     approval.reviewed_by = current_employee.display_name
-    approval.reviewed_at = datetime.now()  # noqa: DTZ005
+    approval.reviewed_at = reviewed_at
     approval.movement_id = db_movement.movement_id
 
     db.add(approval)
@@ -1097,12 +1134,23 @@ def reject_movement_approval(
 ):
     approval = get_pending_approval_for_review(db, approval_id, current_employee)
 
-    approval.status = "REJECTED"
-    approval.review_note = (review.note or "").strip() or None
-    approval.reviewed_by = current_employee.display_name
-    approval.reviewed_at = datetime.now()  # noqa: DTZ005
+    claim = db.execute(
+        update(InventoryMovementApprovals)
+        .where(
+            InventoryMovementApprovals.approval_id == approval_id,
+            InventoryMovementApprovals.status == "PENDING",
+        )
+        .values(
+            status="REJECTED",
+            review_note=(review.note or "").strip() or None,
+            reviewed_by=current_employee.display_name,
+            reviewed_at=datetime.now(),  # noqa: DTZ005
+        )
+    )
+    if claim.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Movement approval is no longer pending")
 
-    db.add(approval)
     db.commit()
     db.refresh(approval)
 

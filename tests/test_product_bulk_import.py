@@ -9,8 +9,9 @@ import api.product_bulk_imports as bulk_api
 from core.datetime_utils import utcnow
 from models.product_bulk_imports import ProductBulkImportRows, ProductBulkImports
 from models.products import ProductCategories, ProductFamilies, Products
+from services.products import excel
 from services.products.bulk_import import run_analysis, run_apply
-from services.products.excel import COLUMNS
+from services.products.excel import COLUMNS, InvalidWorkbookError, count_data_rows
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -921,3 +922,57 @@ def test_export_neutralizes_formulas_and_round_trip_stays_unchanged(
     assert job.update_count == 0, [row.message for row in rows_of(db_session, job)]
     assert job.unchanged_count == 2
     assert job.error_count == 0
+
+
+# ----------------------------
+# Resource limits
+# ----------------------------
+def _write_workbook(path, populate) -> str:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Products"
+    sheet.append(COLUMNS)
+    populate(sheet)
+    workbook.save(path)
+    return str(path)
+
+
+def test_a_sheet_declaring_far_more_rows_than_supported_is_refused_without_scanning_it(tmp_path):
+    path = _write_workbook(tmp_path / "sparse.xlsx", lambda sheet: sheet.cell(row=1_000_000, column=2, value="x"))
+
+    with pytest.raises(InvalidWorkbookError, match="rows"):
+        count_data_rows(path)
+
+
+def test_an_archive_that_expands_beyond_the_limit_is_refused(tmp_path, monkeypatch):
+    path = _write_workbook(tmp_path / "ok.xlsx", lambda sheet: sheet.append(["", "", "", "P", "", "Product"]))
+    monkeypatch.setattr(excel, "MAX_UNCOMPRESSED_BYTES", 1_000)
+
+    with pytest.raises(InvalidWorkbookError, match="too large"):
+        count_data_rows(path)
+
+
+def test_the_upload_parses_the_workbook_off_the_event_loop(client, auth_headers, employee, monkeypatch):
+    import asyncio
+
+    on_loop: list[bool] = []
+    original = bulk_api.count_data_rows
+
+    def spy(path):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return original(path)
+
+    monkeypatch.setattr(bulk_api, "count_data_rows", spy)
+
+    response = client.post(
+        "/products/bulk-imports",
+        files={"file": ("products.xlsx", build_file([{"name": "P", "type": "Product"}]), XLSX_MEDIA_TYPE)},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 202
+    assert on_loop == [False]

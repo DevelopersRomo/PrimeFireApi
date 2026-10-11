@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Qu
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import func
 from sqlmodel import Session, select
+from starlette.concurrency import run_in_threadpool
 
 from api.dependencies import get_current_employee_with_permissions, require_authentication
 from api.products import build_product_filters, product_to_read
@@ -190,7 +191,7 @@ async def start_bulk_import(
     stored_path.write_bytes(raw)
 
     try:
-        row_count = count_data_rows(str(stored_path))
+        row_count = await run_in_threadpool(count_data_rows, str(stored_path))
     except InvalidWorkbookError as exc:
         stored_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc

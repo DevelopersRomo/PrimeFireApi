@@ -7,6 +7,7 @@ name — but a missing required header rejects the file outright.
 
 import io
 import json
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -69,6 +70,12 @@ PRODUCT_TYPES = ["Product", "Service"]
 BOOLEAN_VALUES = ["TRUE", "FALSE"]
 # Dropdowns cover this many rows past the data so appended rows keep them.
 DROPDOWN_HEADROOM = 500
+
+# An upload's own claims (declared dimensions, compressed parts) cannot be trusted, so every read is bounded.
+MAX_SHEET_ROWS = 50_000  # header and blank rows included; the importer's data-row limit is far lower
+MAX_SHEET_COLS = 100
+MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 500
 
 
 class InvalidWorkbookError(Exception):
@@ -211,7 +218,7 @@ def count_data_rows(path: str) -> int:
     try:
         sheet = _data_sheet(workbook)
         total = 0
-        for row in sheet.iter_rows(min_row=2, values_only=True):
+        for row in _data_rows(sheet):
             if any(value is not None and str(value).strip() for value in row):
                 total += 1
         return total
@@ -226,7 +233,7 @@ def parse_import_workbook(path: str) -> ParsedFile:
         header = _read_header(sheet)
 
         parsed = ParsedFile(**_read_meta(workbook))
-        for excel_row, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+        for excel_row, row in enumerate(_data_rows(sheet), start=2):
             if not any(value is not None and str(value).strip() for value in row):
                 continue
             values = {
@@ -259,11 +266,33 @@ def build_error_report(rows: list[Any]) -> bytes:
     return workbook_to_bytes(workbook)
 
 
+def _data_rows(sheet):
+    """Rows after the header, never reading past the supported sheet extent."""
+    declared_rows = sheet.max_row
+    if declared_rows and declared_rows > MAX_SHEET_ROWS:
+        raise InvalidWorkbookError(
+            f"The sheet declares {declared_rows} rows; the supported maximum is {MAX_SHEET_ROWS}."
+        )
+    return sheet.iter_rows(min_row=2, max_row=MAX_SHEET_ROWS, max_col=MAX_SHEET_COLS, values_only=True)
+
+
+def _assert_archive_is_bounded(path: str) -> None:
+    """Refuse a zip whose parts expand far beyond what a catalog needs; a truncated zip falls through."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+    except zipfile.BadZipFile:
+        return
+    if len(entries) > MAX_ARCHIVE_ENTRIES or sum(entry.file_size for entry in entries) > MAX_UNCOMPRESSED_BYTES:
+        raise InvalidWorkbookError("The workbook is too large once unpacked. Remove unused sheets and formatting.")
+
+
 def _load(path: str) -> Workbook:
     size = Path(path).stat().st_size
     if size == 0:
         raise InvalidWorkbookError("The uploaded file is empty. Export the catalog again.")
 
+    _assert_archive_is_bounded(path)
     try:
         return load_workbook(path, data_only=True, read_only=True)
     except Exception as exc:
@@ -315,7 +344,7 @@ def _data_sheet(workbook: Workbook):
 
 
 def _read_header(sheet) -> dict[str, int]:
-    header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    header_row = next(sheet.iter_rows(min_row=1, max_row=1, max_col=MAX_SHEET_COLS, values_only=True), None)
     if not header_row:
         raise InvalidWorkbookError("The sheet has no header row.")
 

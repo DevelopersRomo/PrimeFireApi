@@ -475,3 +475,33 @@ def test_notify_hours(client, db_session: Session, test_customer, mock_asyncio_r
         response = client.post("/api/v1/timesheet/notify-hours?notification_type=regular")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["success"] is True
+
+
+def test_exports_neutralize_formulas_in_user_text(client, db_session: Session, test_customer):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    punch = create_punch(
+        db_session,
+        1,
+        test_customer.customer_id,
+        TimeSheetPunchStatusEnum.CLOSED.value,
+        "2023-01-02 08:00:00",
+        "2023-01-02 16:00:00",
+        480,
+    )
+    punch.note = '=HYPERLINK("http://evil.test","x")'
+    db_session.add(punch)
+    db_session.commit()
+
+    for url, sheet_name in (
+        ("/api/v1/timesheet/export?view=week&start_date=2023-01-01&end_date=2023-01-07", "timesheet"),
+        ("/api/v1/timesheet/admin/export?start_date=2023-01-01&end_date=2023-01-07", "timesheet_admin"),
+    ):
+        response = client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        sheet = load_workbook(BytesIO(response.content))[sheet_name]
+        notes = [row[-1].value for row in sheet.iter_rows(min_row=2)]
+        assert notes == ['\'=HYPERLINK("http://evil.test","x")'], url
+        assert sheet.cell(row=2, column=sheet.max_column).data_type == "s"

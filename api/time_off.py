@@ -15,6 +15,7 @@ from api.dependencies import (
 )
 from bd.dependencies import get_db
 from core.config import settings
+from core.spreadsheet import neutralize_formula
 from models.employees import Employees
 from models.time_off import (
     AbsenceTypeEnum,
@@ -996,7 +997,8 @@ def export_requests_report(
     )
     for item in rows:
         writer.writerow(
-            [
+            neutralize_formula(value)
+            for value in [
                 item.request_id,
                 item.employee_id,
                 item.absence_type,

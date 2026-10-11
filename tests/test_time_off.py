@@ -1155,3 +1155,19 @@ def test_editing_other_fields_of_an_old_request_still_works(
 
     response = client.patch(f"/api/v1/requests/{old.request_id}", json={"reason": "Fixed typo"})
     assert response.status_code == 200
+
+
+def test_export_requests_report_neutralizes_formulas(
+    override_deps, client: TestClient, emp_user: Employees, time_off_request: TimeOffRequest, db_session: Session
+):
+    override_deps(emp_user, {})
+    time_off_request.reason = '=HYPERLINK("http://evil.test","x")'
+    time_off_request.review_notes = "@SUM(A1)"
+    db_session.add(time_off_request)
+    db_session.commit()
+
+    response = client.get("/api/v1/reports/export")
+
+    row = next(csv.DictReader(StringIO(response.text)))
+    assert row["reason"] == '\'=HYPERLINK("http://evil.test","x")'
+    assert row["review_notes"] == "'@SUM(A1)"

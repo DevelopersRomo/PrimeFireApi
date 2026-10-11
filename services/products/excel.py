@@ -17,6 +17,8 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
+from core.spreadsheet import neutralize_formula, restore_neutralized
+
 TEMPLATE_VERSION = "1"
 
 DATA_SHEET = "Products"
@@ -178,7 +180,7 @@ def _cell(value: Any) -> Any:
     every round trip and looks edited when nobody touched it.
     """
     if isinstance(value, str):
-        return value.replace("\r\n", "\n").replace("\r", "\n")
+        return neutralize_formula(value.replace("\r\n", "\n").replace("\r", "\n"))
     return value
 
 
@@ -227,7 +229,10 @@ def parse_import_workbook(path: str) -> ParsedFile:
         for excel_row, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
             if not any(value is not None and str(value).strip() for value in row):
                 continue
-            values = {column: row[index] if index < len(row) else None for column, index in header.items()}
+            values = {
+                column: restore_neutralized(row[index]) if index < len(row) else None
+                for column, index in header.items()
+            }
             parsed.rows.append(ParsedRow(row_number=excel_row, values=values))
         return parsed
     finally:

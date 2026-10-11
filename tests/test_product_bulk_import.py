@@ -898,3 +898,26 @@ def test_import_never_writes_stock_quantity(db_session, session_factory, tmp_pat
     db_session.refresh(product)
     assert product.name == "Renamed"
     assert product.stock_quantity == 42
+
+
+def test_export_neutralizes_formulas_and_round_trip_stays_unchanged(
+    client, auth_headers, db_session, session_factory, tmp_path, taxonomy
+):
+    """A name that Excel would run as a formula is written as text, and re-importing it is not an edit."""
+    family, _ = taxonomy
+    make_product(db_session, name='=HYPERLINK("http://evil.test","x")', code="F-1", unit="pieza", family_id=family.id)
+    make_product(db_session, name="-5 mm spacer", code="F-2", unit="pieza", family_id=family.id)
+
+    exported = client.get("/products/export", headers=auth_headers)
+    assert exported.status_code == 200, exported.text
+
+    sheet = load_workbook(io.BytesIO(exported.content))["Products"]
+    names = {row[COLUMNS.index("name")].value for row in sheet.iter_rows(min_row=2)}
+    assert names == {'\'=HYPERLINK("http://evil.test","x")', "'-5 mm spacer"}
+    assert all(row[COLUMNS.index("name")].data_type == "s" for row in sheet.iter_rows(min_row=2))
+
+    job = analyze(db_session, session_factory, exported.content, tmp_path)
+
+    assert job.update_count == 0, [row.message for row in rows_of(db_session, job)]
+    assert job.unchanged_count == 2
+    assert job.error_count == 0

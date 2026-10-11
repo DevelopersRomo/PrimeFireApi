@@ -18,6 +18,7 @@ from api.dependencies import (
 )
 from bd.dependencies import get_db
 from core.config import settings
+from core.spreadsheet import neutralize_formula
 from helpers.date_helpers import calculate_regular_overtime, format_hours_minutes
 from models.customers import Customers
 from models.employees import Employees
@@ -753,7 +754,8 @@ def export_timesheet(
             else None
         )
         sheet.append(
-            [
+            neutralize_formula(value)
+            for value in [
                 local_day,
                 punch.clock_in_at,
                 punch.clock_out_at,
@@ -1057,7 +1059,8 @@ def export_punches_admin(
         )
         employee_name = " ".join(filter(None, [employee.first_name, employee.last_name])) if employee else None
         sheet.append(
-            [
+            neutralize_formula(value)
+            for value in [
                 employee_name,
                 local_day,
                 punch.clock_in_at,

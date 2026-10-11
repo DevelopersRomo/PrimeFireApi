@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from api.dependencies import require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
-from core.file_storage import attachment_response, confine_to
+from core.file_storage import MIB, attachment_response, confine_to, read_upload
 from models.customers import CustomerAttachments, Customers
 from schemas.customers import CustomerAttachment, CustomerEmployee
 
@@ -37,6 +37,8 @@ else:
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
+
+MAX_UPLOAD_BYTES = 25 * MIB
 
 
 def resolve_upload_root() -> Path:
@@ -133,8 +135,8 @@ def create_attachment(
         unique = f"{uuid4().hex}{ext}"
         storage_path = base_dir / unique
 
+        content = read_upload(file, MAX_UPLOAD_BYTES)
         with Path(storage_path).open("wb") as out:  # noqa: FURB103
-            content = file.file.read()
             out.write(content)
 
         rel_path = str(storage_path).replace("\\", "/")

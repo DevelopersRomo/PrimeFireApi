@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
-from core.file_storage import attachment_response
+from core.file_storage import MIB, attachment_response, read_upload
 from models.products import ProductAttachments, Products
 from schemas.products import ProductAttachment, ProductEmployee
 
@@ -36,6 +36,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 router = APIRouter()
 
 MAX_IMAGES_PER_PRODUCT = 3
+MAX_UPLOAD_BYTES = 20 * MIB
 ALLOWED_EXTENSIONS = {".heic", ".heif", ".png", ".jpg", ".jpeg"}
 HEIC_EXTENSIONS = {".heic", ".heif"}
 
@@ -147,7 +148,7 @@ def create_attachment(
     base_dir = UPLOAD_DIR / str(product_id)
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_bytes = file.file.read()
+    raw_bytes = read_upload(file, MAX_UPLOAD_BYTES)
 
     if original_ext in HEIC_EXTENSIONS:
         raw_bytes = convert_heic_to_png(raw_bytes)

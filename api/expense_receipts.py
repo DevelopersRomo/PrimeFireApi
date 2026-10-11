@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 from api.dependencies import get_current_employee, require_module_permission
 from bd.dependencies import get_db, get_session_factory
 from core.datetime_utils import utcnow
-from core.file_storage import attachment_response
+from core.file_storage import attachment_response, read_upload
 from models.employees import Employees
 from models.expenses import (
     ExpenseReceiptExtractions,
@@ -258,12 +258,7 @@ def upload_receipt(
             detail=f"Unsupported file type '{suffix}'. Upload a PDF or an image.",
         )
 
-    content = file.file.read()
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Receipt exceeds the 20 MB limit",
-        )
+    content = read_upload(file, MAX_UPLOAD_BYTES)
 
     base_dir = UPLOAD_DIR / str(report_id)
     base_dir.mkdir(parents=True, exist_ok=True)

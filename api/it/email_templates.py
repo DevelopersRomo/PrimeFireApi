@@ -12,7 +12,7 @@ from api.it.dependencies import get_tenant_id
 from bd.dependencies import get_db
 from core.config import settings
 from core.datetime_utils import utcnow
-from core.file_storage import attachment_response
+from core.file_storage import MAX_LOGO_BYTES, attachment_response, read_upload
 from models.customers import Customers
 from models.it.email_templates import ITEmailCustomerTemplate, ITEmailDefault
 from schemas.it.email_templates import (
@@ -47,8 +47,9 @@ def _save_logo(logo_file: UploadFile, previous_path: str | None) -> str:
             detail="Invalid file type. Only PNG, JPG, JPEG, SVG and WEBP files are allowed.",
         )
 
+    content = read_upload(logo_file, MAX_LOGO_BYTES)
     file_path = LOGO_UPLOAD_DIR / f"{uuid.uuid4()}{file_extension}"
-    file_path.write_bytes(logo_file.file.read())
+    file_path.write_bytes(content)
 
     if previous_path and Path(previous_path).exists():
         Path(previous_path).unlink(missing_ok=True)

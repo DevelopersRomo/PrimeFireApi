@@ -95,3 +95,32 @@ def test_logo_outside_upload_dir_is_neither_served_nor_deleted(
     assert "SECRET" not in served.text
     assert replaced.status_code == 200
     assert outside.exists()
+
+
+def test_template_logo_over_the_size_limit_is_refused_and_not_stored(
+    client, auth_headers, template, logo_dir, monkeypatch
+) -> None:
+    monkeypatch.setattr(api.it.templates, "MAX_LOGO_BYTES", 10)
+
+    response = client.post(
+        f"/it/templates/{template.template_id}/logo",
+        files={"logo_file": ("logo.png", io.BytesIO(b"x" * 11), "image/png")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 413
+    assert list(logo_dir.iterdir()) == []
+
+
+def test_email_template_logo_over_the_size_limit_is_refused_and_not_stored(tmp_path, monkeypatch) -> None:
+    import api.it.email_templates as email_api
+    from fastapi import HTTPException, UploadFile
+
+    monkeypatch.setattr(email_api, "MAX_LOGO_BYTES", 10)
+    monkeypatch.setattr(email_api, "LOGO_UPLOAD_DIR", tmp_path)
+
+    with pytest.raises(HTTPException) as caught:
+        email_api._save_logo(UploadFile(io.BytesIO(b"x" * 11), filename="logo.png"), None)
+
+    assert caught.value.status_code == 413
+    assert list(tmp_path.iterdir()) == []

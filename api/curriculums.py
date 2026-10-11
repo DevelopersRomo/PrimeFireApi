@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from api.dependencies import require_authentication, require_module_permission
 from bd.dependencies import get_db
 from core.config import settings
-from core.file_storage import confine_to
+from core.file_storage import MIB, confine_to, read_upload
 from models.curriculums import Curriculums
 from models.jobs import Jobs
 from schemas.curriculums import Curriculum, CurriculumCreate, CurriculumUpdate
@@ -36,6 +36,8 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
 
+MAX_UPLOAD_BYTES = 10 * MIB
+
 
 def _confined_cv_path(stored_path: str) -> Path:
     """Stored paths are relative to the CWD (local) or absolute (prod): resolve, then confine to UPLOAD_DIR."""
@@ -52,8 +54,8 @@ def save_upload_file(upload_file: UploadFile) -> str:
     file_path = UPLOAD_DIR / unique_filename
 
     # Save the file
+    content = read_upload(upload_file, MAX_UPLOAD_BYTES)
     with Path(file_path).open("wb") as buffer:  # noqa: FURB103
-        content = upload_file.file.read()
         buffer.write(content)
 
     # Return path to store in DB

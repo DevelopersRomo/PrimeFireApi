@@ -3,8 +3,19 @@
 import mimetypes
 import pathlib
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
+
+MIB = 1024 * 1024
+MAX_LOGO_BYTES = 5 * MIB
+
+
+def read_upload(upload: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload into memory, stopping one byte past the limit so an oversized body is never fully held."""
+    content = upload.file.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"File exceeds the {max_bytes // MIB} MiB limit")
+    return content
 
 
 def confine_to(root: str | pathlib.Path, stored_path: str | pathlib.Path) -> pathlib.Path:

@@ -95,3 +95,29 @@ def test_attachment_response_uses_detected_content_type(tmp_path, content, decla
     assert response.media_type == expected
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["content-disposition"].startswith("attachment;")
+
+
+def test_read_upload_returns_content_within_the_limit() -> None:
+    import io
+
+    from fastapi import UploadFile
+
+    from core.file_storage import read_upload
+
+    assert read_upload(UploadFile(io.BytesIO(b"x" * 10), filename="a.bin"), 10) == b"x" * 10
+
+
+def test_read_upload_refuses_more_than_the_limit_without_reading_it_all() -> None:
+    import io
+
+    from fastapi import UploadFile
+
+    from core.file_storage import read_upload
+
+    source = io.BytesIO(b"x" * 1000)
+
+    with pytest.raises(HTTPException) as caught:
+        read_upload(UploadFile(source, filename="a.bin"), 10)
+
+    assert caught.value.status_code == 413
+    assert source.tell() == 11  # one byte past the limit, never the whole body

@@ -11,7 +11,7 @@ from api.dependencies import require_module_permission
 from api.it.dependencies import get_tenant_id
 from bd.dependencies import get_db
 from core.config import settings
-from core.file_storage import attachment_response, confine_to
+from core.file_storage import MAX_LOGO_BYTES, attachment_response, confine_to, read_upload
 from models.it.templates import ITPdfTemplates
 from schemas.it.templates import ItPdfTemplateCreate, ItPdfTemplateRead, ItPdfTemplateUpdate
 from schemas.pagination import PaginatedResponse
@@ -143,9 +143,10 @@ def upload_template_logo(
             detail="Invalid file type. Only PNG, JPG, JPEG, SVG and WEBP files are allowed.",
         )
 
+    content = read_upload(logo_file, MAX_LOGO_BYTES)
     unique_filename = f"{uuid.uuid4()}{file_extension}"
     file_path = LOGO_UPLOAD_DIR / unique_filename
-    file_path.write_bytes(logo_file.file.read())
+    file_path.write_bytes(content)
 
     # Remove the previously uploaded file if the template had one.
     previous = template.logo_url

@@ -11,7 +11,7 @@ from api.dependencies import get_current_employee_with_permissions
 from api.tickets import ensure_ticket_visible
 from bd.dependencies import get_db
 from core.datetime_utils import utcnow
-from core.file_storage import attachment_response, confine_to
+from core.file_storage import MIB, attachment_response, confine_to, read_upload
 from models.ticket_messages import TicketAttachments
 from models.tickets import Tickets
 from schemas.ticket_messages import TicketAttachment
@@ -37,6 +37,8 @@ else:
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
+
+MAX_UPLOAD_BYTES = 25 * MIB
 
 
 def _confined_path(file_path: str) -> Path:
@@ -130,8 +132,8 @@ def create_attachment(
         storage_path = base_dir / unique
 
         # write file to disk
+        content = read_upload(file, MAX_UPLOAD_BYTES)
         with Path(storage_path).open("wb") as out:  # noqa: FURB103
-            content = file.file.read()
             out.write(content)
         # Store the path that can be used to retrieve it later (relative to CWD or absolute)
         rel_path = str(storage_path).replace("\\", "/")

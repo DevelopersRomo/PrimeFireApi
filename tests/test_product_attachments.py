@@ -49,3 +49,26 @@ def test_product_attachment_delete_requires_products_can_delete(
     assert stored_file.exists()
     db_session.expire_all()
     assert db_session.get(ProductAttachments, attachment.product_attachment_id) is not None
+
+
+def test_product_attachment_over_the_size_limit_is_refused_and_not_stored(
+    client, auth_headers, db_session, permission_override, monkeypatch, tmp_path
+):
+    import api.product_attachments as attachments_api
+
+    permission_override("products", {"can_edit"})
+    monkeypatch.setattr(attachments_api, "MAX_UPLOAD_BYTES", 10)
+    monkeypatch.setattr(attachments_api, "UPLOAD_DIR", tmp_path / "uploads")
+    product = Products(name="Big Image Product", type="Product")
+    db_session.add(product)
+    db_session.commit()
+    db_session.refresh(product)
+
+    response = client.post(
+        f"/products/{product.id}/attachments",
+        files={"file": ("big.png", b"x" * 11, "image/png")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 413
+    assert list((tmp_path / "uploads").rglob("*.png")) == []

@@ -215,3 +215,24 @@ def test_customer_attachment_download_does_not_trust_declared_pdf_type(
     assert response.headers["content-type"] == "application/octet-stream"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["content-disposition"].startswith("attachment;")
+
+
+def test_customer_attachment_over_the_size_limit_is_refused_and_not_stored(
+    client: TestClient, db_session: Session, auth_headers: dict, monkeypatch, tmp_path
+):
+    import api.customer_attachments as attachments_api
+
+    monkeypatch.setattr(attachments_api, "MAX_UPLOAD_BYTES", 10)
+    monkeypatch.setattr(attachments_api, "resolve_upload_root", lambda: tmp_path)
+    customer = create_test_record(
+        db_session, Customers, CustomerType="commercial", CompanyName="Big", FirstName="Bob", CreatedBy=1
+    )
+
+    response = client.post(
+        f"/customers/{customer.customer_id}/attachments",
+        files={"file": ("big.txt", b"x" * 11, "text/plain")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 413
+    assert list(tmp_path.rglob("*.txt")) == []

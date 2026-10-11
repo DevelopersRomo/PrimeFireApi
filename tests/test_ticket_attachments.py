@@ -189,3 +189,21 @@ def test_delete_attachment_never_unlinks_outside_upload_root(
     response = client.delete(f"/attachments/{att.ticket_attachment_id}", headers=auth_headers)
     assert response.status_code == 200
     assert outside.exists()
+
+
+def test_ticket_attachment_over_the_size_limit_is_refused_and_not_stored(
+    client: TestClient, auth_headers: dict, test_ticket: Tickets, auth_overrides, monkeypatch, tmp_path
+):
+    import api.ticket_attachments as attachments_api
+
+    monkeypatch.setattr(attachments_api, "MAX_UPLOAD_BYTES", 10)
+    monkeypatch.setattr(attachments_api, "UPLOAD_DIR", tmp_path)
+
+    response = client.post(
+        f"/tickets/{test_ticket.ticket_id}/attachments",
+        files={"file": ("big.txt", b"x" * 11, "text/plain")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 413
+    assert list(tmp_path.rglob("*.txt")) == []

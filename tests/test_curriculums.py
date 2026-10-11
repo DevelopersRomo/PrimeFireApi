@@ -313,3 +313,24 @@ def test_upload_then_download_with_relative_upload_dir(client, db_session: Sessi
 
     assert download.status_code == 200
     assert download.content == b"%PDF-relative"
+
+
+def test_resume_over_the_size_limit_is_refused_and_not_stored(
+    client, db_session: Session, auth_headers: dict, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(api.curriculums, "MAX_UPLOAD_BYTES", 10)
+    monkeypatch.setattr(api.curriculums, "UPLOAD_DIR", tmp_path)
+    job = Jobs(title="Dev", description="d", status="active")
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    response = client.post(
+        "/curriculums/upload",
+        data={"job_id": str(job.job_id), "name": "Big CV", "email": "big@example.com"},
+        files={"resume_file": ("cv.pdf", io.BytesIO(b"%PDF" + b"x" * 20), "application/pdf")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 413
+    assert list(tmp_path.rglob("*.pdf")) == []

@@ -1,11 +1,13 @@
 import logging
 import secrets
+import time
+from collections import deque
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import bcrypt
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -335,6 +337,13 @@ class MagicLinkRequest(BaseModel):
 
 
 TOKEN_EXPIRE_MINUTES = 15
+# A second link for the same email inside this window is silently skipped, so a stranger cannot
+# flood the owner's inbox or revoke the link they are holding.
+TOKEN_ISSUE_COOLDOWN = timedelta(seconds=60)
+ISSUE_IP_BUDGET = 10
+ISSUE_IP_WINDOW_SECONDS = 600
+# ponytail: per-process budget (the API runs one uvicorn process); move to a shared store if it scales out.
+_ISSUE_BUCKETS: dict[str, deque[float]] = {}
 
 
 def _generate_secure_token() -> str:
@@ -398,49 +407,82 @@ def _get_tenant_info(
     return _force_https(getattr(settings, "APP_URL", "")), "PrimeFire"
 
 
-@router.post("/password-recovery")
-async def password_recovery(request: PasswordRecoveryRequest, db: Session = Depends(get_main_db)):
-    """
-    Request a password recovery email.
-    Always returns 200 to prevent email enumeration attacks.
-    """
-    internal_user, tenant_user = _find_user_by_email(db, request.email)
+def _enforce_issue_budget(request: Request) -> None:
+    """Cap token-issuing requests per client IP; the last forwarded hop is the one our front end appended."""
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[-1].strip()
+    client_ip = forwarded.rsplit(":", 1)[0] if forwarded.count(":") == 1 else forwarded
+    client_ip = client_ip or (request.client.host if request.client else "unknown")
 
-    if not internal_user and not tenant_user:
-        # User not found — still return 200 to prevent enumeration
-        return {"message": "If the email exists in our system, you will receive a recovery link."}
+    now = time.monotonic()
+    cutoff = now - ISSUE_IP_WINDOW_SECONDS
+    for ip in [ip for ip, stamps in _ISSUE_BUCKETS.items() if not stamps or stamps[-1] <= cutoff]:
+        del _ISSUE_BUCKETS[ip]
+    bucket = _ISSUE_BUCKETS.setdefault(client_ip, deque())
+    while bucket and bucket[0] <= cutoff:
+        bucket.popleft()
+    if len(bucket) >= ISSUE_IP_BUDGET:
+        retry_after = max(1, int(ISSUE_IP_WINDOW_SECONDS - (now - bucket[0])))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests",
+            headers={"Retry-After": str(retry_after)},
+        )
+    bucket.append(now)
 
-    # Determine target user (prefer TenantEmployees for local auth users)
-    target_email = tenant_user.email if tenant_user else internal_user.email
 
-    # Invalidate any existing unused recovery tokens for this email
-    existing = db.exec(
+def _issue_token(db: Session, email: str, token_type: str) -> str | None:
+    """Revoke the email's open tokens of this type and mint a new one, or None while in the cooldown."""
+    now = utcnow()
+    open_tokens = db.exec(
         select(AuthToken).where(
-            AuthToken.email == target_email,
-            AuthToken.token_type == "password_recovery",
+            AuthToken.email == email,
+            AuthToken.token_type == token_type,
             AuthToken.used_at.is_(None),
+            AuthToken.expires_at > now,
         )
     ).all()
-    for tok in existing:
-        tok.used_at = utcnow()
-    db.add_all(existing)
-    db.commit()
-
-    # Create new token
+    if any(tok.created_at > now - TOKEN_ISSUE_COOLDOWN for tok in open_tokens):
+        return None
+    for tok in open_tokens:
+        tok.used_at = now
     token = _generate_secure_token()
-    expires_at = utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
-    auth_token = AuthToken(
-        email=target_email,
-        token=token,
-        token_type="password_recovery",
-        expires_at=expires_at,
+    db.add_all(open_tokens)
+    db.add(
+        AuthToken(
+            email=email, token=token, token_type=token_type, expires_at=now + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+        )
     )
-    db.add(auth_token)
     db.commit()
+    return token
 
-    # Send email with tenant-aware URL and title
-    app_url, tenant_title = _get_tenant_info(db, internal_user, tenant_user)
-    await send_password_recovery_email(to_email=target_email, token=token, app_url=app_url, tenant_title=tenant_title)
+
+@router.post("/password-recovery")
+async def password_recovery(
+    request: PasswordRecoveryRequest,
+    http_request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_main_db),
+):
+    """
+    Request a password recovery email.
+    Always answers the same 200, whether or not the account exists; the email goes out after the response.
+    """
+    _enforce_issue_budget(http_request)
+    internal_user, tenant_user = _find_user_by_email(db, request.email)
+
+    if internal_user or tenant_user:
+        # Prefer TenantEmployees for local auth users
+        target_email = tenant_user.email if tenant_user else internal_user.email
+        token = _issue_token(db, target_email, "password_recovery")
+        if token:
+            app_url, tenant_title = _get_tenant_info(db, internal_user, tenant_user)
+            background_tasks.add_task(
+                send_password_recovery_email,
+                to_email=target_email,
+                token=token,
+                app_url=app_url,
+                tenant_title=tenant_title,
+            )
 
     return {"message": "If the email exists in our system, you will receive a recovery link."}
 
@@ -496,51 +538,29 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
 
 
 @router.post("/magic-link")
-async def request_magic_link(request: MagicLinkRequest, db: Session = Depends(get_main_db)):
+async def request_magic_link(
+    request: MagicLinkRequest,
+    http_request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_main_db),
+):
     """
     Request a magic link email.
-    Always returns 200 to prevent email enumeration attacks.
+    Always answers the same 200, whether or not the account exists or can use a magic link.
     """
+    _enforce_issue_budget(http_request)
     internal_user, tenant_user = _find_user_by_email(db, request.email)
 
-    if not internal_user and not tenant_user:
-        return {"message": "If the email exists in our system, you will receive a login link."}
-
-    target_email = tenant_user.email if tenant_user else internal_user.email
-
-    # Only allow magic link for users with password_hash (local auth users)
+    # Only users with a password_hash (local auth) may use magic links
     has_local_auth = (tenant_user and tenant_user.password_hash) or (internal_user and internal_user.password_hash)
-    if not has_local_auth:
-        return {"message": "Si el email existe, recibirás un enlace de acceso."}
-
-    # Invalidate existing unused magic link tokens
-    existing = db.exec(
-        select(AuthToken).where(
-            AuthToken.email == target_email,
-            AuthToken.token_type == "magic_link",
-            AuthToken.used_at.is_(None),
-        )
-    ).all()
-    for tok in existing:
-        tok.used_at = utcnow()
-    db.add_all(existing)
-    db.commit()
-
-    # Create new token
-    token = _generate_secure_token()
-    expires_at = utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
-    auth_token = AuthToken(
-        email=target_email,
-        token=token,
-        token_type="magic_link",
-        expires_at=expires_at,
-    )
-    db.add(auth_token)
-    db.commit()
-
-    # Send email with tenant-aware URL and title
-    app_url, tenant_title = _get_tenant_info(db, internal_user, tenant_user)
-    await send_magic_link_email(to_email=target_email, token=token, app_url=app_url, tenant_title=tenant_title)
+    if has_local_auth:
+        target_email = tenant_user.email if tenant_user else internal_user.email
+        token = _issue_token(db, target_email, "magic_link")
+        if token:
+            app_url, tenant_title = _get_tenant_info(db, internal_user, tenant_user)
+            background_tasks.add_task(
+                send_magic_link_email, to_email=target_email, token=token, app_url=app_url, tenant_title=tenant_title
+            )
 
     return {"message": "If the email exists in our system, you will receive a login link."}
 

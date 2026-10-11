@@ -295,11 +295,20 @@ def test_magic_link_cannot_be_used_twice(
     assert "already been used" in response.json()["detail"].lower()
 
 
+def _age_tokens(db_session: Session, minutes: int) -> None:
+    """Make every stored token look `minutes` old, as if the cooldown had passed."""
+    for row in db_session.exec(select(AuthToken)).all():
+        row.created_at = utcnow() - timedelta(minutes=minutes)
+        db_session.add(row)
+    db_session.commit()
+
+
 def test_requesting_magic_link_invalidates_the_previous_one(
-    client: TestClient, local_auth_user: TenantEmployees, captured_emails: list[dict]
+    client: TestClient, local_auth_user: TenantEmployees, captured_emails: list[dict], db_session: Session
 ):
     email = local_auth_user.email
     first_token = _request_token(client, captured_emails, "/auth/magic-link", email)
+    _age_tokens(db_session, minutes=5)
     second_token = _request_token(client, captured_emails, "/auth/magic-link", email)
 
     assert client.get("/auth/magic-link/verify", params={"token": first_token}).status_code == 400
@@ -418,3 +427,52 @@ def test_login_verifies_the_password_off_the_event_loop(
         client.post("/auth/token", data={"username": email, "password": "pw"})
 
     assert on_loop == [False, False]
+
+
+@pytest.fixture(autouse=True)
+def _reset_issue_budget():
+    api.auth._ISSUE_BUCKETS.clear()
+    yield
+    api.auth._ISSUE_BUCKETS.clear()
+
+
+@pytest.mark.parametrize("endpoint", ["/auth/magic-link", "/auth/password-recovery"])
+def test_repeated_requests_within_the_cooldown_keep_the_first_link_alive(
+    client: TestClient, local_auth_user: TenantEmployees, captured_emails: list[dict], endpoint: str
+):
+    """A stranger re-asking for someone's link must neither spam them nor revoke the link they hold."""
+    email = local_auth_user.email
+    first = client.post(endpoint, json={"email": email})
+    second = client.post(endpoint, json={"email": email})
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert len(captured_emails) == 1
+    token = captured_emails[0]["token"]
+    if endpoint == "/auth/magic-link":
+        assert client.get("/auth/magic-link/verify", params={"token": token}).status_code == 200
+    else:
+        reset = client.post("/auth/reset-password", json={"token": token, "new_password": "brand_new_password"})
+        assert reset.status_code == 200
+
+
+@pytest.mark.parametrize("endpoint", ["/auth/magic-link", "/auth/password-recovery"])
+def test_issuance_is_capped_per_client_ip(client: TestClient, captured_emails: list[dict], endpoint: str):
+    statuses = [client.post(endpoint, json={"email": f"nobody{n}@example.com"}).status_code for n in range(12)]
+
+    assert statuses[: api.auth.ISSUE_IP_BUDGET] == [200] * api.auth.ISSUE_IP_BUDGET
+    assert statuses[api.auth.ISSUE_IP_BUDGET :] == [429] * (12 - api.auth.ISSUE_IP_BUDGET)
+
+
+def test_magic_link_answers_the_same_for_every_kind_of_account(
+    client: TestClient, db_session: Session, local_auth_user: TenantEmployees, captured_emails: list[dict]
+):
+    db_session.add(Employees(email="azure-only@example.com", azure_oid="oid-azure-only", title="Dev"))
+    db_session.commit()
+
+    bodies = [
+        client.post("/auth/magic-link", json={"email": email}).json()
+        for email in ("nobody@example.com", "azure-only@example.com", local_auth_user.email)
+    ]
+
+    assert bodies[0] == bodies[1] == bodies[2]

@@ -90,6 +90,8 @@ def _settle_amount(item: ExpenseReportItems) -> None:
             # so an approver multiplying the rate they can see reproduces the
             # figure to the cent.
             item.fx_rate = resolved.quantize(Decimal("0.000001"))
+        else:
+            item.fx_rate = Decimal(1)
     else:
         item.fx_rate = Decimal(1)
 

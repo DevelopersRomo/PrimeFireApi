@@ -177,6 +177,33 @@ def test_an_unreachable_provider_never_invents_a_rate(db_session: Session, monke
     assert item.amount_base == Decimal("204.76")
 
 
+def test_client_fx_rate_is_ignored_when_the_currency_lookup_fails(db_session: Session, monkeypatch):
+    _unavailable(monkeypatch)
+    owner = _employee(db_session, "fxuntrusted")
+    report = _report(db_session, owner, 39)
+
+    item = create_item(
+        report.report_id,
+        ExpenseItemCreate(currency="ZZZ", amount_original=Decimal(100), fx_rate=Decimal(50)),
+        db_session,
+        owner,
+        PLAIN_PERMISSIONS,
+    )
+    policies.replace_flags(db_session, db_session.get(ExpenseReports, report.report_id))
+
+    codes = [
+        flag.code
+        for flag in db_session.exec(
+            select(ExpenseReportFlags).where(ExpenseReportFlags.report_id == report.report_id)
+        ).all()
+    ]
+    assert item.fx_rate == Decimal(1)
+    assert item.amount_base == Decimal("100.00")
+    assert "FX_RATE_UNAVAILABLE" in codes
+    assert "fx_rate" not in ExpenseItemCreate.model_fields
+    assert "fx_rate" not in ExpenseItemUpdate.model_fields
+
+
 def test_an_unconverted_line_is_flagged_for_the_approver(db_session: Session, monkeypatch):
     _unavailable(monkeypatch)
     owner = _employee(db_session, "fxflag")

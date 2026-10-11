@@ -67,7 +67,6 @@ class ExpenseItemCreate(SQLModel):
     description: str | None = None
     currency: str = "USD"
     amount_original: Decimal = Decimal(0)
-    fx_rate: Decimal = Decimal(1)
     subtotal_amount: Decimal | None = None
     tax_amount: Decimal | None = None
     tip_amount: Decimal | None = None
@@ -85,7 +84,6 @@ class ExpenseItemUpdate(SQLModel):
     description: str | None = None
     currency: str | None = None
     amount_original: Decimal | None = None
-    fx_rate: Decimal | None = None
     subtotal_amount: Decimal | None = None
     tax_amount: Decimal | None = None
     tip_amount: Decimal | None = None

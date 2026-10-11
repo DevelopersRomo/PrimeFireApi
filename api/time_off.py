@@ -440,11 +440,22 @@ def create_request(
     tenant_key: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_employee=Depends(get_current_employee),
+    user_permissions: dict = Depends(get_current_employee_with_permissions),
 ):
     employee_id = payload.employee_id or current_employee.employee_id
     employee_exists = db.exec(select(Employees).where(Employees.employee_id == employee_id)).first()
     if not employee_exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    if (
+        employee_id != current_employee.employee_id
+        and not _has_timeoff_admin_actions(user_permissions)
+        and employee_exists.manager_employee_id != current_employee.employee_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to create a request for this employee",
+        )
 
     _assert_not_in_past(payload.start_date)
     total_days, total_hours = _calculate_totals(payload, _get_time_off_settings(db).allow_weekends)

@@ -312,6 +312,122 @@ def test_create_request_full_day(
 
 
 @patch("api.time_off.BackgroundTasks.add_task")
+def test_create_request_for_other_employee_requires_authorization(
+    _mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_other: Employees,
+    emp_user: Employees,
+):
+    override_deps(emp_other, {})
+    year = int(_workday(5)[:4])
+    balance = TimeOffBalance(
+        employee_id=emp_user.employee_id,
+        absence_type=AbsenceTypeEnum.VACATION.value,
+        year=year,
+        entitled_days="10.00",
+        used_days="0.00",
+        pending_days="0.00",
+        carryover_days="0.00",
+    )
+    db_session.add(balance)
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/requests",
+        json={
+            "employee_id": emp_user.employee_id,
+            "absence_type": "vacation",
+            "time_unit": "full_day",
+            "start_date": _workday(5),
+            "end_date": _workday(5),
+            "reason": "Filed by another employee",
+        },
+    )
+
+    assert response.status_code == 403
+    db_session.refresh(balance)
+    assert Decimal(balance.pending_days) == Decimal("0.00")
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_manager_can_create_request_for_direct_report(
+    _mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_manager: Employees,
+    emp_user: Employees,
+):
+    override_deps(emp_manager, {})
+    db_session.add(
+        TimeOffBalance(
+            employee_id=emp_user.employee_id,
+            absence_type=AbsenceTypeEnum.VACATION.value,
+            year=int(_workday(5)[:4]),
+            entitled_days="10.00",
+            used_days="0.00",
+            pending_days="0.00",
+            carryover_days="0.00",
+        )
+    )
+    db_session.commit()
+    response = client.post(
+        "/api/v1/requests",
+        json={
+            "employee_id": emp_user.employee_id,
+            "absence_type": "vacation",
+            "time_unit": "full_day",
+            "start_date": _workday(5),
+            "end_date": _workday(5),
+            "reason": "Manager filing for report",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["employee_id"] == emp_user.employee_id
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_timeoff_admin_can_create_request_for_other_employee(
+    _mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_other: Employees,
+    emp_user: Employees,
+):
+    override_deps(emp_other, {"permissions": [{"module_key": "timeoff", "permissions": {"admin_actions": True}}]})
+    db_session.add(
+        TimeOffBalance(
+            employee_id=emp_user.employee_id,
+            absence_type=AbsenceTypeEnum.VACATION.value,
+            year=int(_workday(5)[:4]),
+            entitled_days="10.00",
+            used_days="0.00",
+            pending_days="0.00",
+            carryover_days="0.00",
+        )
+    )
+    db_session.commit()
+    response = client.post(
+        "/api/v1/requests",
+        json={
+            "employee_id": emp_user.employee_id,
+            "absence_type": "vacation",
+            "time_unit": "full_day",
+            "start_date": _workday(5),
+            "end_date": _workday(5),
+            "reason": "Admin filing for employee",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["employee_id"] == emp_user.employee_id
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
 def test_create_request_hours(
     mock_add_task, override_deps, client: TestClient, db_session: Session, emp_user: Employees
 ):

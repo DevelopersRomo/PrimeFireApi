@@ -22,8 +22,8 @@ ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
 
 if IS_PRODUCTION:
-    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home/uploads
-    uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    # Azure App Service Linux: usar variable UPLOAD_DIR o /home/home/uploads
+    uploads_base = os.getenv("UPLOAD_DIR", "/home/home/uploads")
     LOGO_UPLOAD_DIR = Path(uploads_base) / "it" / "templates"
 else:
     # Local: anchor to API root so files land in PrimeFireApi/uploads/it/templates

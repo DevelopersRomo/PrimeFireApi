@@ -12,7 +12,7 @@ ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
 
 if IS_PRODUCTION:
-    _uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    _uploads_base = os.getenv("UPLOAD_DIR", "/home/home/uploads")
     BASE_DIR = Path(_uploads_base) / "it" / "quotations"
 else:
     from core.config import settings

@@ -13,7 +13,7 @@ def _inside_repo(path: pathlib.Path) -> bool:
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for name in ("BACKUP_DIR", "ENVIRONMENT", "UPLOADS_DIR"):
+    for name in ("BACKUP_DIR", "ENVIRONMENT", "UPLOAD_DIR", "UPLOADS_DIR"):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
@@ -39,7 +39,10 @@ def test_prod_uses_the_persistent_home_volume(clean_env) -> None:
     clean_env.setenv("ENVIRONMENT", "prod")
     assert resolve_backup_dir().as_posix() == "/home/home/sql_backups"
 
-    clean_env.setenv("UPLOADS_DIR", "/home/site/data")
+    clean_env.setenv("UPLOADS_DIR", "/home/site/legacy")
+    assert resolve_backup_dir().as_posix() == "/home/home/sql_backups"
+
+    clean_env.setenv("UPLOAD_DIR", "/home/site/data")
     assert resolve_backup_dir().as_posix() == "/home/site/data/sql_backups"
 
 

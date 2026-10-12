@@ -22,7 +22,7 @@ ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
 
 if IS_PRODUCTION:
-    uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    uploads_base = os.getenv("UPLOAD_DIR", "/home/home/uploads")
     UPLOAD_DIR = Path(uploads_base) / "products"
     BASE_DIR = Path(uploads_base)
 else:

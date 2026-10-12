@@ -48,7 +48,7 @@ OFFICE_REQUIRED_ENTRIES = {
 }
 
 if os.getenv("ENVIRONMENT", "local").lower() == "prod":
-    UPLOAD_DIR = Path(os.getenv("UPLOADS_DIR", "/home/home/uploads")) / "agreements"
+    UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/home/home/uploads")) / "agreements"
 else:
     UPLOAD_DIR = Path(__file__).resolve().parents[1] / settings.UPLOAD_DIR / "agreements"
 

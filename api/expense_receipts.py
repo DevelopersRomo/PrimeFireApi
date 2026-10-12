@@ -44,7 +44,7 @@ ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
 
 if IS_PRODUCTION:
-    UPLOAD_DIR = Path(os.getenv("UPLOADS_DIR", "/home/home/uploads")) / "expenses"
+    UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/home/home/uploads")) / "expenses"
 else:
     from core.config import settings
 

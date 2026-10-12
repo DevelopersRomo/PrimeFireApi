@@ -24,8 +24,8 @@ IS_PRODUCTION = ENV == "prod"
 
 # Directorio de uploads según el entorno
 if IS_PRODUCTION:
-    # Azure App Service Linux: usar variable UPLOADS_DIR o /home/home/uploads
-    uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    # Azure App Service Linux: usar variable UPLOAD_DIR o /home/home/uploads
+    uploads_base = os.getenv("UPLOAD_DIR", "/home/home/uploads")
     UPLOAD_DIR = Path(uploads_base) / "customers"
 else:
     # Local: uploads/customers

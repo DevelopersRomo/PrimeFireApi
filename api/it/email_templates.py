@@ -27,7 +27,7 @@ ENV = os.getenv("ENVIRONMENT", "local").lower()
 IS_PRODUCTION = ENV == "prod"
 
 if IS_PRODUCTION:
-    uploads_base = os.getenv("UPLOADS_DIR", "/home/home/uploads")
+    uploads_base = os.getenv("UPLOAD_DIR", "/home/home/uploads")
     LOGO_UPLOAD_DIR = Path(uploads_base) / "it" / "email-templates"
 else:
     BASE_DIR = Path(__file__).resolve().parents[2]

@@ -11,5 +11,5 @@ def resolve_backup_dir() -> pathlib.Path:
         return pathlib.Path(explicit)
     if os.getenv("ENVIRONMENT", "local").lower() == "prod":
         # Azure App Service Linux persists only /home
-        return pathlib.Path(os.getenv("UPLOADS_DIR", "/home/home")) / "sql_backups"
+        return pathlib.Path(os.getenv("UPLOAD_DIR", "/home/home")) / "sql_backups"
     return pathlib.Path.home() / "PrimeFire-backups"

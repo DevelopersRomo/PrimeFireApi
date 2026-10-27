@@ -140,6 +140,13 @@ async def lifespan(app: FastAPI):
 
         sla_warning_task = asyncio.create_task(run_sla_warning_loop())
 
+    # Daily expired license digest (email + Novu), solo en el scheduler worker
+    license_digest_task = None
+    if is_scheduler_worker:
+        from core.license_expiry_scheduler import run_license_expiry_digest_loop
+
+        license_digest_task = asyncio.create_task(run_license_expiry_digest_loop())
+
     try:
         yield
     finally:
@@ -162,6 +169,11 @@ async def lifespan(app: FastAPI):
             sla_warning_task.cancel()
             with suppress(asyncio.CancelledError):
                 await sla_warning_task
+
+        if license_digest_task and not license_digest_task.done():
+            license_digest_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await license_digest_task
 
         try:
             from core.ticket_recurrence_scheduler import recurrence_scheduler

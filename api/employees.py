@@ -11,10 +11,12 @@ from sqlmodel import Session, select
 from api.dependencies import (
     ADMIN_ROLE_NAME,
     employee_has_admin_role,
+    get_current_employee,
     require_authentication,
     require_module_permission,
 )
 from bd.dependencies import get_db, get_tenant_cache_scope
+from core.config import settings
 from core.microsoft_graph import graph_client
 from models.countries import Countries
 from models.employees import EmployeeRoles, Employees, Roles
@@ -528,6 +530,21 @@ async def get_employees(
         limit=limit,
         has_more=skip + len(page_items) < total,
     )
+
+
+# ----------------------------
+# 📌 MY BIRTHDAY (declared before /{employee_id})
+# ----------------------------
+@router.get("/me/birthday")
+async def get_my_birthday(current_employee: Employees = Depends(get_current_employee)) -> dict[str, str | bool | None]:
+    birthday = None
+    if current_employee.azure_oid:
+        try:
+            birthday = await graph_client.get_user_birthday(current_employee.azure_oid)
+        except Exception as e:
+            # Cosmetic dashboard data: never fail the request over it.
+            logger.warning("Could not fetch birthday for employee %s: %s", current_employee.employee_id, e)
+    return {"birthday": birthday, "decorations_preview": settings.DECORATIONS_PREVIEW}
 
 
 # ----------------------------

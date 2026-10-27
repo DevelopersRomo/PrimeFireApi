@@ -14,6 +14,18 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_BASE = 1.0  # seconds, doubles each retry
 
 
+def parse_graph_birthday(value: str | None) -> str | None:
+    """Turn Graph's `birthday` ISO datetime into "MM-DD"; year <= 1 means unset."""
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.year <= 1:
+        return None
+    # ponytail: Graph stores the date shifted by the user's UTC offset; rounding to the
+    # nearest day covers offsets up to ±12h. Use the user's mailbox timezone if that ever misfires.
+    return (parsed + timedelta(hours=12)).strftime("%m-%d")
+
+
 class MicrosoftGraphClient:
     """
     Client for Microsoft Graph API to manage users.
@@ -178,6 +190,11 @@ class MicrosoftGraphClient:
         """Get a single user by ID or userPrincipalName."""
         endpoint = f"/users/{user_id}?$select=id,userPrincipalName,displayName,givenName,surname,jobTitle,department,officeLocation,mail,businessPhones,mobilePhone,streetAddress,city,state,postalCode,country,countryLetterCode&$expand=manager($select=displayName,mail,userPrincipalName)"
         return await self._make_request("GET", endpoint)
+
+    async def get_user_birthday(self, user_id: str) -> str | None:
+        """Return the user's birthday as "MM-DD", or None when unset."""
+        data = await self._make_request("GET", f"/users/{user_id}?$select=birthday")
+        return parse_graph_birthday(data.get("birthday"))
 
     async def get_user_license_details(self, user_id: str) -> list[dict[str, Any]]:
         """Get assigned Microsoft 365 license details for a user."""

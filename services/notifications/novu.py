@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 WORKFLOW_TICKET_CLOSED = "ticket-closed"
 WORKFLOW_TICKET_SLA_AT_RISK = "ticket-sla-at-risk"
+WORKFLOW_LICENSE_EXPIRED_DIGEST = "license-expired-digest"
 
 
 @dataclass(frozen=True)

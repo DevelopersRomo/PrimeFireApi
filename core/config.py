@@ -77,6 +77,9 @@ class Settings(BaseSettings):
             raise RuntimeError("JWT_SECRET_KEY (or BACKEND_CLIENT_SECRET) must be configured")
         return secret
 
+    # Shows the dashboard decorations scenario picker in the App (QA/demo only).
+    DECORATIONS_PREVIEW: bool = Field(default=False, validation_alias="DECORATIONS_PREVIEW")
+
     # Microsoft Graph API credentials (for service-to-service)
     MICROSOFT_TENANT_ID: str = Field(
         default="", validation_alias="MICROSOFT_TENANT_ID", description="Microsoft tenant ID for Graph API"
@@ -186,6 +189,13 @@ class Settings(BaseSettings):
         default=10,
         validation_alias="SLA_WARNING_JOB_INTERVAL_MINUTES",
         description="Minutes between SLA-at-risk checks (default: 10)",
+    )
+    LICENSE_EXPIRY_DIGEST_HOUR_UTC: int = Field(
+        default=13,
+        ge=0,
+        le=23,
+        validation_alias="LICENSE_EXPIRY_DIGEST_HOUR_UTC",
+        description="UTC hour of the daily expired license digest (default: 13)",
     )
 
     @property

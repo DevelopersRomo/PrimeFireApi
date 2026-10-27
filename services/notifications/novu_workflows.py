@@ -21,7 +21,11 @@ from novu_py import (
     WorkflowPreferenceDto,
 )
 
-from services.notifications.novu import WORKFLOW_TICKET_CLOSED, WORKFLOW_TICKET_SLA_AT_RISK
+from services.notifications.novu import (
+    WORKFLOW_LICENSE_EXPIRED_DIGEST,
+    WORKFLOW_TICKET_CLOSED,
+    WORKFLOW_TICKET_SLA_AT_RISK,
+)
 
 # In-app only: email keeps going through Microsoft Graph. Users may mute these in the Inbox.
 _IN_APP_ONLY = PreferencesRequestDto(
@@ -109,4 +113,37 @@ TICKET_SLA_AT_RISK = CreateWorkflowDto(
     ],
 )
 
-WORKFLOWS = [TICKET_CLOSED, TICKET_SLA_AT_RISK]
+LICENSE_EXPIRED_DIGEST = CreateWorkflowDto(
+    workflow_id=WORKFLOW_LICENSE_EXPIRED_DIGEST,
+    name="Expired licenses digest",
+    description="Daily digest to everyone who can view Licenses while any license is past its expiry date.",
+    tags=["licenses"],
+    active=True,
+    severity=SeverityLevelEnum.HIGH,
+    validate_payload=True,
+    payload_schema={
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer"},
+            "url": {"type": "string"},
+        },
+        "required": ["count", "url"],
+        "additionalProperties": False,
+    },
+    preferences=_IN_APP_ONLY,
+    steps=[
+        InAppStepUpsertDto(
+            name="In-app",
+            type=StepTypeEnum.IN_APP,
+            step_id="in-app",
+            control_values=InAppControlDto(
+                subject="Expired licenses",
+                body="{{ payload.count }} license(s) are past their expiry date and need to be renewed or removed.",
+                redirect=_open_ticket_link(),
+                primary_action=ActionDto(label="View licenses", redirect=_open_ticket_link()),
+            ),
+        )
+    ],
+)
+
+WORKFLOWS = [TICKET_CLOSED, TICKET_SLA_AT_RISK, LICENSE_EXPIRED_DIGEST]

@@ -12,10 +12,12 @@ from api.dependencies import (
     get_current_employee,
     get_current_employee_with_permissions,
     require_authentication,
+    require_module_permission,
 )
 from bd.dependencies import get_db
 from core.config import settings
 from core.spreadsheet import neutralize_formula
+from models.countries import Countries
 from models.employees import Employees
 from models.time_off import (
     AbsenceTypeEnum,
@@ -34,6 +36,7 @@ from schemas.time_off import (
     CalendarEvent,
     DepartmentRead,
     HolidayRead,
+    HolidayWrite,
     ReportSummary,
     RequestReview,
     StatusSummary,
@@ -45,6 +48,7 @@ from schemas.time_off import (
     TimeOffSettingsRead,
     TimeOffSettingsUpdate,
 )
+from services.holidays import employee_country_id, holiday_country_filter
 from services.notifications.notifications import (
     notify_time_off_approved,
     notify_time_off_rejected,
@@ -84,8 +88,22 @@ def _time_to_utc_str(t: time | str) -> str:
     return t.strftime("%H:%M:%S")
 
 
-def _calculate_totals(payload: TimeOffRequestCreate, allow_weekends: bool) -> tuple[Decimal, Decimal | None]:
-    """Calculate total days and hours based on payload."""
+def _holiday_dates(db: Session, employee_id: int, start: date, end: date) -> frozenset[date]:
+    """Holidays that apply to the employee (global plus their country) between start and end."""
+    rows = db.exec(
+        select(Holiday.date).where(
+            holiday_country_filter(employee_country_id(db, employee_id)),
+            Holiday.date >= start.strftime("%Y-%m-%d"),
+            Holiday.date <= end.strftime("%Y-%m-%d"),
+        )
+    ).all()
+    return frozenset(datetime.strptime(day, "%Y-%m-%d").date() for day in rows)  # noqa: DTZ007
+
+
+def _calculate_totals(
+    payload: TimeOffRequestCreate, allow_weekends: bool, holiday_dates: frozenset[date] = frozenset()
+) -> tuple[Decimal, Decimal | None]:
+    """Calculate total days and hours based on payload. Holidays are never requestable nor counted."""
     if payload.end_date < payload.start_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -98,15 +116,23 @@ def _calculate_totals(payload: TimeOffRequestCreate, allow_weekends: bool) -> tu
             detail="Time off cannot start or end on a weekend",
         )
 
+    if payload.start_date in holiday_dates or payload.end_date in holiday_dates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Time off cannot start or end on a holiday",
+        )
+
     if payload.time_unit == TimeUnitEnum.HALF_DAY and payload.start_date != payload.end_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="half_day requests must use the same start_date and end_date",
         )
 
-    days_span = (payload.end_date - payload.start_date).days + 1
-    if not allow_weekends:
-        days_span = sum(1 for offset in range(days_span) if (payload.start_date + timedelta(days=offset)).weekday() < 5)
+    span_days = [
+        payload.start_date + timedelta(days=offset)
+        for offset in range((payload.end_date - payload.start_date).days + 1)
+    ]
+    days_span = sum(1 for day in span_days if (allow_weekends or day.weekday() < 5) and day not in holiday_dates)
 
     if payload.time_unit == TimeUnitEnum.FULL_DAY:
         return Decimal(days_span), None
@@ -460,7 +486,11 @@ def create_request(
         )
 
     _assert_not_in_past(payload.start_date)
-    total_days, total_hours = _calculate_totals(payload, _get_time_off_settings(db).allow_weekends)
+    total_days, total_hours = _calculate_totals(
+        payload,
+        _get_time_off_settings(db).allow_weekends,
+        _holiday_dates(db, employee_id, payload.start_date, payload.end_date),
+    )
     _assert_no_active_overlap(db, employee_id, payload)
 
     start_time_str = None
@@ -594,7 +624,16 @@ def update_request(
         _assert_not_in_past(effective_start_date)
 
     # Validate and calculate totals
-    new_total_days, new_total_hours = _calculate_totals(validation_payload, _get_time_off_settings(db).allow_weekends)
+    holiday_dates = _holiday_dates(db, request.employee_id, effective_start_date, effective_end_date)
+    # Unchanged dates are not re-checked, so a request that starts or ends on a newer holiday can still be fixed
+    if (
+        effective_start_date.strftime("%Y-%m-%d") == request.start_date
+        and effective_end_date.strftime("%Y-%m-%d") == request.end_date
+    ):
+        holiday_dates -= {effective_start_date, effective_end_date}
+    new_total_days, new_total_hours = _calculate_totals(
+        validation_payload, _get_time_off_settings(db).allow_weekends, holiday_dates
+    )
 
     # Overlap check (exclude current request)
     _assert_no_active_overlap(db, request.employee_id, validation_payload, exclude_request_id=request_id)
@@ -873,7 +912,15 @@ def get_calendar(
     is_admin = _has_timeoff_admin_actions(user_permissions)
     visible_employee_ids = _build_visible_employee_ids(db, current_employee, is_admin)
 
-    holidays = db.exec(select(Holiday)).all()
+    # Holidays follow the employees shown: global ones plus each visible employee's
+    # country. Admins see every employee, so every holiday is shown.
+    holiday_query = select(Holiday)
+    if visible_employee_ids is not None:
+        country_ids = db.exec(
+            select(Employees.country_id).where(Employees.employee_id.in_(visible_employee_ids)).distinct()
+        ).all()
+        holiday_query = holiday_query.where(holiday_country_filter(*country_ids))
+    holidays = db.exec(holiday_query).all()
     request_query = select(TimeOffRequest)
     if visible_employee_ids is not None:
         request_query = request_query.where(TimeOffRequest.employee_id.in_(visible_employee_ids))
@@ -886,6 +933,7 @@ def get_calendar(
             title=holiday.name,
             start_date=holiday.date,
             end_date=holiday.date,
+            country_id=holiday.country_id,
         )
         for holiday in holidays
     ]
@@ -1045,9 +1093,140 @@ def get_balances(
     return db.exec(select(TimeOffBalance).where(TimeOffBalance.employee_id == employee_id)).all()
 
 
-@router.get("/holidays", response_model=list[HolidayRead])
-def list_holidays(db: Session = Depends(get_db), _auth=Depends(require_authentication)):
-    return db.exec(select(Holiday)).all()
+def _holiday_select():
+    return select(Holiday, Countries.name).outerjoin(Countries, Countries.country_id == Holiday.country_id)
+
+
+def _to_holiday_reads(rows) -> list[HolidayRead]:
+    return [
+        HolidayRead.model_validate(holiday, update={"country_name": country_name}) for holiday, country_name in rows
+    ]
+
+
+def _read_holiday(db: Session, holiday_id: int) -> HolidayRead:
+    return _to_holiday_reads(db.exec(_holiday_select().where(Holiday.holiday_id == holiday_id)).all())[0]
+
+
+def _get_holiday_or_404(db: Session, holiday_id: int) -> Holiday:
+    holiday = db.get(Holiday, holiday_id)
+    if not holiday:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holiday not found")
+    return holiday
+
+
+def _apply_holiday_payload(db: Session, holiday: Holiday, payload: HolidayWrite) -> None:
+    if payload.country_id is not None and not db.get(Countries, payload.country_id):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Country not found")
+    holiday_date = payload.date.strftime("%Y-%m-%d")
+    duplicate = db.exec(
+        select(Holiday.holiday_id).where(
+            Holiday.date == holiday_date,
+            Holiday.country_id == payload.country_id,
+            Holiday.holiday_id != holiday.holiday_id,
+        )
+    ).first()
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A holiday already exists on this date for this country",
+        )
+    holiday.name = payload.name
+    holiday.date = holiday_date
+    holiday.year = payload.date.year
+    holiday.country_id = payload.country_id
+    db.add(holiday)
+    db.commit()
+
+
+@router.get("/holidays", response_model=list[HolidayRead] | PaginatedResponse[HolidayRead])
+def list_holidays(
+    country_id: int | None = None,
+    only_country: bool = Query(False, description="Exclude global holidays; without country_id, only global ones"),
+    year: int | None = None,
+    search: str | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    with_meta: bool = Query(False),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_authentication),
+):
+    filters = []
+    if only_country:
+        filters.append(Holiday.country_id == country_id)
+    elif country_id is not None:
+        filters.append(holiday_country_filter(country_id))
+    if year is not None:
+        filters.append(Holiday.year == year)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(Holiday.name.ilike(term) | Countries.name.ilike(term))
+
+    query = _holiday_select().where(*filters).order_by(Holiday.date, Holiday.holiday_id)
+    items = _to_holiday_reads(db.exec(query.offset(skip).limit(limit)).all())
+    if not with_meta:
+        return items
+
+    total = db.exec(
+        select(func.count())
+        .select_from(Holiday)
+        .outerjoin(Countries, Countries.country_id == Holiday.country_id)
+        .where(*filters)
+    ).one()
+    return PaginatedResponse[HolidayRead](
+        items=items, total=total, skip=skip, limit=limit, has_more=skip + len(items) < total
+    )
+
+
+# Declared before /holidays/{holiday_id} so "upcoming" is never parsed as an id.
+@router.get("/holidays/upcoming", response_model=list[HolidayRead])
+def list_upcoming_holidays(
+    limit: int = Query(5, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_employee=Depends(get_current_employee),
+):
+    # Server local date, same reference the time-off module uses for "today".
+    today = date.today().strftime("%Y-%m-%d")  # noqa: DTZ011
+    query = (
+        _holiday_select()
+        .where(holiday_country_filter(current_employee.country_id), Holiday.date >= today)
+        .order_by(Holiday.date, Holiday.holiday_id)
+        .limit(limit)
+    )
+    return _to_holiday_reads(db.exec(query).all())
+
+
+@router.post("/holidays", response_model=HolidayRead, status_code=status.HTTP_201_CREATED)
+def create_holiday(
+    payload: HolidayWrite,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("holidays", "can_create")),
+):
+    holiday = Holiday(name=payload.name, date="", year=0)
+    _apply_holiday_payload(db, holiday, payload)
+    return _read_holiday(db, holiday.holiday_id)
+
+
+@router.put("/holidays/{holiday_id}", response_model=HolidayRead)
+def update_holiday(
+    holiday_id: int,
+    payload: HolidayWrite,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("holidays", "can_edit")),
+):
+    holiday = _get_holiday_or_404(db, holiday_id)
+    _apply_holiday_payload(db, holiday, payload)
+    return _read_holiday(db, holiday_id)
+
+
+@router.delete("/holidays/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_holiday(
+    holiday_id: int,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_module_permission("holidays", "can_delete")),
+):
+    db.delete(_get_holiday_or_404(db, holiday_id))
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/departments", response_model=list[DepartmentRead])

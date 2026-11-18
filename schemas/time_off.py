@@ -97,9 +97,27 @@ class HolidayRead(SQLModel):
     name: str
     date: str
     year: int
+    country_id: int | None = None
+    country_name: str | None = None
 
     class Config:
         from_attributes = True
+
+
+class HolidayWrite(SQLModel):
+    """Create/update payload; the year is derived from the date."""
+
+    name: str
+    date: date
+    country_id: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or len(value) > 100:
+            raise ValueError("Name is required and must be at most 100 characters")
+        return value
 
 
 class DepartmentRead(SQLModel):
@@ -122,6 +140,7 @@ class CalendarEvent(SQLModel):
     employee_id: int | None = None
     start_time: str | None = None
     end_time: str | None = None
+    country_id: int | None = None
 
     @classmethod
     @field_validator("start_time", "end_time", mode="before")

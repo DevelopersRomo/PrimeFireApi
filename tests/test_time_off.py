@@ -15,6 +15,7 @@ from api.dependencies import (
     require_authentication,
 )
 from main import app
+from models.countries import Countries
 from models.employees import Employees
 from models.time_off import (
     AbsenceTypeEnum,
@@ -1080,6 +1081,127 @@ def test_admin_can_allow_weekends(
     assert response.status_code == 201
     # Calendar days once weekends are allowed: Friday + Saturday
     assert response.json()["total_days"] == "2.00"
+
+
+# =============================================================================
+# Holidays are not requestable (global ones plus the employee's country)
+# =============================================================================
+
+
+def _add_holiday(db_session: Session, day: str, country_id: int | None = None) -> None:
+    db_session.add(Holiday(name="Test Holiday", date=day, year=int(day[:4]), country_id=country_id))
+    db_session.commit()
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_holiday_start_rejected(
+    _mock_add_task, override_deps, client: TestClient, db_session: Session, emp_user: Employees, vacation_balance
+):
+    override_deps(emp_user, {})
+    _add_holiday(db_session, _workday(1))
+
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": _workday(1), "end_date": _workday(2)}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Time off cannot start or end on a holiday"
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_holiday_end_rejected_even_when_weekends_allowed(
+    _mock_add_task, override_deps, client: TestClient, db_session: Session, emp_user: Employees, vacation_balance
+):
+    override_deps(emp_user, ADMIN_PERMS)
+    client.put("/api/v1/settings", json={"allow_weekends": True})
+    _add_holiday(db_session, _workday(2))
+
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": _workday(1), "end_date": _workday(2)}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 400
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_range_across_holiday_does_not_count_it(
+    _mock_add_task, override_deps, client: TestClient, db_session: Session, emp_user: Employees, vacation_balance
+):
+    override_deps(emp_user, {})
+    _add_holiday(db_session, _workday(2))
+
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": _workday(1), "end_date": _workday(3)}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 201
+    assert response.json()["total_days"] == "2.00"
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_other_country_holiday_does_not_block(
+    _mock_add_task, override_deps, client: TestClient, db_session: Session, emp_user: Employees, vacation_balance
+):
+    mexico, colombia = Countries(name="Mexico"), Countries(name="Colombia")
+    db_session.add_all([mexico, colombia])
+    db_session.commit()
+    emp_user.country_id = mexico.country_id
+    db_session.add(emp_user)
+    db_session.commit()
+    override_deps(emp_user, {})
+    _add_holiday(db_session, _workday(1), colombia.country_id)
+
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": _workday(1), "end_date": _workday(1)}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 201
+
+    _add_holiday(db_session, _workday(3), mexico.country_id)
+    payload = {"absence_type": "vacation", "time_unit": "full_day", "start_date": _workday(3), "end_date": _workday(3)}
+    response = client.post("/api/v1/requests", json=payload)
+    assert response.status_code == 400
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_editing_a_request_onto_a_holiday_is_rejected(
+    _mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    time_off_request: TimeOffRequest,
+):
+    override_deps(emp_user, {})
+    _add_holiday(db_session, _workday(3))
+
+    response = client.patch(
+        f"/api/v1/requests/{time_off_request.request_id}", json={"start_date": _workday(3), "end_date": _workday(3)}
+    )
+    assert response.status_code == 400
+    assert "holiday" in response.json()["detail"].lower()
+
+
+@patch("api.time_off.BackgroundTasks.add_task")
+def test_request_on_a_newer_holiday_can_still_get_other_fields_fixed(
+    _mock_add_task,
+    override_deps,
+    client: TestClient,
+    db_session: Session,
+    emp_user: Employees,
+    time_off_request: TimeOffRequest,
+):
+    # The holiday was added after the request (workdays 1-2) was created
+    override_deps(emp_user, {})
+    _add_holiday(db_session, _workday(1))
+
+    response = client.patch(f"/api/v1/requests/{time_off_request.request_id}", json={"reason": "Fixed typo"})
+    assert response.status_code == 200
+
+
+def test_calendar_holiday_events_carry_their_country(
+    override_deps, client: TestClient, db_session: Session, emp_user: Employees
+):
+    override_deps(emp_user, {})
+    _add_holiday(db_session, _workday(1))
+
+    events = client.get("/api/v1/calendar").json()
+    holiday = next(event for event in events if event["type"] == "holiday")
+    assert holiday["start_date"] == _workday(1)
+    assert "country_id" in holiday
+    assert holiday["country_id"] is None
 
 
 # =============================================================================

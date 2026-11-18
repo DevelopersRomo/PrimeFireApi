@@ -29,6 +29,7 @@ from api.expense_messages import router as expense_messages_router
 from api.expense_receipts import router as expense_receipts_router
 from api.expenses import router as expenses_router
 from api.hardware_inventory import router as hardware_inventory_router
+from api.home_posts import router as home_posts_router
 from api.impersonation import router as impersonation_router
 from api.inventory import router as inventory_router
 from api.jobs import router as jobs_router
@@ -330,6 +331,7 @@ app.include_router(ticket_attachments_router, tags=["ticket_attachments"])
 app.include_router(hardware_inventory_router, prefix="/hardware", tags=["hardware"])
 app.include_router(time_off_router, tags=["time_off"])
 app.include_router(timesheet_router, tags=["timesheet"])
+app.include_router(home_posts_router)  # /api/v1 prefix defined in router
 app.include_router(catalogs_router, tags=["catalogs"])
 app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 app.include_router(tenants_router, prefix="/tenants", tags=["tenants"])

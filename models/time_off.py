@@ -77,6 +77,8 @@ class Holiday(SQLModel, table=True):
     name: str = Field(max_length=100, nullable=False)
     date: str = Field(nullable=False, max_length=10)
     year: int = Field(nullable=False)
+    # NULL = applies to every country.
+    country_id: int | None = Field(default=None, foreign_key="dbo.countries.country_id", index=True)
 
 
 class Department(SQLModel, table=True):

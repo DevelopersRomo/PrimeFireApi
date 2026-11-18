@@ -43,6 +43,7 @@ from schemas.timesheet import (
     TimeSheetSummaryResponse,
     TimeSheetSummaryTotals,
 )
+from services.holidays import employee_country_id, holiday_country_filter
 from services.notifications.notifications import notify_timesheet_hours
 
 router = APIRouter(prefix="/api/v1", tags=["timesheet"])
@@ -282,6 +283,7 @@ def _get_time_off_maps(
         select(Holiday).where(
             Holiday.date >= start_date.strftime("%Y-%m-%d"),
             Holiday.date <= end_date.strftime("%Y-%m-%d"),
+            holiday_country_filter(employee_country_id(db, employee_id)),
         )
     ).all()
     for holiday in holidays:
@@ -693,7 +695,9 @@ def export_timesheet(
     # Get holidays for the date range
     holidays = db.exec(
         select(Holiday).where(
-            Holiday.date >= start_date.strftime("%Y-%m-%d"), Holiday.date <= end_date.strftime("%Y-%m-%d")
+            Holiday.date >= start_date.strftime("%Y-%m-%d"),
+            Holiday.date <= end_date.strftime("%Y-%m-%d"),
+            holiday_country_filter(employee_country_id(db, target_employee_id)),
         )
     ).all()
     holiday_dates = {h.date for h in holidays}
@@ -995,7 +999,11 @@ def export_punches_admin(
 
     # Get holidays for the date range
     holidays = db.exec(select(Holiday).where(Holiday.date >= query_start, Holiday.date <= query_end)).all()
-    holiday_dates = {h.date for h in holidays}
+    # Holidays are per country (None = global): each employee gets the global dates plus their country's.
+    holiday_dates_by_country: dict[int | None, set[str]] = {}
+    for holiday in holidays:
+        holiday_dates_by_country.setdefault(holiday.country_id, set()).add(holiday.date)
+    global_holiday_dates = holiday_dates_by_country.get(None, set())
 
     # Get time off requests for all employees in date range
     time_off_filter = [TimeOffRequest.status == "approved"]
@@ -1041,8 +1049,10 @@ def export_punches_admin(
             punch.worked_minutes or 0, overtime_daily_minutes
         )
 
-        # Check if it's a holiday
-        is_holiday = local_day in holiday_dates
+        # Check if it's a holiday for this employee's country
+        employee = employee_map.get(punch.employee_id)
+        country_id = employee.country_id if employee else None
+        is_holiday = local_day in global_holiday_dates or local_day in holiday_dates_by_country.get(country_id, set())
 
         # Check if there's a time off request for this employee and day
         employee_time_offs = time_off_by_employee.get(punch.employee_id, {})
@@ -1051,7 +1061,6 @@ def export_punches_admin(
         is_sick = day_off_type == "sick"
 
         customer = customer_map.get(punch.customer_id)
-        employee = employee_map.get(punch.employee_id)
         customer_name = (
             customer.company_name or " ".join(filter(None, [customer.first_name, customer.last_name]))
             if customer

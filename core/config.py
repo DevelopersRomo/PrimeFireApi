@@ -197,6 +197,11 @@ class Settings(BaseSettings):
         validation_alias="LICENSE_EXPIRY_DIGEST_HOUR_UTC",
         description="UTC hour of the daily expired license digest (default: 13)",
     )
+    OFFICIAL_HOLIDAYS_AUTOLOAD: bool = Field(
+        default=True,
+        validation_alias="OFFICIAL_HOLIDAYS_AUTOLOAD",
+        description="Daily insert of missing US/MX/DO/PR official holidays for this year and next (default: true)",
+    )
 
     @property
     def scope_name(self) -> str:

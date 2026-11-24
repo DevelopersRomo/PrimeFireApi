@@ -148,6 +148,14 @@ async def lifespan(app: FastAPI):
 
         license_digest_task = asyncio.create_task(run_license_expiry_digest_loop())
 
+    # Official US/MX/DO/PR holidays for this year and next (insert-only), solo en el scheduler worker
+    holidays_task = None
+    # Never under pytest: the lifespan there still points at the real database from .env.
+    if is_scheduler_worker and settings.OFFICIAL_HOLIDAYS_AUTOLOAD and not _os.environ.get("PYTEST_RUNNING"):
+        from core.official_holidays_scheduler import run_official_holidays_loop
+
+        holidays_task = asyncio.create_task(run_official_holidays_loop())
+
     try:
         yield
     finally:
@@ -175,6 +183,11 @@ async def lifespan(app: FastAPI):
             license_digest_task.cancel()
             with suppress(asyncio.CancelledError):
                 await license_digest_task
+
+        if holidays_task and not holidays_task.done():
+            holidays_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await holidays_task
 
         try:
             from core.ticket_recurrence_scheduler import recurrence_scheduler

@@ -79,6 +79,10 @@ class Holiday(SQLModel, table=True):
     year: int = Field(nullable=False)
     # NULL = applies to every country.
     country_id: int | None = Field(default=None, foreign_key="dbo.countries.country_id", index=True)
+    # Material Icons ligature picked in the Holidays screen; NULL = the app picks one from the name.
+    icon: str | None = Field(default=None, max_length=50)
+    # Icon color as #rrggbb picked in the Holidays screen; NULL = the app picks one from the name.
+    color: str | None = Field(default=None, max_length=7)
 
 
 class Department(SQLModel, table=True):

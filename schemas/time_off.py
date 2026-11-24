@@ -1,3 +1,4 @@
+import re
 from datetime import date, time
 
 from pydantic import field_validator
@@ -99,6 +100,8 @@ class HolidayRead(SQLModel):
     year: int
     country_id: int | None = None
     country_name: str | None = None
+    icon: str | None = None
+    color: str | None = None
 
     class Config:
         from_attributes = True
@@ -110,6 +113,8 @@ class HolidayWrite(SQLModel):
     name: str
     date: date
     country_id: int | None = None
+    icon: str | None = None
+    color: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -117,6 +122,28 @@ class HolidayWrite(SQLModel):
         value = value.strip()
         if not value or len(value) > 100:
             raise ValueError("Name is required and must be at most 100 characters")
+        return value
+
+    @field_validator("icon")
+    @classmethod
+    def _check_icon(cls, value: str | None) -> str | None:
+        """A Material Icons ligature (lowercase, digits, underscores); blank means automatic."""
+        if value is None or not value.strip():
+            return None
+        value = value.strip()
+        if not re.fullmatch(r"[a-z0-9_]{1,50}", value):
+            raise ValueError("Icon must be a Material Icons name such as 'celebration'")
+        return value
+
+    @field_validator("color")
+    @classmethod
+    def _check_color(cls, value: str | None) -> str | None:
+        """A #rrggbb color, stored lowercase; blank means automatic."""
+        if value is None or not value.strip():
+            return None
+        value = value.strip().lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", value):
+            raise ValueError("Color must be a hex color such as '#2e9e5b'")
         return value
 
 
@@ -141,6 +168,7 @@ class CalendarEvent(SQLModel):
     start_time: str | None = None
     end_time: str | None = None
     country_id: int | None = None
+    icon: str | None = None
 
     @classmethod
     @field_validator("start_time", "end_time", mode="before")

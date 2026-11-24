@@ -214,6 +214,30 @@ def test_create_update_delete_holiday(act_as, client: TestClient, db_session: Se
     assert client.delete(f"/api/v1/holidays/{created['holiday_id']}").status_code == 404
 
 
+def test_icon_is_saved_cleared_and_sent_to_the_calendar(
+    act_as, client: TestClient, db_session: Session, mx_employee, countries
+):
+    act_as(mx_employee, _holiday_perms("can_view", "can_create", "can_edit"))
+
+    created = client.post(
+        "/api/v1/holidays", json={"name": "Party", "date": "2031-05-05", "icon": "celebration", "color": "#2E9E5B"}
+    ).json()
+    assert created["icon"] == "celebration"
+    assert created["color"] == "#2e9e5b"
+    listed = client.get("/api/v1/holidays?search=party").json()
+    assert listed[0]["icon"] == "celebration"
+    calendar = [e for e in client.get("/api/v1/calendar").json() if e["type"] == "holiday"]
+    assert calendar[0]["icon"] == "celebration"
+
+    # A blank icon goes back to automatic (NULL).
+    updated = client.put(
+        f"/api/v1/holidays/{created['holiday_id']}", json={"name": "Party", "date": "2031-05-05", "icon": "  "}
+    ).json()
+    assert updated["icon"] is None
+    assert updated["color"] is None
+    assert db_session.get(Holiday, created["holiday_id"]).icon is None
+
+
 def test_create_duplicate_is_conflict(act_as, client: TestClient, mx_employee, countries, same_day_holidays):
     act_as(mx_employee, _holiday_perms("can_create"))
     mexico, colombia = countries
@@ -244,6 +268,10 @@ def test_update_into_duplicate_is_conflict(
         {"name": "   ", "date": "2030-02-01"},
         {"name": "x" * 101, "date": "2030-02-01"},
         {"name": "Ghost", "date": "2030-02-01", "country_id": 9999},
+        {"name": "Bad icon", "date": "2030-02-01", "icon": "<script>"},
+        {"name": "Bad icon", "date": "2030-02-01", "icon": "Celebration"},
+        {"name": "Bad color", "date": "2030-02-01", "color": "red"},
+        {"name": "Bad color", "date": "2030-02-01", "color": "#12345"},
     ],
 )
 def test_create_rejects_invalid_payload(act_as, client: TestClient, mx_employee, payload):

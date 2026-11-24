@@ -934,6 +934,7 @@ def get_calendar(
             start_date=holiday.date,
             end_date=holiday.date,
             country_id=holiday.country_id,
+            icon=holiday.icon,
         )
         for holiday in holidays
     ]
@@ -1134,6 +1135,8 @@ def _apply_holiday_payload(db: Session, holiday: Holiday, payload: HolidayWrite)
     holiday.date = holiday_date
     holiday.year = payload.date.year
     holiday.country_id = payload.country_id
+    holiday.icon = payload.icon
+    holiday.color = payload.color
     db.add(holiday)
     db.commit()
 

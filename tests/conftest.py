@@ -17,7 +17,7 @@ from sqlmodel import SQLModel, Session, create_engine
 # Must be set BEFORE importing main (which calls create_db_and_tables at module level)
 os.environ.setdefault("PYTEST_RUNNING", "1")
 
-from bd.dependencies import get_db, get_main_db
+from bd.dependencies import get_db, get_main_db, get_main_session_factory
 from main import app
 from models.employees import Employees
 
@@ -158,6 +158,7 @@ def client() -> Generator[TestClient, None, None]:
     # Apply the override
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_main_db] = override_get_db
+    app.dependency_overrides[get_main_session_factory] = lambda: lambda: Session(_test_engine)
 
     # Create test client
     with TestClient(app, raise_server_exceptions=False) as test_client:

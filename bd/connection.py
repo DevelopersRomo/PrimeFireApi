@@ -7,6 +7,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel, Session, create_engine
 
+POOL_TIMEOUT_SECONDS = 5
+
 # Import all models to ensure they are registered with SQLModel
 
 # Load environment variables
@@ -110,6 +112,7 @@ def create_engine_from_env(prefix="DB"):
     # Configure engine options based on driver
     engine_kwargs = {
         "echo": echo,
+        "pool_timeout": POOL_TIMEOUT_SECONDS,
         # Disable setinputsizes to avoid pyodbc HY104 "Invalid precision value (0)"
         # errors when binding datetime/None parameters to DATETIME columns.
         "use_setinputsizes": False,

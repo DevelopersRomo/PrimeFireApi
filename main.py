@@ -1,5 +1,6 @@
 # Skip DB creation during pytest — conftest manages its own SQLite engine.
 # This guard prevents connection errors when no SQL Server is available.
+import logging
 import os as _os
 import pathlib
 from contextlib import asynccontextmanager, suppress
@@ -7,7 +8,8 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -32,10 +34,10 @@ from api.hardware_inventory import router as hardware_inventory_router
 from api.home_posts import router as home_posts_router
 from api.impersonation import router as impersonation_router
 from api.inventory import router as inventory_router
-from api.jobs import router as jobs_router
 
 # Routers
 from api.it.router import router as it_router
+from api.jobs import router as jobs_router
 from api.licenses import router as licenses_router
 from api.modules import router as modules_router
 from api.notifications import router as notifications_router
@@ -212,6 +214,17 @@ app = FastAPI(
         "persistAuthorization": True,
     },
 )
+
+
+@app.exception_handler(SQLAlchemyTimeoutError)
+async def handle_database_pool_timeout(request: Request, exc: SQLAlchemyTimeoutError) -> JSONResponse:
+    """Return a retryable response when the SQL connection pool is saturated."""
+    logging.getLogger(__name__).warning("Database pool timeout on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database is temporarily busy. Please try again."},
+        headers={"Retry-After": "5"},
+    )
 
 
 def custom_openapi():

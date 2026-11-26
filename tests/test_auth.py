@@ -3,12 +3,16 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
-from sqlmodel import Session, select
+from sqlalchemy.pool import QueuePool
+from sqlmodel import SQLModel, Session, create_engine, select
 
 import api.auth
 from api.auth import ALGORITHM, SECRET_KEY, get_password_hash
+from bd.dependencies import get_db, get_main_session_factory
 from core.datetime_utils import utcnow
-from models.auth_tokens import AuthToken
+from main import app
+from models.auth_tokens import AuthToken, RevokedSession, UserSessionVersion
+from models.countries import Countries
 from models.employees import Employees
 from models.tenants import TenantEmployees, Tenants
 
@@ -430,10 +434,8 @@ def test_login_verifies_the_password_off_the_event_loop(
 
 
 @pytest.fixture(autouse=True)
-def _reset_issue_budget():
-    api.auth._ISSUE_BUCKETS.clear()
-    yield
-    api.auth._ISSUE_BUCKETS.clear()
+def _reset_issue_budget(monkeypatch, tmp_path):
+    monkeypatch.setattr(api.auth, "_ISSUE_BUDGET_DB", tmp_path / "auth-budget.sqlite3")
 
 
 @pytest.mark.parametrize("endpoint", ["/auth/magic-link", "/auth/password-recovery"])
@@ -504,6 +506,37 @@ def test_a_live_session_works_until_it_is_revoked(client: TestClient, db_session
     rotated = client.post("/auth/refresh", json={"refresh_token": refresh})
     assert rotated.status_code == 200
     assert _countries_status(client, rotated.json()["access_token"]) == 200
+
+
+def test_auth_releases_its_connection_before_the_endpoint(client: TestClient, monkeypatch):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=0.05,
+    )
+    SQLModel.metadata.create_all(
+        engine, tables=[UserSessionVersion.__table__, RevokedSession.__table__, Countries.__table__]
+    )
+
+    def override_get_db():
+        with Session(engine) as db:
+            yield db
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, override_get_db)
+    monkeypatch.setitem(app.dependency_overrides, get_main_session_factory, lambda: lambda: Session(engine))
+    access = api.auth.create_access_token({"sub": "test@example.com", "sid": "test-session", "type": "internal"})
+    try:
+        assert _countries_status(client, access) == 200
+        with engine.connect():
+            response = client.get("/countries/", headers={"Authorization": f"Bearer {access}"})
+            assert response.status_code == 503
+            assert response.headers["Retry-After"] == "5"
+        assert _countries_status(client, access) == 200
+    finally:
+        engine.dispose()
 
 
 def test_logout_revokes_the_access_and_refresh_tokens(client: TestClient, db_session: Session):

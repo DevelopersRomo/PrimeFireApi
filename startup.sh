@@ -179,4 +179,5 @@ ensure_python_dependencies
 
 exec python -m uvicorn main:app \
   --host 0.0.0.0 \
-  --port "${PORT:-8000}"
+  --port "${PORT:-8000}" \
+  --workers "${WEB_CONCURRENCY:-3}"

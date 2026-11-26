@@ -1,9 +1,12 @@
 import logging
 import secrets
+import sqlite3
+import tempfile
 import time
 import uuid
-from collections import deque
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import bcrypt
@@ -389,8 +392,8 @@ TOKEN_EXPIRE_MINUTES = 15
 TOKEN_ISSUE_COOLDOWN = timedelta(seconds=60)
 ISSUE_IP_BUDGET = 10
 ISSUE_IP_WINDOW_SECONDS = 600
-# ponytail: per-process budget (the API runs one uvicorn process); move to a shared store if it scales out.
-_ISSUE_BUCKETS: dict[str, deque[float]] = {}
+# The Uvicorn workers on this App Service instance share this database.
+_ISSUE_BUDGET_DB = Path(tempfile.gettempdir()) / "primefire-auth-issue-budget.sqlite3"
 
 
 def _generate_secure_token() -> str:
@@ -460,21 +463,26 @@ def _enforce_issue_budget(request: Request) -> None:
     client_ip = forwarded.rsplit(":", 1)[0] if forwarded.count(":") == 1 else forwarded
     client_ip = client_ip or (request.client.host if request.client else "unknown")
 
-    now = time.monotonic()
+    now = time.time()
     cutoff = now - ISSUE_IP_WINDOW_SECONDS
-    for ip in [ip for ip, stamps in _ISSUE_BUCKETS.items() if not stamps or stamps[-1] <= cutoff]:
-        del _ISSUE_BUCKETS[ip]
-    bucket = _ISSUE_BUCKETS.setdefault(client_ip, deque())
-    while bucket and bucket[0] <= cutoff:
-        bucket.popleft()
-    if len(bucket) >= ISSUE_IP_BUDGET:
-        retry_after = max(1, int(ISSUE_IP_WINDOW_SECONDS - (now - bucket[0])))
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many requests",
-            headers={"Retry-After": str(retry_after)},
+    with closing(sqlite3.connect(_ISSUE_BUDGET_DB)) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("CREATE TABLE IF NOT EXISTS issue_requests (client_ip TEXT NOT NULL, issued_at REAL NOT NULL)")
+        db.execute("DELETE FROM issue_requests WHERE issued_at <= ?", (cutoff,))
+        count, oldest = db.execute(
+            "SELECT COUNT(*), MIN(issued_at) FROM issue_requests WHERE client_ip = ?", (client_ip,)
+        ).fetchone()
+        if count >= ISSUE_IP_BUDGET:
+            retry_after = max(1, int(oldest + ISSUE_IP_WINDOW_SECONDS - now))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests",
+                headers={"Retry-After": str(retry_after)},
+            )
+        db.execute(
+            "INSERT INTO issue_requests (client_ip, issued_at) VALUES (?, ?)",
+            (client_ip, now),
         )
-    bucket.append(now)
 
 
 def _issue_token(db: Session, email: str, token_type: str) -> str | None:
@@ -514,7 +522,7 @@ async def password_recovery(
     Request a password recovery email.
     Always answers the same 200, whether or not the account exists; the email goes out after the response.
     """
-    _enforce_issue_budget(http_request)
+    await run_in_threadpool(_enforce_issue_budget, http_request)
     internal_user, tenant_user = _find_user_by_email(db, request.email)
 
     if internal_user or tenant_user:
@@ -597,7 +605,7 @@ async def request_magic_link(
     Request a magic link email.
     Always answers the same 200, whether or not the account exists or can use a magic link.
     """
-    _enforce_issue_budget(http_request)
+    await run_in_threadpool(_enforce_issue_budget, http_request)
     internal_user, tenant_user = _find_user_by_email(db, request.email)
 
     # Only users with a password_hash (local auth) may use magic links

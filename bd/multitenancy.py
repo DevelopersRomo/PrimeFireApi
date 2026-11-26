@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
+from bd.connection import POOL_TIMEOUT_SECONDS
 from bd.connection import engine as main_engine
 
 
@@ -56,7 +57,7 @@ class ConnectionManager:
                 raise ValueError(f"No configuration found for tenant key: {tenant_key}")
 
         echo = os.getenv("DB_ECHO", "False").lower() == "true"
-        new_engine = create_engine(connection_url, echo=echo)
+        new_engine = create_engine(connection_url, echo=echo, pool_timeout=POOL_TIMEOUT_SECONDS)
         cls._engines[tenant_key] = new_engine
         return new_engine
 

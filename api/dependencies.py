@@ -1,6 +1,6 @@
 """Dependencies."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 from starlette.middleware.cors import CORSMiddleware
 
-from bd.dependencies import get_db, get_main_db, get_primefire_session, is_primefire_email
+from bd.dependencies import get_db, get_main_session_factory, get_primefire_session, is_primefire_email
 from bd.multitenancy import ConnectionManager
 from core.azure_token import looks_like_azure_token, validate_azure_token
 from core.config import settings
@@ -63,9 +63,9 @@ async def extract_token_from_azure_scheme(request: Request) -> str:
     return token
 
 
-async def simple_token_validator(
+def simple_token_validator(
     request: Request,
-    main_db: Session = Depends(get_main_db),
+    session_factory: Callable[[], Session] = Depends(get_main_session_factory),
 ) -> dict[str, Any] | None:
     """Validate token (Azure AD OR Internal JWT)."""
     authorization = request.headers.get("Authorization")
@@ -82,19 +82,22 @@ async def simple_token_validator(
     # 1. Try Internal JWT (HS256)
     try:
         payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") == "internal":
-            # Revoked by a bump of the account's session version (password reset, tenant move) or signed out.
-            if payload.get("tv", 0) != current_version(main_db, payload.get("sub", "")) or is_session_revoked(
-                main_db, payload.get("sid")
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Session expired. Please sign in again.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            return payload  # It's our custom token
     except JWTError:
-        pass  # Not our token, try Azure
+        payload = {}
+
+    if payload.get("type") == "internal":
+        # Revoked by a bump of the account's session version (password reset, tenant move) or signed out.
+        with session_factory() as main_db:
+            expired = payload.get("tv", 0) != current_version(main_db, payload.get("sub", "")) or is_session_revoked(
+                main_db, payload.get("sid")
+            )
+        if expired:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired. Please sign in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return payload
 
     # 2. Try Azure AD (RS256): full signature/audience/issuer validation via JWKS
     if looks_like_azure_token(token):
@@ -108,7 +111,7 @@ async def simple_token_validator(
     )
 
 
-async def get_authenticated_employee(
+def get_authenticated_employee(
     token_data: dict[str, Any] | None = Depends(simple_token_validator),
     request: FastAPIRequest = None,
     db: Session = Depends(get_db),
@@ -302,7 +305,7 @@ def employee_has_admin_role(session: Session, employee_id: int) -> bool:
     return any((role.role_name or "").strip().lower() == ADMIN_ROLE_NAME for role in employee.roles)
 
 
-async def get_current_employee(
+def get_current_employee(
     request: FastAPIRequest,
     real_employee: Employees = Depends(get_authenticated_employee),
     token_data: dict[str, Any] | None = Depends(simple_token_validator),
@@ -364,21 +367,21 @@ def get_request_app_url(request: Request) -> str:
     return origin if origin in allowed else getattr(settings, "APP_URL", "")
 
 
-async def get_optional_current_employee_with_permissions(
+def get_optional_current_employee_with_permissions(
     token_data: dict[str, Any] | None = Depends(simple_token_validator),
     request: FastAPIRequest = None,
     db: Session = Depends(get_db),
 ) -> dict | None:
     if token_data is None:
         return None
-    employee = await get_authenticated_employee(token_data=token_data, request=request, db=db)
-    current_employee = await get_current_employee(
+    employee = get_authenticated_employee(token_data=token_data, request=request, db=db)
+    current_employee = get_current_employee(
         request=request,
         real_employee=employee,
         token_data=token_data,
         db=db,
     )
-    return await get_current_employee_with_permissions(current_employee=current_employee, token_data=token_data, db=db)
+    return get_current_employee_with_permissions(current_employee=current_employee, token_data=token_data, db=db)
 
 
 async def require_authentication(
@@ -393,7 +396,7 @@ async def require_authentication(
     return token_data
 
 
-async def get_current_employee_with_permissions(
+def get_current_employee_with_permissions(
     current_employee: Employees = Depends(get_current_employee),
     token_data: dict = Depends(simple_token_validator),
     db: Session = Depends(get_db),

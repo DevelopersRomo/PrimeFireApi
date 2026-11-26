@@ -190,6 +190,11 @@ def get_tenant_cache_scope(request: Request = None) -> str:
     return "main"
 
 
+def get_main_session_factory() -> Callable[[], Session]:
+    """Provide short-lived sessions for reads that only need the main database."""
+    return SessionLocal
+
+
 # Dependency function to always get MAIN DB session (ignores tenant headers)
 def get_main_db() -> Generator[Session, None, None]:
     """

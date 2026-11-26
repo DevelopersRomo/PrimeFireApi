@@ -107,13 +107,16 @@ async def lifespan(app: FastAPI):
 
     sync_task = None
 
-    if settings.SYNC_EMPLOYEES_PRIMEFIRE and is_scheduler_worker:
+    if settings.SYNC_EMPLOYEES_PRIMEFIRE and is_scheduler_worker and not _os.environ.get("PYTEST_RUNNING"):
         try:  # noqa: PLW0717
             from core.background_tasks import sync_scheduler
 
             async def run_startup_sync() -> None:
                 try:
-                    await sync_scheduler.sync_on_startup()
+                    if settings.ENABLE_AUTO_SYNC:
+                        await sync_scheduler.start_periodic_sync(interval_hours=settings.SYNC_INTERVAL_HOURS)
+                    else:
+                        await sync_scheduler.sync_on_startup()
                 except asyncio.CancelledError:
                     raise
                 except Exception:

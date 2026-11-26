@@ -1,6 +1,6 @@
 """Regression tests for employee background synchronization."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlmodel import select
@@ -8,7 +8,7 @@ from sqlmodel import select
 from core.background_tasks import EmployeeSyncScheduler
 from core.microsoft_graph import graph_client as microsoft_graph_client
 from models.countries import Countries
-from models.employees import Employees
+from models.employees import EmployeeM365Archive, Employees
 
 
 @pytest.mark.asyncio
@@ -64,3 +64,28 @@ async def test_process_ms_user_persists_mapped_country_without_sync_errors(db_se
     assert employee.country is country
     assert not isinstance(employee.country, str)
     assert employee.manager_employee_id == manager.employee_id
+
+
+@pytest.mark.asyncio
+async def test_complete_sync_archives_absent_id_and_restores_it_when_it_reappears(db_session, monkeypatch):
+    missing = Employees(display_name="Absent", azure_oid="missing")
+    current = Employees(display_name="Current", azure_oid="current")
+    local = Employees(display_name="Local")
+    db_session.add_all([missing, current, local])
+    db_session.commit()
+    employee_id = missing.employee_id
+
+    monkeypatch.setattr("core.background_tasks.engine", db_session.get_bind().engine)
+    graph = AsyncMock(side_effect=[[{"id": "current"}], [], [{"id": "current"}, {"id": "missing"}]])
+    monkeypatch.setattr("core.background_tasks.graph_client.get_all_users", graph)
+    scheduler = EmployeeSyncScheduler()
+
+    await scheduler.sync_employees_from_microsoft()
+    assert db_session.exec(select(EmployeeM365Archive.employee_id)).all() == [employee_id]
+    assert db_session.get(Employees, employee_id) is not None
+
+    await scheduler.sync_employees_from_microsoft()
+    assert db_session.exec(select(EmployeeM365Archive.employee_id)).all() == [employee_id]
+
+    await scheduler.sync_employees_from_microsoft()
+    assert db_session.exec(select(EmployeeM365Archive.employee_id)).all() == []

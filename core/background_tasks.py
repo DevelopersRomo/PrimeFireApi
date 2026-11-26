@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from bd.connection import sync_engine as engine
 from core.microsoft_graph import graph_client
 from models.countries import Countries
-from models.employees import Employees
+from models.employees import EmployeeM365Archive, Employees
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +202,30 @@ async def resolve_manager_employee_id(
     return None
 
 
+def reconcile_m365_employee_archives(db: Session, ms_users: list[dict]) -> None:
+    """Archive missing Microsoft identities and restore identities that reappear."""
+    if not ms_users or any(not user.get("id") for user in ms_users):
+        logger.warning(
+            "Skipping employee archive reconciliation because the Microsoft 365 directory is empty or incomplete"
+        )
+        return
+
+    directory_ids = {user["id"].lower() for user in ms_users}
+    # The scheduler and manual sync can reconcile concurrently.
+    archives = select(EmployeeM365Archive).with_hint(
+        EmployeeM365Archive, "WITH (TABLOCKX, HOLDLOCK)", dialect_name="mssql"
+    )
+    archived = {entry.employee_id: entry for entry in db.exec(archives)}
+    linked = db.exec(select(Employees.employee_id, Employees.azure_oid).where(Employees.azure_oid.is_not(None))).all()
+    missing = {employee_id for employee_id, oid in linked if oid and oid.lower() not in directory_ids}
+
+    for employee_id in missing - archived.keys():
+        db.add(EmployeeM365Archive(employee_id=employee_id))
+    for employee_id in archived.keys() - missing:
+        db.delete(archived[employee_id])
+    db.commit()
+
+
 class EmployeeSyncScheduler:
     """Background task scheduler for Microsoft 365 employee synchronization."""
 
@@ -264,6 +288,8 @@ class EmployeeSyncScheduler:
             db.commit()
 
         except Exception:
+            db.rollback()
+            logger.exception("Employee sync failed for Microsoft 365 object %s", ms_user.get("id"))
             stats["errors"] += 1
 
     async def sync_employees_from_microsoft(self) -> dict:
@@ -290,6 +316,7 @@ class EmployeeSyncScheduler:
             with Session(engine) as db:
                 for ms_user in ms_users:
                     await self._process_ms_user(ms_user, db, stats)
+                reconcile_m365_employee_archives(db, ms_users)
             self.last_sync = datetime.now()  # noqa: DTZ005
 
             return {**stats, "timestamp": sync_timestamp}

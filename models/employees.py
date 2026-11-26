@@ -18,6 +18,13 @@ class EmployeeRoles(SQLModel, table=True):
     role_id: int = Field(foreign_key="dbo.roles.role_id", primary_key=True)
 
 
+class EmployeeM365Archive(SQLModel, table=True):
+    __tablename__ = "employee_m365_archives"
+    __table_args__ = {"schema": "dbo"}
+
+    employee_id: int = Field(foreign_key="dbo.employees.employee_id", primary_key=True)
+
+
 class Roles(SQLModel, table=True):
     __tablename__ = "roles"
     __table_args__ = {"schema": "dbo"}

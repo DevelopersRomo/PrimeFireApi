@@ -5,9 +5,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from api.employees import enrich_employee_license_flags, get_employees, matches_employee_status
+from bd.dependencies import get_tenant_cache_scope
 from core.microsoft_graph import graph_client as microsoft_graph_client
 from main import app
-from models.employees import EmployeeRoles, Employees, Roles
+from models.employees import EmployeeM365Archive, EmployeeRoles, Employees, Roles
 from models.modules import Modules, RoleModules
 from schemas.employees import Employee
 
@@ -104,6 +105,28 @@ class TestEmployeesAPI:
         response = client.get("/employees?license_filter=with_license", headers=auth_headers)
 
         assert response.status_code == 200
+
+    def test_archive_invalidates_employee_list_and_keeps_the_history_readable(
+        self, client, auth_headers, db_session, monkeypatch
+    ) -> None:
+        employee = Employees(display_name="Archived Employee", azure_oid="missing-oid")
+        db_session.add(employee)
+        db_session.commit()
+        employee_id = employee.employee_id
+        monkeypatch.setitem(app.dependency_overrides, get_tenant_cache_scope, lambda: "primefire")
+        endpoint = "/employees?with_meta=true&search=Archived%20Employee"
+        assert client.get(endpoint, headers=auth_headers).json()["total"] == 1
+
+        db_session.add(EmployeeM365Archive(employee_id=employee_id))
+        db_session.commit()
+        assert client.get(endpoint, headers=auth_headers).json()["total"] == 0
+
+        with patch("api.employees.enrich_employee_license_flags") as graph:
+            detail = client.get(f"/employees/{employee_id}", headers=auth_headers)
+        assert detail.status_code == 200
+        assert detail.json()["employee_id"] == employee_id
+        assert detail.json()["has_license"] is None
+        graph.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_combined_status_filter_runs_before_pagination(self, db_session) -> None:

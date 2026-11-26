@@ -19,7 +19,7 @@ from bd.dependencies import get_db, get_tenant_cache_scope
 from core.config import settings
 from core.microsoft_graph import graph_client
 from models.countries import Countries
-from models.employees import EmployeeRoles, Employees, Roles
+from models.employees import EmployeeM365Archive, EmployeeRoles, Employees, Roles
 from models.modules import Modules, RoleModules
 from schemas.employees import Employee, EmployeeRole, EmployeeRoleAssignment, EmployeeUpdate
 from schemas.pagination import PaginatedResponse
@@ -44,7 +44,7 @@ def clear_employees_cache() -> None:
     _employees_list_cache.clear()
 
 
-def employees_db_marker(db: Session) -> tuple:
+def employees_db_marker(db: Session, *, is_microsoft_tenant: bool = False) -> tuple:
     """Marcador barato de cambios (altas/bajas) en la tabla de empleados.
 
     Allows a worker to detect mutations made in another worker without
@@ -53,7 +53,10 @@ def employees_db_marker(db: Session) -> tuple:
     from sqlalchemy import func
 
     row = db.exec(select(func.count(Employees.employee_id), func.max(Employees.employee_id))).one()
-    return tuple(row)
+    if not is_microsoft_tenant:
+        return tuple(row)
+    archived_ids = db.exec(select(EmployeeM365Archive.employee_id).order_by(EmployeeM365Archive.employee_id)).all()
+    return (*row, tuple(archived_ids))
 
 
 def get_cached_employee_items(cache_key: EmployeeCacheKey, db_marker: tuple) -> list[Employee] | None:
@@ -437,7 +440,7 @@ async def get_employees(
     effective_status_filter = status_filter if is_microsoft_tenant else "all"
     effective_department = department.strip() if department and department.strip() else None
 
-    db_marker = employees_db_marker(db)
+    db_marker = employees_db_marker(db, is_microsoft_tenant=is_microsoft_tenant)
     cache_key: EmployeeCacheKey = (
         tenant_scope,
         effective_license_status,
@@ -451,6 +454,8 @@ async def get_employees(
 
     if items is None:
         statement = select(Employees).join(Countries, isouter=True).options(selectinload(Employees.roles))
+        if is_microsoft_tenant:
+            statement = statement.where(Employees.employee_id.not_in(select(EmployeeM365Archive.employee_id)))
         if effective_department:
             statement = statement.where(Employees.department == effective_department)
         if manager_employee_id is not None:
@@ -566,8 +571,7 @@ async def get_employee(
     if not db_employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     schema = employee_to_schema(db_employee)
-    if tenant_scope != "primefire":
-        # Tenant user/pass: licencias M365 no aplican
+    if tenant_scope != "primefire" or db.get(EmployeeM365Archive, employee_id):
         schema.has_license = None
         schema.has_active_license = None
         schema.is_active = None
@@ -786,6 +790,7 @@ async def get_employee_roles(employee_id: int, db: Session = Depends(get_db), _a
 async def sync_from_microsoft(
     db: Session = Depends(get_db),
     _perms: dict = Depends(require_module_permission("employees", "admin_actions")),
+    tenant_scope: str = Depends(get_tenant_cache_scope),
 ):
     """
     Sync all users from Microsoft 365 to local database.
@@ -843,6 +848,11 @@ async def sync_from_microsoft(
                 clear_employees_cache()
                 synced_employees.append(new_employee)
 
+        if tenant_scope == "primefire":
+            from core.background_tasks import reconcile_m365_employee_archives
+
+            reconcile_m365_employee_archives(db, ms_users)
+            clear_employees_cache()
         return synced_employees
 
     except Exception as e:

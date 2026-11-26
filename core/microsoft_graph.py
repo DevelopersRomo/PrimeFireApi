@@ -181,7 +181,7 @@ class MicrosoftGraphClient:
 
         while endpoint:
             data = await self._make_request("GET", endpoint)
-            users.extend(data.get("value", []))
+            users.extend(data["value"])
             endpoint = data.get("@odata.nextLink", "").replace(self.graph_url, "")
 
         return users

@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import Unicode
 from sqlmodel import Field, SQLModel
 
 from core.datetime_utils import utcnow
@@ -16,11 +17,12 @@ class HomePost(SQLModel, table=True):
     __table_args__ = {"schema": "dbo"}
 
     post_id: int | None = Field(default=None, primary_key=True)
-    title: str = Field(max_length=200)
+    # Unicode types map to NVARCHAR on SQL Server; plain str becomes VARCHAR and turns emoji into "?".
+    title: str = Field(max_length=200, sa_type=Unicode(200))
     post_type: str = Field(max_length=10)  # news | event
-    body_html: str  # sanitized on write; NVARCHAR(MAX)
+    body_html: str = Field(sa_type=Unicode)  # sanitized on write; NVARCHAR(MAX)
     event_at: datetime | None = Field(default=None)
-    location: str | None = Field(default=None, max_length=200)
+    location: str | None = Field(default=None, max_length=200, sa_type=Unicode(200))
     cover_path: str | None = Field(default=None, max_length=500)
     cover_content_type: str | None = Field(default=None, max_length=50)
     is_pinned: bool = Field(default=False)
